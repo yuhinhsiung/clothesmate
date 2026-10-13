@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 品牌玫瑰 #BE185D 作为启动窗口底色，避免冷启动闪白 -->
+    <style name="Theme.ClothesMate" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/brand_rose</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- CameraX 拍照输出：私有目录，无需存储权限 -->
+    <cache-path
+        name="camera_images"
+        path="camera/" />
+</paths>

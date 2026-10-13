@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 衣架图形：品牌符号，白色实心，玫瑰底（#BE185D）上保证对比度。
+     adaptive icon 安全区为 108dp 画布中心 72dp（外圈 18dp 会被异形遮罩裁掉），
+     故图形控制在 32~76 区间，留足边距避免被裁。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 衣钩：竖线 + 左弯钩尖 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M51,34 L51,45 L46,45 L46,34 Q46,28 52,28 Q58,28 58,33 L58,38 L53,38 L53,33 Q53,32 52,32 Q51,32 51,34 Z" />
+
+    <!-- 衣架主体：左端球 - 左斜肩 - 顶 - 右斜肩 - 右端球，闭合为实心多边形 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M35,72 L54,46 L54,46 L73,72 Q73,75 69,75 L39,75 Q35,75 35,72 Z" />
+
+    <!-- 两端挂衣小竖杆 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M35,72 Q31,72 31,68 L31,62 Q31,58 35,58 L39,58 L39,62 L35,62 L35,72 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M73,72 Q77,72 77,68 L77,62 Q77,58 73,58 L69,58 L69,62 L73,62 L73,72 Z" />
+
+    <!-- 底边横杆 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M39,79 L69,79 L69,83 L39,83 Z" />
+</vector>

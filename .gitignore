@@ -1,0 +1,36 @@
+# ── Gradle 构建产物 ──────────────────────────────────────────────
+# 用 `**/` 前缀：同时排除根目录与各模块下的，且允许后续用 ! 反选子路径
+**/.gradle/
+**/build/
+
+# 本地 SDK 路径（含本机绝对路径，绝不提交）
+local.properties
+
+# ── Android Studio / IntelliJ ───────────────────────────────────
+.idea/
+**/*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ── 本地签名与密钥 ──────────────────────────────────────────────
+*.jks
+*.keystore
+keystore.properties
+**/signing.properties
+
+# ── Room schema：必须纳入版本控制（开发计划 P0-08）──────────────
+# 反选需在父级被 ignore 后仍可生效——**/build/ 已整体忽略，
+# 而 schema 由 ksp 输出到 app/schemas/（非 build 目录），本就在版本控制内。
+# 此处显式声明，防止将来有人误加 app/schemas/ 到忽略清单。
+!app/schemas/
+
+# ── 本机临时文件（不属工程）─────────────────────────────────────
+# ADB 拉取的截图、命令行 .bat 中转等散落产物
+*.lnk
+desktop.ini
+nul
+
+# ── OS ──────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

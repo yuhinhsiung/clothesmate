@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 品牌玫瑰 #BE185D 作为启动窗口底色，避免冷启动闪白。
+         同时也是 adaptive icon 的 background 层色值（见 drawable/ic_launcher_background.xml）。 -->
+    <color name="brand_rose">#BE185D</color>
+</resources>

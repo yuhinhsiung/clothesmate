@@ -1,0 +1,15 @@
+# 行尾策略：仓库内存 LF，工作区按需 CRLF。
+# Windows 开发 + 多端同步盘共用，避免下次同步把全库文件判为已修改。
+* text=auto eol=lf
+
+# 二进制文件显式标注，防止被当文本处理而损坏
+*.ttf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.jar binary
+*.tflite binary
+
+# 这两个文件必须保持可执行（Gradle wrapper 启动脚本）
+gradlew text eol=lf

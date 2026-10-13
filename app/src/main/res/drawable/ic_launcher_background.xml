@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 品牌玫瑰底（#BE185D）：纯色底，不加内圆装饰 —— adaptive icon 的
+     background 会被裁成各厂商异形遮罩，任何居中装饰都可能被切掉。
+     P0 首版因在背景里放了半透明内圆，叠加深色遮罩后前景衣钩被淹没成实心球，已移除。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#BE185D"
+        android:pathData="M0,0h108v108h-108z" />
+</vector>
