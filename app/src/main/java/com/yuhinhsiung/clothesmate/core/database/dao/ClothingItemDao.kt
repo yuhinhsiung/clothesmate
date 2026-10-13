@@ -173,6 +173,19 @@ interface ClothingItemDao {
     )
     fun searchByStyleTag(query: String): Flow<List<ClothingItemEntity>>
 
+    /**
+     * 搜索片段：命中类别（W-07）。[categoryKeys] 为枚举小类 key 列表——
+     * 用户输「上衣」这类大类名时由 Repository 展开成该大类全部小类再查。
+     */
+    @Query(
+        """
+        SELECT * FROM clothing_item
+        WHERE deletedAt IS NULL AND category IN (:categoryKeys)
+        ORDER BY CAST(code AS INTEGER) ASC
+        """,
+    )
+    fun searchByCategoryKeys(categoryKeys: List<String>): Flow<List<ClothingItemEntity>>
+
     /** 搜索片段：命中季节标签（W-07），JSON 数组包含匹配 */
     @Query(
         """

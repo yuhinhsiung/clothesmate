@@ -119,6 +119,11 @@ dependencies {
     implementation(libs.camerax.view)
 
     implementation(libs.tensorflow.lite)
+    // GPU delegate 必需（2026-10-14 决定，M2-01 抠图要用）：u2netp 端上推理在低端机
+    // CPU 下耗时可达数秒，用 GPU delegate 才能守住开发文档 §10「耗时操作可取消、有超时」的
+    // 体感底线。代价是 6 条 lint Aligned16KB 警告（litert-gpu 的 .so 非 16KB 页对齐，
+    // 仅影响 Android 15+ 的 16KB 页设备）与 APK 体积，已评估接受——本项目 minSdk 26，
+    // 16KB 页设备占比低，且真机主流架构（armeabi-v8a）不受该警告影响。
     implementation(libs.tensorflow.lite.gpu)
     // 注意：不加 tensorflow-lite-support。org.tensorflow:tensorflow-lite-support:0.5.0
     // 已是被标记 relocation 的空壳，指向 com.google.ai.edge.litert:litert-support，

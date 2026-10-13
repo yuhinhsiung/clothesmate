@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
+import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -29,4 +30,16 @@ object DataStoreModule {
     fun providePreferencesDataStore(
         @ApplicationContext context: Context,
     ): DataStore<Preferences> = context.clothesMateDataStore
+}
+
+/** 计数器实现绑定：接口便于单测替换为内存版 */
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class DataStoreBindModule {
+
+    @Binds
+    @Singleton
+    abstract fun bindCodeCounterStore(
+        impl: DataStoreCodeCounterStore,
+    ): CodeCounterStore
 }

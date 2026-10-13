@@ -30,6 +30,14 @@ interface WardrobeDao {
     @Query("DELETE FROM wardrobe WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    /** 当前最大 sortOrder，新建衣柜时取 +1 追加到末尾（W-01） */
+    @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM wardrobe")
+    suspend fun maxSortOrder(): Int
+
+    /** 某衣柜下衣物数（不含软删除，W-03 件数 / W-12 删除弹层提示） */
+    @Query("SELECT COUNT(*) FROM clothing_item WHERE wardrobeId = :wardrobeId AND deletedAt IS NULL")
+    suspend fun countByWardrobe(wardrobeId: Long): Int
+
     @Query("SELECT * FROM wardrobe WHERE id = :id")
     suspend fun findById(id: Long): WardrobeEntity?
 
