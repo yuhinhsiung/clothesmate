@@ -71,10 +71,17 @@ object Dimens {
     /** 空态图标容器直径（UI 文档 §6.9） */
     val emptyStateCircle = 120.dp
 
-    /** 照片上限（穿搭照片与录入照片均 9 张，开发文档 §3.2） */
+    /**
+     * 照片上限（穿搭照片与录入照片均 9 张，开发文档 §3.2）
+     *
+     * 注意：图片压缩规格（长边 1600px / JPEG 质量 85 / 500KB）**不在这里**，
+     * 而在 `core/image/ImageSpec`——那是逻辑层参数，ui/theme 不应反向依赖 core。
+     * 这里保留 [ImageMaxEdge] / [ImageJpegQuality] 仅供 UI 预览与占位计算引用同值，
+     * 实际压缩一律走 [com.yuhinhsiung.clothesmate.core.image.ImageSpec]。
+     */
     const val MaxPhotos = 9
 
-    /** 原图压缩：长边 ≤1600px、JPEG 质量 85（开发文档 §3.3） */
+    /** 原图压缩：长边 ≤1600px、JPEG 质量 85（开发文档 §3.3）。规范值见 `core/image/ImageSpec` */
     const val ImageMaxEdge = 1600
     const val ImageJpegQuality = 85
 
