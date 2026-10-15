@@ -39,6 +39,7 @@ import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeDeleteDialog
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeDetailRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeEditSheet
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobePickerSheet
+import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.ClothingDetailRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeRoute
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
@@ -166,6 +167,18 @@ fun ClothesMateNavHost(
                 WardrobeDetailRoute(
                     wardrobeId = id,
                     onBack = { navController.popBackStack() },
+                    onItemClick = { itemId -> navController.navigate("clothing_detail/$itemId") },
+                )
+            }
+            composable(
+                route = "clothing_detail/{itemId}",
+                arguments = listOf(navArgument("itemId") { type = NavType.LongType }),
+            ) {
+                ClothingDetailRoute(
+                    onBack = { navController.popBackStack() },
+                    onWardrobeClick = { wardrobeId ->
+                        navController.navigate("wardrobe_detail/$wardrobeId")
+                    },
                 )
             }
         }
