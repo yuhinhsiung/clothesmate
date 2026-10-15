@@ -60,25 +60,42 @@ class DefaultImageCompressor @Inject constructor(
             val raw = openStream(source).use { it.readBytes() }
             // EXIF 要独立流读（不能与解码共用已消费的流），故从字节数组另开一份流
             val orientation = readOrientation(raw.inputStream())
-            val bitmap = decodeSampled(raw) ?: throw ImageProcessException("无法解码图片")
-            val scaled = try {
-                scaleAndRotate(bitmap, orientation)
-            } finally {
-                bitmap.recycle()
-            }
+            val decoded = decodeSampled(raw) ?: throw ImageProcessException("无法解码图片")
+            val scaled = scaleAndRotate(decoded, orientation)
             try {
                 writeJpeg(scaled, target)
             } finally {
+                // 边界情形（小图 / 无 alpha / 无方向标记）下 scaleAndRotate 直接返回解码结果，
+                // 此时 scaled === decoded。故必须先 recycle，再判等跳过重复回收——
+                // 否则同一个 Bitmap 被回收两次，第二次 compress 就炸
+                // 「Can't compress a recycled bitmap」。
                 scaled.recycle()
+                if (scaled !== decoded) decoded.recycle()
             }
             target.length()
         }
 
-    /** 统一打开源流：Uri 经 ContentResolver（授权即时有效，不缓存），File 直接开。 */
-    private fun openStream(source: Source): InputStream = when (source) {
-        is Source.Uri -> context.contentResolver.openInputStream(source.uri)
-            ?: throw ImageProcessException("无法读取所选图片（可能已被移动或权限已失效）")
-        is Source.Path -> source.file.inputStream()
+    /**
+     * 统一打开源流：Uri 经 ContentResolver（授权即时有效，不缓存），File 直接开。
+     *
+     * 两条路径的 IOException 都在此包装成 [ImageProcessException]：
+     * 调用方（录入流程）只应面对一种失败类型，不必分辨是「选图失效」还是「文件不存在」。
+     */
+    private fun openStream(source: Source): InputStream = runCatching {
+        when (source) {
+            is Source.Uri -> context.contentResolver.openInputStream(source.uri)
+                ?: throw ImageProcessException("无法读取所选图片（可能已被移动或权限已失效）")
+            is Source.Path -> source.file.inputStream()
+        }
+    }.getOrElse { cause ->
+        // 已经是 ImageProcessException 就别再包一层，保留原始消息
+        if (cause is ImageProcessException) throw cause
+        throw ImageProcessException("无法打开源图：${describe(source)}", cause)
+    }
+
+    private fun describe(source: Source): String = when (source) {
+        is Source.Uri -> source.uri.toString()
+        is Source.Path -> source.file.path
     }
 
     /**
@@ -153,26 +170,27 @@ class DefaultImageCompressor @Inject constructor(
         }
 
         val needsTransform = scale != 1f || degrees != 0f || mirrored
-        // 一切都对、且没有 alpha（JPEG 不接受透明）——可直接压缩原图
-        if (!needsTransform && !source.hasAlpha()) return source
-
         val result = if (needsTransform) {
             Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
         } else {
             source
         }
         // 转 JPEG 前必须去掉 alpha：JPEG 只有 RGB，透明区会被编成黑块
-        if (result.hasAlpha()) return flattenToWhite(result)
-        return result
+        return if (result.hasAlpha()) flattenToWhite(result) else result
     }
 
-    /** 铺白底去掉 alpha —— JPEG 不支持透明，直接转会让透明区变黑。 */
+    /**
+     * 铺白底去掉 alpha —— JPEG 不支持透明，直接转会让透明区变黑。
+     *
+     * **不在这里 recycle [source]**：调用链上 `compress` 才是唯一负责回收的地方
+     * （它要判 `scaled !== decoded` 才能避免双重回收）。这里回收会让调用方无法判断
+     * 该不该再回收，正是「Can't compress a recycled bitmap」那类 bug 的温床。
+     */
     private fun flattenToWhite(source: Bitmap): Bitmap {
         val flattened = createBitmap(source.width, source.height)
         val canvas = Canvas(flattened)
         canvas.drawColor(Color.WHITE)
         canvas.drawBitmap(source, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
-        source.recycle()
         return flattened
     }
 

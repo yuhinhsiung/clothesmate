@@ -116,7 +116,7 @@ class ImageCompressorTest {
     // ── 验收 1：长边 ≤1600px、比例保持 ──────────────────────────
 
     @Test
-    fun `4000x3000 大图压缩后长边恰为 1600 且比例保持`() = runTest {
+    fun `4000x3000大图压缩后长边恰为1600且比例保持`() = runTest {
         setUp()
         val source = writePlainJpeg(noisyBitmap(4000, 3000), "big.jpg")
         val target = storage.clothingOriginalFile(1L).apply { parentFile!!.mkdirs() }
@@ -131,7 +131,7 @@ class ImageCompressorTest {
     }
 
     @Test
-    fun `小图不放大（长边小于 1600 时保持原尺寸）`() = runTest {
+    fun `小图不放大（长边小于1600时保持原尺寸）`() = runTest {
         setUp()
         val source = writePlainJpeg(noisyBitmap(800, 600), "small.jpg")
         val target = storage.clothingOriginalFile(2L).apply { parentFile!!.mkdirs() }
@@ -146,7 +146,7 @@ class ImageCompressorTest {
     // ── 验收 2：压缩产物 ≤500KB（开发文档 §10） ──────────────────
 
     @Test
-    fun `高熵大图压缩后仍小于 500KB`() = runTest {
+    fun `高熵大图压缩后仍小于500KB`() = runTest {
         setUp()
         val source = writePlainJpeg(noisyBitmap(4000, 3000), "noisy.jpg")
         val target = storage.clothingOriginalFile(3L).apply { parentFile!!.mkdirs() }
@@ -161,7 +161,7 @@ class ImageCompressorTest {
     // ── 验收 3：EXIF orientation 归正 ───────────────────────────
 
     @Test
-    fun `orientation 6 旋转 90 度后横竖互换`() = runTest {
+    fun `方向标记六旋转九十度后横竖互换`() = runTest {
         setUp()
         // 像素是横的 1200x800，但 EXIF 说「顺时针转 90」——输出应为竖的 800x1200
         val plain = writePlainJpeg(noisyBitmap(1200, 800), "landscape.jpg")
@@ -176,7 +176,7 @@ class ImageCompressorTest {
     }
 
     @Test
-    fun `orientation 8 旋转 270 度后同样横竖互换`() = runTest {
+    fun `方向标记八旋转二百七十度后横竖互换`() = runTest {
         setUp()
         val plain = writePlainJpeg(noisyBitmap(1200, 800), "landscape2.jpg")
         val source = writeJpegWithExifOrientation(plain, 8, "rot8.jpg")
@@ -190,7 +190,7 @@ class ImageCompressorTest {
     }
 
     @Test
-    fun `无 EXIF 的正常方向图片不改变朝向`() = runTest {
+    fun `无方向标记的图片不改变朝向`() = runTest {
         setUp()
         val source = writePlainJpeg(noisyBitmap(1000, 500), "wide.jpg")
         val target = storage.clothingOriginalFile(6L).apply { parentFile!!.mkdirs() }
@@ -205,7 +205,7 @@ class ImageCompressorTest {
     // ── 健壮性 ────────────────────────────────────────────────
 
     @Test
-    fun `非图片输入抛 ImageProcessException 且不留下半张图`() = runTest {
+    fun `非图片输入抛ImageProcessException且不留下半张图`() = runTest {
         setUp()
         val source = tempFolder.newFile("notimage.jpg").apply { writeText("这不是图片") }
         val target = storage.clothingOriginalFile(7L).apply { parentFile!!.mkdirs() }
@@ -220,7 +220,7 @@ class ImageCompressorTest {
     }
 
     @Test
-    fun `不存在的源文件抛 ImageProcessException 而非 NPE`() = runTest {
+    fun `不存在的源文件抛ImageProcessException而非NPE`() = runTest {
         setUp()
         val missing = File(tempFolder.root, "absent.jpg")
         val target = storage.clothingOriginalFile(8L).apply { parentFile!!.mkdirs() }
