@@ -49,6 +49,23 @@
     <string name="empty_wardrobe_no_items_title">这个衣柜还是空的</string>
     <string name="empty_wardrobe_no_items_desc">拍张照片，录入第一件</string>
 
+    <!-- 衣物详情 / 删除（M1-11 / M1-13） -->
+    <string name="clothing_attr_category">类别</string>
+    <string name="clothing_attr_color">颜色</string>
+    <string name="clothing_attr_style">风格</string>
+    <string name="clothing_attr_season">季节</string>
+    <string name="clothing_attr_wardrobe">所属衣柜</string>
+    <string name="clothing_attr_wear">穿着</string>
+    <string name="clothing_attr_brand">品牌</string>
+    <string name="clothing_attr_note">备注</string>
+    <string name="clothing_action_delete">删除</string>
+    <string name="clothing_action_store">收起</string>
+    <string name="clothing_action_restore">恢复正常</string>
+    <string name="clothing_action_edit">编辑</string>
+    <string name="clothing_delete_title">删除 No.%1$s？</string>
+    <string name="clothing_delete_subtitle">删除后可在提示里撤回，图片不会从手机丢失</string>
+    <string name="action_delete">删除</string>
+
     <!-- 选择衣柜弹层（M1-08，UI 文档 §7.2 / mockup-18） -->
     <string name="wardrobe_picker_title">选择衣柜</string>
     <string name="wardrobe_picker_create">＋ 新建衣柜</string>

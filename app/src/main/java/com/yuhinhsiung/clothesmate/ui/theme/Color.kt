@@ -98,4 +98,26 @@ object ClothingColors {
     val Pink = Color(0xFFEC4899)
     /** 花色：以多色斜纹段表达，见 UI 文档 §7.5 */
     val Multi = Color(0xFFDB2777)
+
+    /**
+     * 颜色枚举 → Compose.Color。用于衣物详情/选择的色点、概览颜色分布条。
+     *
+     * 花色（multi）返回 [Multi]：UI 文档 §6.5 说花色用「多色斜纹段」表达，
+     * 那是图表侧的做法；单色点场景用这个洋红近似即可。
+     */
+    fun dotColor(color: com.yuhinhsiung.clothesmate.core.model.ClothingColor): Color =
+        when (color) {
+            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Black -> Black
+            com.yuhinhsiung.clothesmate.core.model.ClothingColor.White -> White
+            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Gray -> Gray
+            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Red -> Red
+            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Orange -> Orange
+            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Yellow -> Yellow
+            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Green -> Green
+            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Blue -> Blue
+            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Purple -> Purple
+            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Brown -> Brown
+            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Pink -> Pink
+            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Multi -> Multi
+        }
 }
