@@ -139,6 +139,8 @@ dependencies {
     testImplementation(libs.turbine)
     testImplementation(libs.room.testing)
     testImplementation(libs.okhttp.mockwebserver)
+    // 真实 DataStore（JVM 侧），见 libs.versions.toml 该条目的说明
+    testImplementation(libs.datastore.preferences.core)
 
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.espresso.core)

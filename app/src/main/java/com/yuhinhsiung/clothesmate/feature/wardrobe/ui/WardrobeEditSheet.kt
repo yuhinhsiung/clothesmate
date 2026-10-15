@@ -62,14 +62,15 @@ import com.yuhinhsiung.clothesmate.ui.theme.onMuted
  *
  * @param wardrobeId 非空 = 编辑该衣柜（预填）；null = 新建
  * @param onDismiss 关闭弹层
- * @param onSaved 保存成功，参数为衣柜 id（新建链路供调用方「自动选中并回传」）
+ * @param onSaved (衣柜 id, 衣柜名)。带回名称供上层 Snackbar 出「已添加 · {名称}」
+ *   （UI 文档 §7.2 / review U-r）
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WardrobeEditSheet(
     wardrobeId: Long? = null,
     onDismiss: () -> Unit,
-    onSaved: (Long) -> Unit,
+    onSaved: (Long, String) -> Unit,
     viewModel: WardrobeEditViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -92,6 +93,9 @@ fun WardrobeEditSheet(
             onDismiss()
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        // review C-13: 弹层顶部只保留自绘小横条，关掉 M3 默认 DragHandle，
+        // 否则会出现「双横条」
+        dragHandle = null,
         containerColor = MaterialTheme.colorScheme.surface,
         // radius-xl 顶圆角（§6.8）
         shape = androidx.compose.foundation.shape.RoundedCornerShape(
@@ -188,10 +192,14 @@ fun WardrobeEditSheet(
                     .fillMaxWidth()
                     .height(Dimens.buttonHeight)
                     .padding(top = Dimens.Space.s5),
-                // 禁用态靠 alpha 38%（§6.3）
+                // 禁用态 38% 透明（§6.3）。review C-07：必须显式给 alpha——
+                // 若把 disabledContainerColor 设成饱和的 primary，会把 M3
+                // 插槽自带的 alpha 覆盖掉，禁用与可用长得一模一样。
                 colors = ButtonDefaults.buttonColors(
-                    disabledContainerColor = MaterialTheme.colorScheme.primary,
-                    disabledContentColor = MaterialTheme.colorScheme.onPrimary,
+                    disabledContainerColor = MaterialTheme.colorScheme.primary
+                        .copy(alpha = Dimens.DisabledAlpha),
+                    disabledContentColor = MaterialTheme.colorScheme.onPrimary
+                        .copy(alpha = Dimens.DisabledAlpha),
                 ),
             ) {
                 if (uiState.saving) {

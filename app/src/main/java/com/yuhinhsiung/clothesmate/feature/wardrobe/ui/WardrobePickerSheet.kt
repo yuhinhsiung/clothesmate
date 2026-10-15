@@ -55,6 +55,9 @@ fun WardrobePickerSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        // review C-13: 弹层顶部只保留自绘小横条，关掉 M3 默认 DragHandle，
+        // 否则会出现「双横条」
+        dragHandle = null,
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(
             topStart = Dimens.Radius.xl,
@@ -103,7 +106,13 @@ fun WardrobePickerSheet(
                 WardrobePickerList(
                     wardrobes = uiState.wardrobes,
                     selectedId = uiState.selectedId,
-                    onSelect = viewModel::onSelect,
+                    // review C-01：点既有衣柜行 = 选中 + 写回 DataStore + 回传 + 关闭。
+                    // 原先只调 onSelect（仅改选中态），弹层永远停住、DataStore 不写。
+                    onSelect = { id ->
+                        viewModel.onSelect(id)
+                        viewModel.confirm(onPicked)
+                        onDismiss()
+                    },
                 )
             }
 
@@ -132,7 +141,7 @@ fun WardrobePickerSheet(
     if (showCreate) {
         WardrobeEditSheet(
             onDismiss = { showCreate = false },
-            onSaved = { newId ->
+            onSaved = { newId, _ ->
                 showCreate = false
                 // 新建后直接选中新衣柜（§7.2：保存后自动选中并回传）
                 viewModel.onSelect(newId)

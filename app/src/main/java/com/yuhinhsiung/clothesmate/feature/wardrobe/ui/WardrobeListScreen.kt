@@ -15,12 +15,16 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -28,10 +32,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,7 +60,9 @@ import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 fun WardrobeRoute(
     onWardrobeClick: (Long) -> Unit = {},
     onShowAddSheet: () -> Unit = {},
+    onEditWardrobe: (Long) -> Unit = {},
     onShowDelete: (Long) -> Unit = {},
+    onAddClothing: () -> Unit = {},
     viewModel: WardrobeListViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -63,7 +70,9 @@ fun WardrobeRoute(
         uiState = uiState,
         onWardrobeClick = onWardrobeClick,
         onAddWardrobe = onShowAddSheet,
+        onEditWardrobe = onEditWardrobe,
         onWardrobeLongPress = onShowDelete,
+        onAddClothing = onAddClothing,
         viewModel = viewModel,
     )
 }
@@ -74,7 +83,9 @@ fun WardrobeListScreen(
     uiState: WardrobeListUiState,
     onWardrobeClick: (Long) -> Unit = {},
     onAddWardrobe: () -> Unit = {},
+    onEditWardrobe: (Long) -> Unit = {},
     onWardrobeLongPress: (Long) -> Unit = {},
+    onAddClothing: () -> Unit = {},
     viewModel: WardrobeListViewModel = hiltViewModel(),
 ) {
     // 拖拽重排时的本地顺序：松手后才经 ViewModel 落库，拖拽中只动 UI
@@ -91,19 +102,39 @@ fun WardrobeListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.wardrobe_title), style = MaterialTheme.typography.headlineMedium) },
+                title = {
+                    Text(
+                        stringResource(R.string.wardrobe_title),
+                        style = MaterialTheme.typography.headlineMedium,
+                    )
+                },
+                // review C-11：右上「+」= 新建衣柜（§6.2 动作图标位）；
+                // FAB 按 §6.4 语义交还给「+ 录衣服」
+                actions = {
+                    IconButton(onClick = onAddWardrobe) {
+                        Icon(
+                            imageVector = AppIcons.Add,
+                            contentDescription = stringResource(R.string.wardrobe_add),
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
             )
         },
         floatingActionButton = {
+            // §6.4：FAB「+ 录衣服」常驻右下。M1-14 未实装前点它有反馈，
+            // 不留死按钮（review C-02）
             FloatingActionButton(
-                onClick = onAddWardrobe,
+                onClick = onAddClothing,
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
             ) {
-                Icon(AppIcons.Add, contentDescription = stringResource(R.string.wardrobe_add))
+                Icon(
+                    imageVector = AppIcons.Add,
+                    contentDescription = stringResource(R.string.clothing_add),
+                )
             }
         },
     ) { innerPadding ->
@@ -142,7 +173,8 @@ fun WardrobeListScreen(
                             WardrobeCard(
                                 wardrobe = wardrobe,
                                 onClick = { onWardrobeClick(wardrobe.id) },
-                                onMore = { onWardrobeLongPress(wardrobe.id) },
+                                onEdit = { onEditWardrobe(wardrobe.id) },
+                                onDelete = { onWardrobeLongPress(wardrobe.id) },
                             )
                         }
                     }
@@ -156,8 +188,12 @@ fun WardrobeListScreen(
 private fun WardrobeCard(
     wardrobe: Wardrobe,
     onClick: () -> Unit,
-    onMore: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
 ) {
+    // 「更多」菜单展开状态：卡片本地持有，点外部/选项后自行收起
+    var menuExpanded by remember { mutableStateOf(false) }
+
     Card(
         onClick = onClick,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -212,16 +248,50 @@ private fun WardrobeCard(
                 }
             }
 
-            // 右上角「更多」图标（§6.5 衣柜卡规格）→ 编辑 / 删除
-            IconButton(
-                onClick = onMore,
-                modifier = Modifier.align(Alignment.TopEnd),
-            ) {
-                Icon(
-                    imageVector = AppIcons.More,
-                    contentDescription = stringResource(R.string.wardrobe_more),
-                    tint = MaterialTheme.colorScheme.onMuted,
-                )
+            // 右上角「更多」→ 编辑 / 删除（review C-03：原先直连删除弹窗，
+            // 没有菜单也没有编辑入口，W-02 一半落空）
+            Box(modifier = Modifier.align(Alignment.TopEnd)) {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(
+                        imageVector = AppIcons.More,
+                        contentDescription = stringResource(R.string.wardrobe_more),
+                        tint = MaterialTheme.colorScheme.onMuted,
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.wardrobe_menu_edit)) },
+                        leadingIcon = {
+                            Icon(AppIcons.Edit, contentDescription = null)
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onEdit()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(R.string.wardrobe_menu_delete),
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = AppIcons.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onDelete()
+                        },
+                    )
+                }
             }
         }
     }

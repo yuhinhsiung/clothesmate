@@ -14,6 +14,8 @@
     <string name="wardrobe_add_short">+</string>
     <string name="wardrobe_item_count">%1$d 件</string>
     <string name="wardrobe_more">更多</string>
+    <string name="wardrobe_menu_edit">编辑</string>
+    <string name="wardrobe_menu_delete">删除</string>
 
     <!-- 添加 / 编辑衣柜弹层（M1-06） -->
     <string name="wardrobe_new_title">新建衣柜</string>
@@ -24,6 +26,15 @@
     <string name="wardrobe_save">保存衣柜</string>
     <string name="wardrobe_cover_hint">添加封面 · 拍照或从相册选择</string>
     <string name="wardrobe_cover_remove">移除封面</string>
+    <string name="wardrobe_saved">衣柜已保存</string>
+    <string name="wardrobe_added">已添加 · %1$s</string>
+
+    <!-- 删除衣柜 Snackbar（review C-04：占位符，勿用 replace 拼串） -->
+    <string name="wardrobe_delete_snackbar_transferred">%1$d 件衣物已移到 %2$s</string>
+    <string name="wardrobe_delete_snackbar_deleted">%1$d 件衣物已删除</string>
+
+    <!-- 未实装功能的临时提示（review C-02：宁可给反馈，不可点了没反应） -->
+    <string name="coming_soon_camera">拍照录入即将上线</string>
 
     <!-- 删除衣柜去向弹层（M1-07，UI 文档 §7.2 / mockup-20） -->
     <string name="wardrobe_delete_title">删除「%1$s」？</string>
@@ -48,6 +59,8 @@
     <string name="filter_incomplete">待完善 %1$d</string>
     <string name="empty_wardrobe_no_items_title">这个衣柜还是空的</string>
     <string name="empty_wardrobe_no_items_desc">拍张照片，录入第一件</string>
+    <!-- review U-d：筛选后零结果与衣柜真空是两回事，文案必须分开 -->
+    <string name="empty_wardrobe_filter_none_title">没有符合条件的衣物</string>
 
     <!-- 衣物详情 / 删除（M1-11 / M1-13） -->
     <string name="clothing_attr_category">类别</string>
@@ -65,6 +78,8 @@
     <string name="clothing_delete_title">删除 No.%1$s？</string>
     <string name="clothing_delete_subtitle">删除后可在提示里撤回，图片不会从手机丢失</string>
     <string name="action_delete">删除</string>
+    <string name="action_undo">撤销</string>
+    <string name="clothing_deleted">已删除 No.%1$s</string>
 
     <!-- 选择衣柜弹层（M1-08，UI 文档 §7.2 / mockup-18） -->
     <string name="wardrobe_picker_title">选择衣柜</string>

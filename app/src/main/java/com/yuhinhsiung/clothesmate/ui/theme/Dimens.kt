@@ -51,6 +51,21 @@ object Dimens {
     /** 全部可点元素触控目标下限 */
     val minTouchTarget = 48.dp
 
+    /** 禁用态不透明度（UI 文档 §6.3「禁用态：透明度 38%」） */
+    const val DisabledAlpha = 0.38f
+
+    /**
+     * 「已收起」衣物卡的压暗系数（UI 文档 §6.5：压暗 + 底条两件套，review U-a）。
+     * 收起是「暂时不看」而非「删除」，压暗但不隐去。
+     */
+    const val StoredDimAlpha = 0.5f
+
+    /**
+     * 详情页属性卡左列标签的最小宽度（review C-17）。
+     * 用 min 而非固定值：系统放大字号时标签可以变宽，不会被截断。
+     */
+    val AttrLabelMinWidth = 64.dp
+
     /** 主按钮高度（UI 文档 §6.3） */
     val buttonHeight = 52.dp
 

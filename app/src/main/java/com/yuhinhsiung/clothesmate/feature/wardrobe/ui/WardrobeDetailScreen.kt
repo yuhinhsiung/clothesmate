@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -34,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
@@ -126,14 +129,15 @@ fun WardrobeDetailRoute(
                 }
             }
 
-            // 状态筛选 chips
-            Row(
+            // 状态筛选 chips。review U-e：改 LazyRow——360dp 小屏上四位计数
+            // （如「全部 128」）在固定 Row 里会挤压溢出，横滑是最稳的兜底
+            LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = Dimens.pagePadding, vertical = Dimens.Space.s3),
                 horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s2),
             ) {
-                WardrobeItemFilter.entries.forEach { filter ->
+                items(WardrobeItemFilter.entries.toList(), key = { it.name }) { filter ->
                     FilterChip(
                         selected = uiState.filter == filter,
                         onClick = { viewModel.onFilterChange(filter) },
@@ -148,17 +152,38 @@ fun WardrobeDetailRoute(
                 }
             }
 
-            if (uiState.items.isEmpty()) {
-                com.yuhinhsiung.clothesmate.ui.component.EmptyState(
+            // 空态分两种：衣柜真空（§6.9 表格「衣柜内无衣物」）vs 筛选后无结果。
+            // review U-d：原先筛选零结果也复用衣柜级空态，用户会困惑「衣服去哪了」。
+            val filterEmpty = uiState.items.isEmpty() &&
+                uiState.counts.total > 0 &&
+                uiState.filter != WardrobeItemFilter.All
+            when {
+                filterEmpty -> com.yuhinhsiung.clothesmate.ui.component.EmptyState(
                     spec = EmptyStateSpec(
-                        icon = AppIcons.PhotoCamera,
+                        icon = AppIcons.Filter,
+                        title = stringResource(R.string.empty_wardrobe_filter_none_title),
+                        description = null,
+                        actionLabel = stringResource(R.string.filter_all, uiState.counts.total),
+                        onAction = { viewModel.onFilterChange(WardrobeItemFilter.All) },
+                    ),
+                )
+
+                uiState.items.isEmpty() -> com.yuhinhsiung.clothesmate.ui.component.EmptyState(
+                    spec = EmptyStateSpec(
+                        // U-c：§6.9 表定「衣柜内无衣物」用衣架（checkroom）字形，
+                        // 原先用了相机（photo_camera），已改
+                        icon = AppIcons.Wardrobe,
                         title = stringResource(R.string.empty_wardrobe_no_items_title),
                         description = stringResource(R.string.empty_wardrobe_no_items_desc),
                         actionLabel = stringResource(R.string.clothing_add),
                         onAction = onAddClothing,
                     ),
                 )
-            } else {
+
+                else -> Unit
+            }
+
+            if (uiState.items.isNotEmpty()) {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(Dimens.ClothingGridColumns),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(Dimens.pagePadding),
@@ -194,12 +219,17 @@ private fun ClothingGridCard(
     ) {
         // 抠图 PNG 直接铺 muted 浅底；M1 无抠图，走原图
         val image = item.displayImagePath
+        // review U-a：§6.5 要求「已收起」卡「压暗 + 底条」两件套，原先只做了底条
         if (image != null) {
             AsyncImage(
                 model = image,
                 contentDescription = item.displayName,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = if (item.isStored) {
+                    Modifier.fillMaxSize().alpha(Dimens.StoredDimAlpha)
+                } else {
+                    Modifier.fillMaxSize()
+                },
             )
         } else {
             Icon(

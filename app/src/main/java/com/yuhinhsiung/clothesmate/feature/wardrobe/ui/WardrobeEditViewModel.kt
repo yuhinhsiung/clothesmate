@@ -104,15 +104,17 @@ class WardrobeEditViewModel @Inject constructor(
      * - **新建**：先 insert 拿真 id → 归位封面 → 再 update 一次写 `coverImagePath`
      *   （insert 时传 null，避免为凑路径先 insert 两次）
      *
-     * @param onSaved 保存成功回调，参数为衣柜 id
+     * @param onSaved (衣柜 id, 衣柜名)。带名称是为了让上层 Snackbar 能出
+     *   「已添加 · {名称}」（UI 文档 §7.2 / review U-r），不必为一句文案去查库。
      */
-    fun save(onSaved: (Long) -> Unit) {
+    fun save(onSaved: (Long, String) -> Unit) {
         val state = _uiState.value
         if (!state.canSave) return
+        val trimmedName = state.name.trim()
         viewModelScope.launch {
             _uiState.update { it.copy(saving = true, error = null) }
             runCatching {
-                val name = state.name.trim()
+                val name = trimmedName
                 val note = state.note.trim().takeIf { it.isNotEmpty() }
 
                 if (state.editingId != null) {
@@ -129,7 +131,7 @@ class WardrobeEditViewModel @Inject constructor(
             }
                 .onSuccess { id ->
                     _uiState.update { it.copy(saving = false, stagedCover = null) }
-                    onSaved(id)
+                    onSaved(id, trimmedName)
                 }
                 .onFailure { failure ->
                     _uiState.update {

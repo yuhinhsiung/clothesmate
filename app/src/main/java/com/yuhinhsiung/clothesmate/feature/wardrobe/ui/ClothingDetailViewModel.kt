@@ -10,7 +10,6 @@ import com.yuhinhsiung.clothesmate.core.model.Season
 import com.yuhinhsiung.clothesmate.feature.wardrobe.data.ClothingRepository
 import com.yuhinhsiung.clothesmate.feature.wardrobe.data.WardrobeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -32,14 +31,12 @@ class ClothingDetailViewModel @Inject constructor(
 
     private val itemId: Long = savedStateHandle["itemId"] ?: 0L
 
-    /** 撤销软删除后触发重查： restore 会清掉 deletedAt，observeItem 应重新吐出 */
-    private val reloadTrigger = MutableStateFlow(0)
-
+    // 撤销软删除后无需手动触发重查：observeItem 的 Room Flow 会在 restore
+    // 清掉 deletedAt 后自然重发该行（review U-i：原先那个 reloadTrigger 是死代码）
     val uiState: StateFlow<ClothingDetailUiState> = combine(
         clothingRepository.observeItem(itemId),
         wardrobeRepository.observeWardrobes(),
-        reloadTrigger,
-    ) { item, wardrobes, _ ->
+    ) { item, wardrobes ->
         if (item == null) {
             ClothingDetailUiState(notFound = true)
         } else {
@@ -88,6 +85,16 @@ data class ClothingDetailUiState(
             1 -> "穿过 1 次"
             else -> "穿过 ${item?.wearCount} 次"
         }
+
+    /**
+     * 最近穿着日期（epoch millis），未穿过为 null（review C-19）。
+     *
+     * M1 无穿着记录（T-05 属 M3），故恒为 null、属性卡不显示日期；
+     * M3 接上 wear_record 后这里自然有值。VM 只透出时间戳，
+     * 格式化在 UI 层做（android.text.format.DateFormat 只能在创建它的线程用）。
+     */
+    val lastWornAt: Long?
+        get() = item?.lastWornAt
 
     /** 所属衣柜文案 */
     val wardrobeLabel: String

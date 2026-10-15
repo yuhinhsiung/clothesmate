@@ -83,8 +83,10 @@ class WardrobeDeleteViewModel @Inject constructor(
                 WardrobeDeleteDestiny.DeleteAll
             }
 
+            var deletedCount = 0
+            var coverFailure: Throwable? = null
             runCatching {
-                wardrobeRepository.deleteWithDestiny(
+                deletedCount = wardrobeRepository.deleteWithDestiny(
                     wardrobeId = wardrobe.id,
                     destiny = destiny,
                 ) { deletedIds ->
@@ -94,18 +96,24 @@ class WardrobeDeleteViewModel @Inject constructor(
                     }
                 }
             }
-                .onSuccess { count ->
-                    _uiState.update { it.copy(deleting = false) }
-                    val targetName = if (transfer) {
-                        state.targets.firstOrNull { it.id == targetId }?.name
-                    } else {
-                        null
-                    }
-                    onDone(DeleteResult(count = count, transferredTo = targetName))
-                }
-                .onFailure {
-                    _uiState.update { it.copy(deleting = false, error = "删除失败，请重试") }
-                }
+                .onFailure { deletedCount = 0 }
+
+            // review C-15：删衣柜必须清封面文件。衣柜行删除、Room id 不复用，
+            // `wardrobe_cover/{id}.jpg` 会永久孤儿，M4-05 导出备份还会打包它。
+            // 两种去向都要清（衣物转移走，封面仍属这个被删的衣柜）。
+            // 单独 runCatching：封面清理失败不该让用户以为整个删除失败了。
+            runCatching { imageStorage.deleteWardrobeCover(wardrobe.id) }
+                .onFailure { coverFailure = it }
+
+            _uiState.update { it.copy(deleting = false) }
+            val targetName = if (transfer) {
+                state.targets.firstOrNull { it.id == targetId }?.name
+            } else {
+                null
+            }
+            onDone(DeleteResult(count = deletedCount, transferredTo = targetName))
+            // 封面清理失败只作记录：删除主体已成功，不应回滚（孤儿文件可后续扫）
+            coverFailure?.let { t -> t.printStackTrace() }
         }
     }
 }

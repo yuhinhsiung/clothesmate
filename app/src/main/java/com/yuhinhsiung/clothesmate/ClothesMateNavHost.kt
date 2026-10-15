@@ -17,9 +17,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.annotation.StringRes
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -57,13 +59,14 @@ import kotlinx.coroutines.launch
  */
 enum class TopLevelDestination(
     val route: String,
-    val label: String,
+    /** 标签文案走资源（review E-a：原先硬编码在枚举里，`tab_*` 四条 string 成死资源） */
+    @StringRes val labelRes: Int,
     val icon: ImageVector,
 ) {
-    Today(route = "today", label = "今日", icon = AppIcons.Today),
-    Wardrobe(route = "wardrobe", label = "衣柜", icon = AppIcons.Wardrobe),
-    Outfit(route = "outfit", label = "穿搭", icon = AppIcons.Outfit),
-    Overview(route = "overview", label = "概览", icon = AppIcons.Overview),
+    Today(route = "today", labelRes = R.string.tab_today, icon = AppIcons.Today),
+    Wardrobe(route = "wardrobe", labelRes = R.string.tab_wardrobe, icon = AppIcons.Wardrobe),
+    Outfit(route = "outfit", labelRes = R.string.tab_outfit, icon = AppIcons.Outfit),
+    Overview(route = "overview", labelRes = R.string.tab_overview, icon = AppIcons.Overview),
 }
 
 /**
@@ -82,12 +85,28 @@ fun ClothesMateNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // 衣柜相关弹层状态（M1-06/07/08）
-    var showAddWardrobe by remember { mutableStateOf(false) }
-    var deleteTargetId by remember { mutableStateOf<Long?>(null) }
-    var showWardrobePicker by remember { mutableStateOf(false) }
+    // 衣柜相关弹层状态（M1-06/07/08）。rememberSaveable：旋转/深色切换不丢（review C-06）
+    var showAddWardrobe by rememberSaveable { mutableStateOf(false) }
+    var deleteTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
+    /** 非空 = 弹层处于「编辑衣柜」模式，值即被编辑的衣柜 id（review C-03） */
+    var editWardrobeId by rememberSaveable { mutableStateOf<Long?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    // Snackbar 文案在 Composable 作用域用 stringResource 求值，再交给协程——
+    // lint（LocalContextGetResourceValueCall）：在 lambda 里经 context.getString
+    // 读资源不感知配置变更（切语言/字号后拿到旧值）
+    val comingSoonText = stringResource(R.string.coming_soon_camera)
+    val addedTpl = stringResource(R.string.wardrobe_added)
+    fun showSnack(message: String) {
+        scope.launch { snackbarHostState.showSnackbar(message) }
+    }
+    // 删除 Snackbar 的两条模板（review C-04：占位符，勿用 replace 拼串）。
+    // 两模板都带参，故在 Composable 作用域取字符串、参数由调用方提供
+    val transferredTpl = stringResource(R.string.wardrobe_delete_snackbar_transferred)
+    val deletedTpl = stringResource(R.string.wardrobe_delete_snackbar_deleted)
+    fun deleteSnackText(count: Int, target: String?): String =
+        if (target != null) transferredTpl.format(count, target) else deletedTpl.format(count)
 
     Scaffold(
         bottomBar = {
@@ -123,10 +142,10 @@ fun ClothesMateNavHost(
                                 icon = {
                                     Icon(
                                         imageVector = destination.icon,
-                                        contentDescription = destination.label,
+                                        contentDescription = stringResource(destination.labelRes),
                                     )
                                 },
-                                label = { Text(destination.label) },
+                                label = { Text(stringResource(destination.labelRes)) },
                                 // 显式指定品牌色，不用 NavigationBarItemDefaults.colors() 空参默认
                                 // （其 secondaryContainer 回落 M3 基线紫灰，与玫瑰色板无关）
                                 colors = NavigationBarItemDefaults.colors(
@@ -152,9 +171,20 @@ fun ClothesMateNavHost(
             composable(TopLevelDestination.Today.route) { TodayRoute() }
             composable(TopLevelDestination.Wardrobe.route) {
                 WardrobeRoute(
-                    onWardrobeClick = { id -> navController.navigate("wardrobe_detail/$id") },
+                    onWardrobeClick = { id ->
+                        navController.navigate("wardrobe_detail/$id") {
+                            launchSingleTop = true
+                        }
+                    },
                     onShowAddSheet = { showAddWardrobe = true },
+                    onEditWardrobe = { id ->
+                        editWardrobeId = id
+                        showAddWardrobe = true
+                    },
                     onShowDelete = { id -> deleteTargetId = id },
+                    // review C-02/C-11：FAB 语义是「+ 录衣服」（§6.4）。
+                    // M1-14 未实装，给它一个明确反馈而不是静默死按钮
+                    onAddClothing = { showSnack(comingSoonText) },
                 )
             }
             composable(TopLevelDestination.Outfit.route) { OutfitHomeRoute() }
@@ -177,7 +207,9 @@ fun ClothesMateNavHost(
                 ClothingDetailRoute(
                     onBack = { navController.popBackStack() },
                     onWardrobeClick = { wardrobeId ->
-                        navController.navigate("wardrobe_detail/$wardrobeId")
+                        navController.navigate("wardrobe_detail/$wardrobeId") {
+                            launchSingleTop = true
+                        }
                     },
                 )
             }
@@ -186,15 +218,18 @@ fun ClothesMateNavHost(
         // ── 衣柜相关弹层（M1-06/07/08） ──────────────────────────
         if (showAddWardrobe) {
             WardrobeEditSheet(
-                onDismiss = { showAddWardrobe = false },
-                onSaved = { _ ->
+                // 非空 = 编辑既有衣柜（预填）；null = 新建（review C-03）
+                wardrobeId = editWardrobeId,
+                onDismiss = {
                     showAddWardrobe = false
-                    // UI 文档 §7.2：保存成功 Snackbar「已添加 · {名称}」。
-                    // 名称由 ViewModel 持有，这里读不到，故用通用文案；
-                    // 精确到名称的提示见 M1-14 走「返回列表即刷新」链路时补。
-                    scope.launch {
-                        snackbarHostState.showSnackbar("衣柜已保存")
-                    }
+                    editWardrobeId = null
+                },
+                onSaved = { _, name ->
+                    showAddWardrobe = false
+                    editWardrobeId = null
+                    // UI 文档 §7.2：保存成功 Snackbar「已添加 · {名称}」
+                    // （review U-r：名称由 ViewModel 回传，无需另查库）
+                    showSnack(addedTpl.format(name))
                 },
             )
         }
@@ -205,14 +240,11 @@ fun ClothesMateNavHost(
                 onDismiss = { deleteTargetId = null },
                 onDeleted = { result: DeleteResult ->
                     deleteTargetId = null
-                    // UI 文档 §7.2：执行后 Snackbar 告知去向
-                    val message = result.transferredTo
-                        ?.let { "18 件衣物已移到 $it" }
-                        ?.replace("18", result.count.toString())
-                        ?: "${result.count} 件衣物已删除"
-                    scope.launch {
-                        snackbarHostState.showSnackbar(message)
-                    }
+                    // UI 文档 §7.2：执行后 Snackbar 告知去向。
+                    // review C-04：必须走占位符 string resource——原先用
+                    // "18 件衣物已移到 $it".replace("18", count) 作用于整串，
+                    // 目标柜名里含 18 时会被一起替换掉。
+                    showSnack(deleteSnackText(result.count, result.transferredTo))
                 },
             )
         }
