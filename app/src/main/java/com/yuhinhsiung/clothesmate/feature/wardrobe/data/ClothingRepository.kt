@@ -1,6 +1,7 @@
 package com.yuhinhsiung.clothesmate.feature.wardrobe.data
 
 import com.yuhinhsiung.clothesmate.core.database.dao.ClothingItemDao
+import com.yuhinhsiung.clothesmate.core.database.dao.OutfitDao
 import com.yuhinhsiung.clothesmate.core.database.entity.ClothingItemEntity
 import com.yuhinhsiung.clothesmate.core.model.ClothingCategory
 import com.yuhinhsiung.clothesmate.core.model.ClothingColor
@@ -72,6 +73,14 @@ interface ClothingRepository : com.yuhinhsiung.clothesmate.feature.wardrobe.doma
 
     suspend fun updateCutoutPath(id: Long, path: String?)
 
+    /**
+     * 清掉某衣物在穿搭关联表里的行（物理删除前置步骤）。
+     *
+     * 单独暴露而不是塞进 [deletePhysically]：调用方（衣柜删除 W-12）需要按
+     * 「先清关联、再删行」的顺序自己控制，且 M1-20 删穿搭时也要先判断关联。
+     */
+    suspend fun deleteCrossRefsForItem(id: Long)
+
     suspend fun deletePhysically(id: Long)
 
     /**
@@ -110,6 +119,7 @@ enum class WardrobeItemFilter {
 @Singleton
 class DefaultClothingRepository @Inject constructor(
     private val dao: ClothingItemDao,
+    private val outfitDao: OutfitDao,
 ) : ClothingRepository {
 
     override fun observeItemsInWardrobe(wardrobeId: Long): Flow<List<ClothingItem>> =
@@ -212,6 +222,10 @@ class DefaultClothingRepository @Inject constructor(
 
     override suspend fun updateCutoutPath(id: Long, path: String?) {
         dao.updateCutoutPath(id, path, System.currentTimeMillis())
+    }
+
+    override suspend fun deleteCrossRefsForItem(id: Long) {
+        outfitDao.deleteCrossRefsByClothingItem(id)
     }
 
     override suspend fun deletePhysically(id: Long) {
