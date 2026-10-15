@@ -47,4 +47,8 @@ abstract class ImageBindModule {
     @Binds
     @Singleton
     abstract fun bindImageCompressor(impl: DefaultImageCompressor): ImageCompressor
+
+    @Binds
+    @Singleton
+    abstract fun bindImageStore(impl: DefaultImageStore): ImageStore
 }

@@ -9,6 +9,8 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.media.ExifInterface
 import androidx.core.graphics.createBitmap
+import com.yuhinhsiung.clothesmate.core.di.IoDispatcher
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -51,8 +53,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class DefaultImageCompressor @Inject constructor(
-    private val context: Context,
-    private val ioDispatcher: CoroutineDispatcher,
+    @ApplicationContext private val context: Context,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ImageCompressor {
 
     override suspend fun compress(source: Source, target: File): Long =

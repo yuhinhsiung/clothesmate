@@ -1,4 +1,61 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">穿什么</string>
+
+    <!-- 底部导航 / Tab 标题 -->
+    <string name="tab_today">今日</string>
+    <string name="tab_wardrobe">衣柜</string>
+    <string name="tab_outfit">穿搭</string>
+    <string name="tab_overview">概览</string>
+
+    <!-- 衣柜列表（M1-05） -->
+    <string name="wardrobe_title">我的衣柜</string>
+    <string name="wardrobe_add">新建衣柜</string>
+    <string name="wardrobe_add_short">+</string>
+    <string name="wardrobe_item_count">%1$d 件</string>
+    <string name="wardrobe_more">更多</string>
+
+    <!-- 添加 / 编辑衣柜弹层（M1-06） -->
+    <string name="wardrobe_new_title">新建衣柜</string>
+    <string name="wardrobe_edit_title">编辑衣柜</string>
+    <string name="wardrobe_field_name">名称</string>
+    <string name="wardrobe_field_note">备注</string>
+    <string name="wardrobe_error_name_required">给衣柜起个名字吧</string>
+    <string name="wardrobe_save">保存衣柜</string>
+    <string name="wardrobe_cover_hint">添加封面 · 拍照或从相册选择</string>
+    <string name="wardrobe_cover_remove">移除封面</string>
+
+    <!-- 删除衣柜去向弹层（M1-07，UI 文档 §7.2 / mockup-20） -->
+    <string name="wardrobe_delete_title">删除「%1$s」？</string>
+    <string name="wardrobe_delete_subtitle">内有 %1$d 件衣物，删除前请选择处理方式</string>
+    <string name="wardrobe_delete_transfer">转移到其他衣柜</string>
+    <string name="wardrobe_delete_no_target">还没有其他衣柜可以转移，先新建一个吧</string>
+    <string name="wardrobe_delete_all">一并删除 %1$d 件衣物</string>
+    <string name="wardrobe_delete_irreversible">此操作不可恢复</string>
+    <string name="wardrobe_delete_confirm">确认删除</string>
+
+    <!-- 通用操作 -->
+    <string name="action_cancel">取消</string>
+
+    <!-- 衣柜详情 / 衣物（M1-09 起） -->
+    <string name="action_back">返回</string>
+    <string name="clothing_add">+ 录衣服</string>
+    <string name="clothing_incomplete_badge">待完善</string>
+    <string name="clothing_stored_badge">已收起</string>
+    <string name="filter_all">全部 %1$d</string>
+    <string name="filter_normal">正常 %1$d</string>
+    <string name="filter_stored">已收起 %1$d</string>
+    <string name="filter_incomplete">待完善 %1$d</string>
+    <string name="empty_wardrobe_no_items_title">这个衣柜还是空的</string>
+    <string name="empty_wardrobe_no_items_desc">拍张照片，录入第一件</string>
+
+    <!-- 选择衣柜弹层（M1-08，UI 文档 §7.2 / mockup-18） -->
+    <string name="wardrobe_picker_title">选择衣柜</string>
+    <string name="wardrobe_picker_create">＋ 新建衣柜</string>
+    <string name="empty_picker_no_wardrobe_title">还没有衣柜</string>
+    <string name="empty_picker_no_wardrobe_desc">衣服总要有个家</string>
+
+    <!-- 空态文案（UI 文档 §6.9 表格，M1-23 逐条落位） -->
+    <string name="empty_no_wardrobe_title">还没有衣柜，先建一个吧</string>
+    <string name="empty_no_wardrobe_desc">把家里的衣柜、衣帽架、储物箱都登记进来</string>
 </resources>

@@ -9,25 +9,41 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.feature.overview.ui.OverviewRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitHomeRoute
 import com.yuhinhsiung.clothesmate.feature.today.ui.TodayRoute
+import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.DeleteResult
+import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeDeleteDialog
+import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeDetailRoute
+import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeEditSheet
+import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobePickerSheet
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeRoute
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
 import com.yuhinhsiung.clothesmate.ui.theme.onMuted
+import kotlinx.coroutines.launch
 
 /**
  * 底部导航 4 Tab —— 开发文档 §6.1、UI 设计文档 §6.1。
@@ -64,6 +80,13 @@ fun ClothesMateNavHost(
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+
+    // 衣柜相关弹层状态（M1-06/07/08）
+    var showAddWardrobe by remember { mutableStateOf(false) }
+    var deleteTargetId by remember { mutableStateOf<Long?>(null) }
+    var showWardrobePicker by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         bottomBar = {
@@ -118,6 +141,7 @@ fun ClothesMateNavHost(
                 }
             }
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { innerPadding ->
         NavHost(
             navController = navController,
@@ -125,9 +149,59 @@ fun ClothesMateNavHost(
             modifier = Modifier.padding(innerPadding),
         ) {
             composable(TopLevelDestination.Today.route) { TodayRoute() }
-            composable(TopLevelDestination.Wardrobe.route) { WardrobeRoute() }
+            composable(TopLevelDestination.Wardrobe.route) {
+                WardrobeRoute(
+                    onWardrobeClick = { id -> navController.navigate("wardrobe_detail/$id") },
+                    onShowAddSheet = { showAddWardrobe = true },
+                    onShowDelete = { id -> deleteTargetId = id },
+                )
+            }
             composable(TopLevelDestination.Outfit.route) { OutfitHomeRoute() }
             composable(TopLevelDestination.Overview.route) { OverviewRoute() }
+            composable(
+                route = "wardrobe_detail/{wardrobeId}",
+                arguments = listOf(navArgument("wardrobeId") { type = NavType.LongType }),
+            ) { backStackEntry ->
+                val id = backStackEntry.arguments?.getLong("wardrobeId") ?: 0L
+                WardrobeDetailRoute(
+                    wardrobeId = id,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+        }
+
+        // ── 衣柜相关弹层（M1-06/07/08） ──────────────────────────
+        if (showAddWardrobe) {
+            WardrobeEditSheet(
+                onDismiss = { showAddWardrobe = false },
+                onSaved = { _ ->
+                    showAddWardrobe = false
+                    // UI 文档 §7.2：保存成功 Snackbar「已添加 · {名称}」。
+                    // 名称由 ViewModel 持有，这里读不到，故用通用文案；
+                    // 精确到名称的提示见 M1-14 走「返回列表即刷新」链路时补。
+                    scope.launch {
+                        snackbarHostState.showSnackbar("衣柜已保存")
+                    }
+                },
+            )
+        }
+
+        deleteTargetId?.let { id ->
+            WardrobeDeleteDialog(
+                wardrobeId = id,
+                onDismiss = { deleteTargetId = null },
+                onDeleted = { result: DeleteResult ->
+                    deleteTargetId = null
+                    // UI 文档 §7.2：执行后 Snackbar 告知去向
+                    val message = result.transferredTo
+                        ?.let { "18 件衣物已移到 $it" }
+                        ?.replace("18", result.count.toString())
+                        ?: "${result.count} 件衣物已删除"
+                    scope.launch {
+                        snackbarHostState.showSnackbar(message)
+                    }
+                },
+            )
         }
     }
 }

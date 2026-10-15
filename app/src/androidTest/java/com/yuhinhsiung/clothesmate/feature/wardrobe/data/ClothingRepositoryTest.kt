@@ -39,7 +39,7 @@ class ClothingRepositoryTest {
         database = Room.inMemoryDatabaseBuilder(context, ClothesMateDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        repository = DefaultClothingRepository(database.clothingItemDao())
+        repository = DefaultClothingRepository(database.clothingItemDao(), database.outfitDao())
         // 外键需要父行：先建两个衣柜
         database.wardrobeDao().insertAll(
             listOf(

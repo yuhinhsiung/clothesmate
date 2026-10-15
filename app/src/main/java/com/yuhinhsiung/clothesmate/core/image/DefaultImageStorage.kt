@@ -1,5 +1,6 @@
 package com.yuhinhsiung.clothesmate.core.image
 
+import com.yuhinhsiung.clothesmate.core.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -16,7 +17,7 @@ import javax.inject.Singleton
 @Singleton
 class DefaultImageStorage @Inject constructor(
     private val imagesRoot: File,
-    private val ioDispatcher: CoroutineDispatcher,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ImageStorage {
 
     override fun clothingOriginalFile(id: Long): File =
