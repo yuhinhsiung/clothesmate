@@ -55,6 +55,7 @@ import com.yuhinhsiung.clothesmate.feature.overview.ui.OverviewRoute
 import com.yuhinhsiung.clothesmate.feature.today.ui.TodayRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.ClothingDetailRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.DeleteResult
+import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.SearchRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeDeleteDialog
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeDetailRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeEditSheet
@@ -76,6 +77,7 @@ import com.yuhinhsiung.clothesmate.ui.navigation.OutfitTab
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitWaterfall
 import com.yuhinhsiung.clothesmate.ui.navigation.OverviewTab
 import com.yuhinhsiung.clothesmate.ui.navigation.PICKED_ITEM_IDS_KEY
+import com.yuhinhsiung.clothesmate.ui.navigation.Search
 import com.yuhinhsiung.clothesmate.ui.navigation.TodayTab
 import com.yuhinhsiung.clothesmate.ui.navigation.WardrobeDetail
 import com.yuhinhsiung.clothesmate.ui.navigation.WardrobeTab
@@ -262,6 +264,8 @@ fun ClothesMateNavHost(
                         clothingPreselectWardrobeId = null
                         showClothingPanel = true
                     },
+                    // M1-16：常驻搜索框 → 搜索结果二级页
+                    onOpenSearch = { navController.navigate(Search) },
                 )
             }
             composable<OutfitTab> {
@@ -374,6 +378,13 @@ fun ClothesMateNavHost(
                             }
                         }
                     },
+                )
+            }
+            composable<Search> {
+                SearchRoute(
+                    onBack = { navController.popBackStack() },
+                    onClothingClick = { itemId -> navController.navigate(ClothingDetail(itemId)) },
+                    onOutfitClick = { outfitId -> navController.navigate(OutfitDetailArgs(outfitId)) },
                 )
             }
             composable<ClothingForm> {

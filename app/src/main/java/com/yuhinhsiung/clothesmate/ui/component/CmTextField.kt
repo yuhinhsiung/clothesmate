@@ -17,6 +17,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -38,7 +40,7 @@ import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 fun CmTextField(
     value: String,
     onValueChange: (String) -> Unit,
-    label: String,
+    label: String? = null,
     modifier: Modifier = Modifier,
     placeholder: String? = null,
     isError: Boolean = false,
@@ -50,6 +52,8 @@ fun CmTextField(
     keyboardOptions: KeyboardOptions = KeyboardOptions(imeAction = imeAction),
     visualTransformation: VisualTransformation = VisualTransformation.None,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    /** 传入时挂在输入框上，供搜索页自动聚焦等场景 */
+    focusRequester: androidx.compose.ui.focus.FocusRequester? = null,
 ) {
     val focused by interactionSource.collectIsFocusedAsState()
     val shape = RoundedCornerShape(Dimens.Radius.s)
@@ -61,12 +65,14 @@ fun CmTextField(
     val borderWidth = if (isError || focused) 2.dp else 1.dp
 
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onMuted,
-            modifier = Modifier.padding(bottom = Dimens.Space.s1),
-        )
+        if (label != null) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onMuted,
+                modifier = Modifier.padding(bottom = Dimens.Space.s1),
+            )
+        }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -91,6 +97,7 @@ fun CmTextField(
                 visualTransformation = visualTransformation,
                 interactionSource = interactionSource,
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                modifier = focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier,
                 decorationBox = { innerTextField ->
                     Box {
                         if (value.isEmpty() && placeholder != null) {

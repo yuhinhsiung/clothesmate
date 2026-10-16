@@ -1,5 +1,7 @@
 package com.yuhinhsiung.clothesmate.feature.wardrobe.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,6 +53,7 @@ import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
 import com.yuhinhsiung.clothesmate.ui.component.ShimmerCard
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
+import com.yuhinhsiung.clothesmate.ui.theme.muted
 import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 
 /**
@@ -63,6 +66,7 @@ fun WardrobeRoute(
     onEditWardrobe: (Long) -> Unit = {},
     onShowDelete: (Long) -> Unit = {},
     onAddClothing: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
     viewModel: WardrobeListViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -73,6 +77,7 @@ fun WardrobeRoute(
         onEditWardrobe = onEditWardrobe,
         onWardrobeLongPress = onShowDelete,
         onAddClothing = onAddClothing,
+        onOpenSearch = onOpenSearch,
         viewModel = viewModel,
     )
 }
@@ -86,6 +91,7 @@ fun WardrobeListScreen(
     onEditWardrobe: (Long) -> Unit = {},
     onWardrobeLongPress: (Long) -> Unit = {},
     onAddClothing: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
     viewModel: WardrobeListViewModel = hiltViewModel(),
 ) {
     // 拖拽重排时的本地顺序：松手后才经 ViewModel 落库，拖拽中只动 UI
@@ -138,44 +144,80 @@ fun WardrobeListScreen(
             }
         },
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            when (uiState) {
-                is WardrobeListUiState.Loading -> {
-                    // 列表加载用骨架屏，不用转圈（§6.9）
-                    Column(
-                        modifier = Modifier.padding(Dimens.pagePadding),
-                        verticalArrangement = Arrangement.spacedBy(Dimens.Space.s3),
-                    ) {
-                        repeat(4) { ShimmerCard(height = 120.dp) }
+            // 常驻搜索框（§6.2 / W-07）：胶囊形 muted 底，点击进搜索结果二级页
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Dimens.pagePadding, vertical = Dimens.Space.s2)
+                    .height(48.dp)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.muted)
+                    .clickable(onClick = onOpenSearch),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = Dimens.Space.s4),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = AppIcons.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onMuted,
+                        modifier = Modifier.size(Dimens.Icon.m),
+                    )
+                    Text(
+                        text = stringResource(R.string.wardrobe_search_hint),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onMuted,
+                        modifier = Modifier.padding(start = Dimens.Space.s2),
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
+                when (uiState) {
+                    is WardrobeListUiState.Loading -> {
+                        // 列表加载用骨架屏，不用转圈（§6.9）
+                        Column(
+                            modifier = Modifier.padding(Dimens.pagePadding),
+                            verticalArrangement = Arrangement.spacedBy(Dimens.Space.s3),
+                        ) {
+                            repeat(4) { ShimmerCard(height = 120.dp) }
+                        }
                     }
-                }
 
-                is WardrobeListUiState.Empty -> {
-                    EmptyWardrobeState(onAddWardrobe = onAddWardrobe)
-                }
+                    is WardrobeListUiState.Empty -> {
+                        EmptyWardrobeState(onAddWardrobe = onAddWardrobe)
+                    }
 
-                is WardrobeListUiState.Content -> {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(Dimens.pagePadding),
-                        horizontalArrangement = Arrangement.spacedBy(Dimens.waterfallColumnSpacing),
-                        verticalArrangement = Arrangement.spacedBy(Dimens.waterfallColumnSpacing),
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        itemsIndexed(
-                            items = reordered,
-                            key = { _, w -> w.id },
-                        ) { _, wardrobe ->
-                            WardrobeCard(
-                                wardrobe = wardrobe,
-                                onClick = { onWardrobeClick(wardrobe.id) },
-                                onEdit = { onEditWardrobe(wardrobe.id) },
-                                onDelete = { onWardrobeLongPress(wardrobe.id) },
-                            )
+                    is WardrobeListUiState.Content -> {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(2),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(Dimens.pagePadding),
+                            horizontalArrangement = Arrangement.spacedBy(Dimens.waterfallColumnSpacing),
+                            verticalArrangement = Arrangement.spacedBy(Dimens.waterfallColumnSpacing),
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            itemsIndexed(
+                                items = reordered,
+                                key = { _, w -> w.id },
+                            ) { _, wardrobe ->
+                                WardrobeCard(
+                                    wardrobe = wardrobe,
+                                    onClick = { onWardrobeClick(wardrobe.id) },
+                                    onEdit = { onEditWardrobe(wardrobe.id) },
+                                    onDelete = { onWardrobeLongPress(wardrobe.id) },
+                                )
+                            }
                         }
                     }
                 }

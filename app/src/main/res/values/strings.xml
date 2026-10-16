@@ -206,4 +206,12 @@
     <string name="outfit_delete_body">照片与衣物关联将一并删除，此操作不可恢复</string>
     <string name="outfit_delete_cleared_hint">将同时彻底清除 %1$d 件已删除衣物</string>
     <string name="outfit_deleted_snackbar">已删除「%1$s」</string>
+
+    <!-- 全局搜索（M1-16，UI 文档 §7.2 / mockup-19） -->
+    <string name="wardrobe_search_hint">搜编号 / 颜色 / 类别</string>
+    <string name="search_cancel">取消</string>
+    <string name="search_section_clothing">衣物 · %1$d</string>
+    <string name="search_section_outfit">穿搭 · %1$d</string>
+    <string name="empty_search_title">没找到「%1$s」相关的衣物</string>
+    <string name="empty_search_desc">换个关键词试试，比如编号或颜色</string>
 </resources>
