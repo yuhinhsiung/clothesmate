@@ -1,6 +1,7 @@
 package com.yuhinhsiung.clothesmate.feature.outfit.ui
 
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,6 +15,7 @@ import com.yuhinhsiung.clothesmate.core.model.ClothingItem
 import com.yuhinhsiung.clothesmate.core.model.OutfitCategory
 import com.yuhinhsiung.clothesmate.core.model.OutfitDraft
 import com.yuhinhsiung.clothesmate.core.model.TagType
+import com.yuhinhsiung.clothesmate.core.model.sortTagsByFrequency
 import com.yuhinhsiung.clothesmate.core.model.toDomain
 import com.yuhinhsiung.clothesmate.feature.outfit.data.OutfitRepository
 import com.yuhinhsiung.clothesmate.ui.navigation.OUTFIT_APPEND_URI_KEY
@@ -93,11 +95,7 @@ class OutfitFormViewModel @Inject constructor(
     val sceneSuggestions: StateFlow<List<String>> = suggestionsFlow(TagType.Scene.key)
 
     private fun suggestionsFlow(type: String) = tagDictionaryDao.observeByType(type)
-        .map { rows ->
-            rows.sortedWith(
-                compareByDescending<TagDictionaryEntity> { it.usageCount }.thenBy { it.value },
-            ).map { it.value }
-        }
+        .map { rows -> sortTagsByFrequency(rows) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
@@ -115,7 +113,7 @@ class OutfitFormViewModel @Inject constructor(
         _uiState.update { it.copy(addingPhoto = true) }
         viewModelScope.launch {
             runCatching {
-                uris.map { uri -> imageStore.stash(Uri.parse(uri)) }
+                uris.map { uri -> imageStore.stash(uri.toUri()) }
             }.onSuccess { staged ->
                 stagedPhotos += staged
                 _uiState.update {
@@ -189,7 +187,7 @@ class OutfitFormViewModel @Inject constructor(
 
     /** 拍照回传（M1-18「拍照可连续追加」）：SavedStateHandle 观察到后走这里 */
     fun onAppendCaptured(uri: String) {
-        onPhotosPicked(listOf(Uri.parse(uri)))
+        onPhotosPicked(listOf(uri.toUri()))
     }
 
     /** 移除第 [position] 张。暂存图立即清理；既有照片只在保存成功后删文件。 */

@@ -102,15 +102,23 @@ class DefaultOutfitRepository @Inject constructor(
     override fun observeOutfitDetail(outfitId: Long): Flow<OutfitDetail?> =
         combine(
             outfitDao.observeById(outfitId),
-            clothingDao.observeAll(),
             wardrobeDao.observeAll(),
             categoryDao.observeAll(),
-        ) { outfit, items, wardrobes, categories ->
+        ) { outfit, wardrobes, categories ->
             outfit ?: return@combine null
+            // 衣物清单必须**含软删除行**（W-13「已删除」占位卡渲染）——
+            // 不能用 observeAll()（它过滤 deletedAt，占位卡会凭空消失，
+            // 该缺口由 OutfitRepositoryTest.softDeletedItemsAreNotCountedInDetailItems 锁定）。
+            // 已知让步：衣物字段级变更不会主动触发本流重发（combine 源不含衣物表），
+            // 从衣物编辑页返回详情页时 WhileSubscribed 重订阅会取到新值。
             val itemIds = outfitDao.getClothingIds(outfitId)
+            val items = if (itemIds.isEmpty()) {
+                emptyList()
+            } else {
+                clothingDao.findByIdsIncludingDeleted(itemIds)
+            }
             val categoryIds = categoryDao.getCategoryIdsForOutfit(outfitId).toSet()
-            val itemRefs = itemIds.mapNotNull { itemId ->
-                val entity = items.firstOrNull { it.id == itemId } ?: return@mapNotNull null
+            val itemRefs = items.mapNotNull { entity ->
                 val domain = entity.toDomain()
                 OutfitItemRef(
                     itemId = domain.id,

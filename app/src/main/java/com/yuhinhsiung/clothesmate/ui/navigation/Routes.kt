@@ -1,5 +1,6 @@
 package com.yuhinhsiung.clothesmate.ui.navigation
 
+import androidx.annotation.Keep
 import kotlinx.serialization.Serializable
 
 /**
@@ -57,7 +58,8 @@ data object Search
 
 // ── 拍照页（M1-14 / M1-18 共用）────────────────────────────────
 
-/** 拍照页拍完去哪。 */
+/** 拍照页拍完去哪。@Keep 防止 R8 混淆枚举序列化器（type-safe nav 的已知混淆面）。 */
+@Keep
 @Serializable
 enum class CaptureTarget {
     /** 录入衣物：拍完带图进衣物确认页（M1-14） */

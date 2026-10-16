@@ -1,6 +1,7 @@
 package com.yuhinhsiung.clothesmate.feature.wardrobe.ui.form
 
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.SavedStateHandle
@@ -14,6 +15,7 @@ import com.yuhinhsiung.clothesmate.core.image.StagedImage
 import com.yuhinhsiung.clothesmate.core.model.ClothingItem
 import com.yuhinhsiung.clothesmate.core.model.ClothingStatus
 import com.yuhinhsiung.clothesmate.core.model.TagType
+import com.yuhinhsiung.clothesmate.core.model.sortTagsByFrequency
 import com.yuhinhsiung.clothesmate.feature.wardrobe.data.ClothingRepository
 import com.yuhinhsiung.clothesmate.feature.wardrobe.data.WardrobeRepository
 import com.yuhinhsiung.clothesmate.feature.wardrobe.data.readLastWardrobeId
@@ -74,12 +76,7 @@ class ClothingFormViewModel @Inject constructor(
     /** 风格标签联想（M1-21）：词典里该类型的全部标签，按使用频率降序、与预设同权展示 */
     val styleSuggestions: StateFlow<List<String>> = tagDictionaryDao
         .observeByType(TagType.Style.key)
-        .map { rows ->
-            rows.sortedWith(
-                compareByDescending<com.yuhinhsiung.clothesmate.core.database.entity.TagDictionaryEntity> { it.usageCount }
-                    .thenBy { it.value },
-            ).map { it.value }
-        }
+        .map { rows -> sortTagsByFrequency(rows) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
@@ -96,7 +93,7 @@ class ClothingFormViewModel @Inject constructor(
             // 图与默认衣柜互不依赖，并行取
             val stashJob = launch {
                 runCatching {
-                    route.imageUri?.let { uri -> imageStore.stash(Uri.parse(uri)) }
+                    route.imageUri?.let { uri -> imageStore.stash(uri.toUri()) }
                 }.onSuccess { result ->
                     staged = result
                     _uiState.update {

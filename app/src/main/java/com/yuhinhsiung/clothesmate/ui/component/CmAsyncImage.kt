@@ -1,6 +1,7 @@
 package com.yuhinhsiung.clothesmate.ui.component
 
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -68,7 +69,7 @@ fun CmAsyncImage(
 
 /** 三类路径形态 → Coil 可加载对象（见组件 KDoc 的解析口径）。 */
 private fun resolveModel(storage: ImageStorage, raw: String): Any = when {
-    raw.startsWith("content://") || raw.startsWith("file://") -> Uri.parse(raw)
+    raw.startsWith("content://") || raw.startsWith("file://") -> raw.toUri()
     raw.startsWith("/") -> File(raw)
     else -> storage.toFile(raw)
         ?: File(raw) // toFile 拒绝时（路径非法）退回 File，让 Coil 报错而不是 NPE

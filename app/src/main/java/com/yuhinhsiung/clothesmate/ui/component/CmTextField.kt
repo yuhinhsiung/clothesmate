@@ -40,8 +40,8 @@ import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 fun CmTextField(
     value: String,
     onValueChange: (String) -> Unit,
-    label: String? = null,
     modifier: Modifier = Modifier,
+    label: String? = null,
     placeholder: String? = null,
     isError: Boolean = false,
     errorMessage: String? = null,

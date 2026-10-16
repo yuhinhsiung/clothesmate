@@ -11,7 +11,6 @@
     <!-- 衣柜列表（M1-05） -->
     <string name="wardrobe_title">我的衣柜</string>
     <string name="wardrobe_add">新建衣柜</string>
-    <string name="wardrobe_add_short">+</string>
     <string name="wardrobe_item_count">%1$d 件</string>
     <string name="wardrobe_more">更多</string>
     <string name="wardrobe_menu_edit">编辑</string>
@@ -33,7 +32,6 @@
     <string name="wardrobe_delete_snackbar_deleted">%1$d 件衣物已删除</string>
 
     <!-- 未实装功能的临时提示（review C-02：宁可给反馈，不可点了没反应） -->
-    <string name="coming_soon_camera">拍照录入即将上线</string>
 
     <!-- 删除衣柜去向弹层（M1-07，UI 文档 §7.2 / mockup-20） -->
     <string name="wardrobe_delete_title">删除「%1$s」？</string>
@@ -126,17 +124,12 @@
     <string name="form_wardrobe_unset">选择衣柜</string>
     <string name="form_need_wardrobe">先选择所属衣柜，衣物总要有个家</string>
     <string name="form_field_code">编号</string>
-    <string name="form_code_hint">纯数字，如 102</string>
-    <string name="form_code_empty">编号不能为空</string>
-    <string name="form_code_not_number">编号必须是纯数字</string>
-    <string name="form_code_conflict">编号 %1$s 已被使用</string>
     <string name="form_save_auto">保存 · 编号自动生成</string>
     <string name="form_save">保存</string>
     <string name="form_add_custom">＋ 自定义</string>
     <string name="form_custom_tag">自定义标签</string>
     <string name="form_custom_tag_hint">输入标签，如「极简」</string>
     <string name="clothing_saved">已保存</string>
-    <string name="clothing_edit_missing">衣物不存在或已被删除</string>
 
     <!-- 穿搭分类首页（M1-17，UI 文档 §7.4 / mockup-07） -->
     <string name="outfit_create">创建穿搭</string>
@@ -177,7 +170,6 @@
     <string name="outfit_photo_empty_hint">还没照片，先补一张上身照吧</string>
     <string name="outfit_photo_take">拍照</string>
     <string name="outfit_photo_album">从相册选择</string>
-    <string name="outfit_photo_add">补一张上身照</string>
     <string name="outfit_add_photo">+ 添加</string>
     <string name="outfit_photo_remove">移除照片</string>
     <string name="outfit_cover_chip">封面</string>

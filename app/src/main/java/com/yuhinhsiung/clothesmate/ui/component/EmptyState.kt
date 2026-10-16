@@ -160,8 +160,8 @@ fun ShimmerCard(
 /** 列表骨架占位：按 [count] 张 [ShimmerCard] 竖直堆叠，间距 8dp。 */
 @Composable
 fun ShimmerList(
-    count: Int = 4,
     modifier: Modifier = Modifier,
+    count: Int = 4,
     itemHeight: Dp = 96.dp,
 ) {
     Column(
