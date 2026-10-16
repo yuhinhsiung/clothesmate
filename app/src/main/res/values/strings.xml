@@ -214,4 +214,15 @@
     <string name="search_section_outfit">穿搭 · %1$d</string>
     <string name="empty_search_title">没找到「%1$s」相关的衣物</string>
     <string name="empty_search_desc">换个关键词试试，比如编号或颜色</string>
+
+    <!-- 概览（M1-22，UI 文档 §7.5 / mockup-10） -->
+    <string name="settings_entry">设置</string>
+    <string name="settings_coming_soon">设置页将在 AI 功能版本上线</string>
+    <string name="overview_wardrobes">衣柜</string>
+    <string name="overview_clothes">衣物</string>
+    <string name="overview_outfits">穿搭</string>
+    <string name="overview_category_chart">类别分布</string>
+    <string name="overview_total_items">总件数</string>
+    <string name="overview_color_chart">颜色分布</string>
+    <string name="empty_overview_title">录入衣物后，这里会有你的衣柜全貌</string>
 </resources>

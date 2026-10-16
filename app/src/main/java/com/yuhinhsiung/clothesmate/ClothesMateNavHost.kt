@@ -146,6 +146,7 @@ fun ClothesMateNavHost(
     // lint（LocalContextGetResourceValueCall）：在 lambda 里经 context.getString
     // 读资源不感知配置变更（切语言/字号后拿到旧值）
     val addedTpl = stringResource(R.string.wardrobe_added)
+    val settingsComingSoon = stringResource(R.string.settings_coming_soon)
     fun showSnack(message: String) {
         scope.launch { snackbarHostState.showSnackbar(message) }
     }
@@ -275,7 +276,15 @@ fun ClothesMateNavHost(
                     onOpenCategory = { id -> navController.navigate(OutfitWaterfall(categoryId = id)) },
                 )
             }
-            composable<OverviewTab> { OverviewRoute() }
+            composable<OverviewTab> {
+                OverviewRoute(
+                    // 设置页唯一入口（§6.2）；页面随 M2-05 交付，先给明确反馈
+                    onOpenSettings = { showSnack(settingsComingSoon) },
+                    onAddClothing = {
+                        navController.navigate(Capture(target = CaptureTarget.CLOTHING_NEW))
+                    },
+                )
+            }
             composable<OutfitWaterfall> {
                 OutfitWaterfallRoute(
                     onBack = { navController.popBackStack() },

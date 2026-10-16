@@ -60,6 +60,10 @@ interface WardrobeDao {
     @Query("SELECT COUNT(*) FROM wardrobe")
     suspend fun count(): Int
 
+    /** 衣柜总数（响应式，概览页 M1-22 数字卡；口径 = 用户自建总数，无内置衣柜） */
+    @Query("SELECT COUNT(*) FROM wardrobe")
+    fun observeCount(): Flow<Int>
+
     /**
      * 各衣柜衣物数量（不含软删除）—— 衣柜列表卡件数展示（W-03）。
      * 返回 wardrobeId → count 映射。
