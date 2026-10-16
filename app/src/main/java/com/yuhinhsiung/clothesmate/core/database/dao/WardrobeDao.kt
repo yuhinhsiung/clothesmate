@@ -30,6 +30,13 @@ interface WardrobeDao {
     @Query("DELETE FROM wardrobe WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    /**
+     * 只改排序权重（review D-d）：拖拽重排逐条调用，避免「findById + copy + update」
+     * 的读改写三步（N 次读 + N 次写 → N 次定向写）。
+     */
+    @Query("UPDATE wardrobe SET sortOrder = :sortOrder WHERE id = :id")
+    suspend fun updateSortOrder(id: Long, sortOrder: Int)
+
     /** 当前最大 sortOrder，新建衣柜时取 +1 追加到末尾（W-01） */
     @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM wardrobe")
     suspend fun maxSortOrder(): Int

@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.yuhinhsiung.clothesmate.core.model.ClothingStatus
 
 /**
  * 衣物 —— 开发文档 §3.2。
@@ -81,7 +82,7 @@ data class ClothingItemEntity(
     /** 最近穿着日期（epoch millis），未穿过为空 */
     val lastWornAt: Long? = null,
 
-    /** 衣物状态：`normal` 正常 / `stored` 收起 */
+    /** 衣物状态：`normal` 正常 / `stored` 收起（取值常量唯一定义在 core/model/Vocabulary.kt） */
     val status: String = ClothingStatus.NORMAL,
 
     /** 软删除标记：非空即已删除，正常查询过滤；编号不回收 */
@@ -91,9 +92,3 @@ data class ClothingItemEntity(
 
     val updatedAt: Long,
 )
-
-/** 衣物状态取值（§3.2，仅两种） */
-object ClothingStatus {
-    const val NORMAL = "normal"
-    const val STORED = "stored"
-}

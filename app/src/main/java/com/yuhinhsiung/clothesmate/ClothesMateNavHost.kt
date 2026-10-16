@@ -108,6 +108,10 @@ fun ClothesMateNavHost(
     fun deleteSnackText(count: Int, target: String?): String =
         if (target != null) transferredTpl.format(count, target) else deletedTpl.format(count)
 
+    /** 当前详情页正在看的衣柜 id（C-12：详情页「更多」菜单需要它定位目标） */
+    fun currentWardrobeId(navController: NavHostController): Long =
+        navController.currentBackStackEntry?.arguments?.getLong("wardrobeId") ?: 0L
+
     Scaffold(
         bottomBar = {
             if (shouldShowBottomBar(currentRoute)) {
@@ -192,12 +196,21 @@ fun ClothesMateNavHost(
             composable(
                 route = "wardrobe_detail/{wardrobeId}",
                 arguments = listOf(navArgument("wardrobeId") { type = NavType.LongType }),
-            ) { backStackEntry ->
-                val id = backStackEntry.arguments?.getLong("wardrobeId") ?: 0L
+            ) {
+                // review E-c：衣柜 id 由 ViewModel 从 SavedStateHandle 自取，不再经形参
                 WardrobeDetailRoute(
-                    wardrobeId = id,
                     onBack = { navController.popBackStack() },
                     onItemClick = { itemId -> navController.navigate("clothing_detail/$itemId") },
+                    // review C-02（详情页半边）：FAB / 空态按钮给明确反馈，不留死按钮
+                    onAddClothing = { showSnack(comingSoonText) },
+                    // review C-12：详情页「更多」菜单的两个去向
+                    onEditWardrobe = {
+                        editWardrobeId = currentWardrobeId(navController)
+                        showAddWardrobe = true
+                    },
+                    onDeleteWardrobe = {
+                        deleteTargetId = currentWardrobeId(navController)
+                    },
                 )
             }
             composable(
@@ -240,11 +253,14 @@ fun ClothesMateNavHost(
                 onDismiss = { deleteTargetId = null },
                 onDeleted = { result: DeleteResult ->
                     deleteTargetId = null
-                    // UI 文档 §7.2：执行后 Snackbar 告知去向。
                     // review C-04：必须走占位符 string resource——原先用
                     // "18 件衣物已移到 $it".replace("18", count) 作用于整串，
                     // 目标柜名里含 18 时会被一起替换掉。
                     showSnack(deleteSnackText(result.count, result.transferredTo))
+                    // C-12：删除若是从详情页发起的，衣柜已不存在，退回列表页
+                    if (navController.currentDestination?.route?.startsWith("wardrobe_detail") == true) {
+                        navController.popBackStack()
+                    }
                 },
             )
         }

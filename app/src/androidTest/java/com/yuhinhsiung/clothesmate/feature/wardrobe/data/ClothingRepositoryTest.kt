@@ -4,7 +4,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.yuhinhsiung.clothesmate.core.database.ClothesMateDatabase
-import com.yuhinhsiung.clothesmate.core.database.entity.ClothingStatus
+import com.yuhinhsiung.clothesmate.core.model.ClothingStatus
 import com.yuhinhsiung.clothesmate.core.model.ClothingItem
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -287,5 +287,53 @@ class ClothingRepositoryTest {
         val incomplete = repository.createItem(item("2", category = null))
         assertTrue(repository.getItem(incomplete)!!.isIncomplete)
         assertFalse(repository.getItem(1L)!!.isIncomplete)
+    }
+
+    // ── review 修复回归锁定 ────────────────────────────────────
+
+    /** review D-f：「007」与「7」必须视为同一编号（纯数字 + 去前导零归一） */
+    @Test
+    fun `编号_007归一为7且与7冲突`() = runTest {
+        val id = repository.createItem(item("007"))
+        assertEquals("入库即归一", "7", repository.getItem(id)!!.code)
+
+        // 归一后 007 与 7 是同一个编号，唯一性校验按归一值拦截
+        val failure = runCatching { repository.createItem(item("7")) }
+        assertTrue("007 与 7 应视为同号", failure.isFailure)
+        assertTrue(
+            "拒绝原因应是编号冲突而非格式",
+            failure.exceptionOrNull()?.message?.contains("已被使用") == true,
+        )
+    }
+
+    /** review D-f：非纯数字编号在写入侧被拒 */
+    @Test
+    fun `编号_非纯数字被拒`() = runTest {
+        assertTrue(runCatching { repository.createItem(item("10a")) }.isFailure)
+        val id = repository.createItem(item(" 012 "))
+        assertEquals("带空白数字允许且去前导零", "12", repository.getItem(id)!!.code)
+    }
+
+    /** review D-j：「主色 · 类别」拼接完整串整句搜索要能命中（字段级 LIKE 够不着） */
+    @Test
+    fun `搜索_拼接展示名完整串命中`() = runTest {
+        repository.createItem(item("1", colors = listOf("white"), category = "shirt"))
+        repository.createItem(item("2", colors = listOf("red"), category = "shirt"))
+
+        // 整句输入会被分词成「白」「·」「衬衫」三段 AND：
+        // 「·」单段没有任何字段能 LIKE 命中，全靠展示名 contains 兜底收口
+        val hits = repository.search("白 · 衬衫").first()
+        assertEquals(listOf("1"), hits.map { it.code })
+    }
+
+    /** review D-a：LIKE 通配符按字面匹配，输「%」不再命中全表 */
+    @Test
+    fun `搜索_通配符按字面匹配`() = runTest {
+        repository.createItem(item("1", colors = listOf("white"), category = "shirt"))
+        repository.createItem(item("2", colors = listOf("red"), category = "pants"))
+
+        // 「%」是字面字符，任何字段都不含它 → 0 命中（修复前会命中全部）
+        assertTrue(repository.search("%").first().isEmpty())
+        assertTrue(repository.search("_").first().isEmpty())
     }
 }

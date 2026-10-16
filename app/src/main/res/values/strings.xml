@@ -26,7 +26,6 @@
     <string name="wardrobe_save">保存衣柜</string>
     <string name="wardrobe_cover_hint">添加封面 · 拍照或从相册选择</string>
     <string name="wardrobe_cover_remove">移除封面</string>
-    <string name="wardrobe_saved">衣柜已保存</string>
     <string name="wardrobe_added">已添加 · %1$s</string>
 
     <!-- 删除衣柜 Snackbar（review C-04：占位符，勿用 replace 拼串） -->

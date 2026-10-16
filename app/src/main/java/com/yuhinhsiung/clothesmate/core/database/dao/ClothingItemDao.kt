@@ -74,6 +74,11 @@ interface ClothingItemDao {
     @Query("SELECT * FROM clothing_item WHERE id IN (:ids) AND deletedAt IS NULL")
     suspend fun findByIds(ids: List<Long>): List<ClothingItemEntity>
 
+    /**
+     * 单件观察。⚠️ 刻意**不过滤** `deletedAt`：衣物详情页删除后仍需拿到该行
+     * （软删只是打标记，行还在），「已删除」占位卡与 W-13 物理清除判断同源。
+     * 调用方若只要有效衣物，自行按 `deletedAt == null` 判断。
+     */
     @Query("SELECT * FROM clothing_item WHERE id = :id")
     fun observeById(id: Long): Flow<ClothingItemEntity?>
 
@@ -122,28 +127,31 @@ interface ClothingItemDao {
 
     /**
      * 搜索片段：命中编号（W-07）。分词如下方说明，由 Repository 逐 token 调用后取交集。
+     *
+     * 所有 LIKE 查询统一 `ESCAPE '\'`（review D-a）：用户输入含 `%`/`_` 时按字面匹配，
+     * 不再当作通配符命中全表。Repository 侧负责把 token 里的 `\`/`%`/`_` 转义后传入。
      */
     @Query(
         """
         SELECT * FROM clothing_item
         WHERE deletedAt IS NULL
-          AND code LIKE '%' || :query || '%'
+          AND code LIKE '%' || :query || '%' ESCAPE '\'
         ORDER BY CAST(code AS INTEGER) ASC
         """,
     )
     fun searchByCode(query: String): Flow<List<ClothingItemEntity>>
 
     /**
-     * 搜索片段：命中名称（含「主色 + 类别」拼接兜底）与类别（W-07）。
-     * 名称兜底在 Repository 层处理：`name` 为空时以「主色名 + 类别名」拼接后按本查询匹配。
+     * 搜索片段：命中名称与类别（W-07）。「主色 + 类别」拼接兜底的完整串匹配
+     * 在 Repository 侧做内存 contains（review D-j）。
      */
     @Query(
         """
         SELECT * FROM clothing_item
         WHERE deletedAt IS NULL
           AND (
-            name LIKE '%' || :query || '%'
-            OR category LIKE '%' || :query || '%'
+            name LIKE '%' || :query || '%' ESCAPE '\'
+            OR category LIKE '%' || :query || '%' ESCAPE '\'
           )
         ORDER BY CAST(code AS INTEGER) ASC
         """,
@@ -157,7 +165,7 @@ interface ClothingItemDao {
     @Query(
         """
         SELECT * FROM clothing_item
-        WHERE deletedAt IS NULL AND colors LIKE '%"' || :colorKey || '"%'
+        WHERE deletedAt IS NULL AND colors LIKE '%"' || :colorKey || '"%' ESCAPE '\'
         ORDER BY CAST(code AS INTEGER) ASC
         """,
     )
@@ -167,7 +175,7 @@ interface ClothingItemDao {
     @Query(
         """
         SELECT * FROM clothing_item
-        WHERE deletedAt IS NULL AND styleTags LIKE '%"' || :query || '"%'
+        WHERE deletedAt IS NULL AND styleTags LIKE '%"' || :query || '"%' ESCAPE '\'
         ORDER BY CAST(code AS INTEGER) ASC
         """,
     )
@@ -190,7 +198,7 @@ interface ClothingItemDao {
     @Query(
         """
         SELECT * FROM clothing_item
-        WHERE deletedAt IS NULL AND seasonTags LIKE '%"' || :query || '"%'
+        WHERE deletedAt IS NULL AND seasonTags LIKE '%"' || :query || '"%' ESCAPE '\'
         ORDER BY CAST(code AS INTEGER) ASC
         """,
     )
@@ -218,7 +226,7 @@ interface ClothingItemDao {
     @Query(
         """
         SELECT COUNT(*) FROM clothing_item
-        WHERE deletedAt IS NULL AND colors LIKE '%"' || :colorKey || '"%'
+        WHERE deletedAt IS NULL AND colors LIKE '%"' || :colorKey || '"%' ESCAPE '\'
         """,
     )
     fun observeColorCount(colorKey: String): Flow<Int>

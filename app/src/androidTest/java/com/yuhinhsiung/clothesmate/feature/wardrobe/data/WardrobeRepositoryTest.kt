@@ -5,7 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.yuhinhsiung.clothesmate.core.database.ClothesMateDatabase
 import com.yuhinhsiung.clothesmate.core.database.entity.ClothingItemEntity
-import com.yuhinhsiung.clothesmate.core.database.entity.ClothingStatus
+import com.yuhinhsiung.clothesmate.core.model.ClothingStatus
 import com.yuhinhsiung.clothesmate.core.database.entity.WardrobeEntity
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest

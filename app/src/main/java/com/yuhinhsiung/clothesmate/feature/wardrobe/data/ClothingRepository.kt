@@ -9,7 +9,7 @@ import com.yuhinhsiung.clothesmate.core.model.ClothingItem
 import com.yuhinhsiung.clothesmate.core.model.Season
 import com.yuhinhsiung.clothesmate.core.model.toDomain
 import com.yuhinhsiung.clothesmate.core.model.toEntity
-import com.yuhinhsiung.clothesmate.core.database.entity.ClothingStatus
+import com.yuhinhsiung.clothesmate.core.model.ClothingStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -170,23 +170,35 @@ class DefaultClothingRepository @Inject constructor(
         dao.countByCode(code, excludeId = 0L) > 0
 
     override suspend fun createItem(item: ClothingItem): Long {
-        require(item.code.isNotBlank()) { "编号不能为空" }
-        require(isCodeAvailable(item.code)) { "编号 ${item.code} 已被使用" }
-        return dao.insert(item.toEntity())
+        val code = normalizeCode(item.code)
+        require(isCodeAvailable(code)) { "编号 $code 已被使用" }
+        return dao.insert(item.toEntity().copy(code = code))
     }
 
     override suspend fun updateItem(item: ClothingItem) {
-        require(item.code.isNotBlank()) { "编号不能为空" }
-        require(isCodeAvailable(item.code, excludeId = item.id)) { "编号 ${item.code} 已被使用" }
+        val code = normalizeCode(item.code)
+        require(isCodeAvailable(code, excludeId = item.id)) { "编号 $code 已被使用" }
         val existing = dao.findById(item.id) ?: return
         // 保留软删除标记与创建时间：编辑不应复活已删衣物，也不应改写建档时间
         dao.update(
             item.toEntity().copy(
+                code = code,
                 deletedAt = existing.deletedAt,
                 createdAt = existing.createdAt,
                 updatedAt = System.currentTimeMillis(),
             ),
         )
+    }
+
+    /**
+     * 编号归一（review D-f）：仅允许纯数字、去前导零。
+     * 「007」与「7」必须视为同一个编号——不归一的话 UNIQUE（字符串级）拦不住两者并存，
+     * 贴在实体衣服上的两张编号贴纸会指向两件不同的衣物。
+     */
+    private fun normalizeCode(raw: String): String {
+        val trimmed = raw.trim()
+        require(trimmed.isNotEmpty() && trimmed.all { it.isDigit() }) { "编号必须是纯数字" }
+        return trimmed.trimStart('0').ifEmpty { "0" }
     }
 
     override suspend fun softDelete(id: Long): Boolean {
@@ -254,6 +266,7 @@ class DefaultClothingRepository @Inject constructor(
     /**
      * 关键词片段取交集：每个 token 必须在「编号 / 名称 / 类别 / 颜色 / 风格 / 季节」
      * 至少一处命中（DAO 各片段方法内部是 OR，token 之间是 AND）。
+     * 拼接展示名的兜底匹配在 [keywordFlow] 内完成（review D-j）。
      */
     private fun combineKeywordFlows(tokens: List<String>): Flow<List<ClothingItemEntity>> {
         if (tokens.isEmpty()) return dao.observeAll()
@@ -273,12 +286,24 @@ class DefaultClothingRepository @Inject constructor(
         }
     }
 
-    /** 单 token 的命中范围（DAO 片段 OR 组合，外加中英文枚举词翻译后的匹配） */
+    /** LIKE 通配符转义（review D-a）：DAO 侧统一 `ESCAPE '\'`，用户输入一律按字面匹配 */
+    private fun escapeLike(token: String): String =
+        token.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    /**
+     * 单 token 的命中范围（DAO 片段 OR 组合，外加中英文枚举词翻译后的匹配）。
+     *
+     * review D-j：「主色 + 类别」拼接完整串（如「白色 · 衬衫」）不是任何单个字段的
+     * 子串，字段级 LIKE 命中不了——额外 combine 一条全表 Flow，对展示名做内存
+     * contains 兜底，与 DAO 命中取并集。个人衣柜量级（百~千件）开销可忽略。
+     */
     private fun keywordFlow(token: String): Flow<List<ClothingItemEntity>> {
-        val codeFlow = dao.searchByCode(token)
-        val nameCategoryFlow = dao.searchByNameAndCategory(token)
-        val styleFlow = dao.searchByStyleTag(token)
-        val seasonFlow = dao.searchBySeasonTag(token)
+        // D-a：token 先转义再进 LIKE，输「%」「_」不再命中全表
+        val safe = escapeLike(token)
+        val codeFlow = dao.searchByCode(safe)
+        val nameCategoryFlow = dao.searchByNameAndCategory(safe)
+        val styleFlow = dao.searchByStyleTag(safe)
+        val seasonFlow = dao.searchBySeasonTag(safe)
 
         // 用户输的是中文，DB 存的是枚举 key（category / colors）——须先翻译再查，
         // 否则「红」「上衣」「衬衫」这类口语词一条都命中不了（M1-10 的实际缺口）。
@@ -305,14 +330,19 @@ class DefaultClothingRepository @Inject constructor(
             categoryFlow?.let { add(it) }
             seasonKeyFlow?.let { add(it) }
         }
-        return kotlinx.coroutines.flow.combine(flows) { lists ->
+        return kotlinx.coroutines.flow.combine(flows + listOf(dao.observeAll())) { arrays ->
+            val all = arrays.last()
             val merged = LinkedHashMap<Long, ClothingItemEntity>()
-            lists.forEach { list -> list.forEach { merged[it.id] = it } }
+            arrays.dropLast(1).forEach { list -> list.forEach { merged[it.id] = it } }
+            // 拼接展示名兜底（D-j）
+            all.asSequence()
+                .filter { entity -> entity.toDomain().displayName.contains(token) }
+                .forEach { merged[it.id] = it }
             merged.values.sortedBy { it.code.toLongOrNull() ?: Long.MAX_VALUE }
         }
     }
 
-    /** 结构化筛选 + 「主色 + 类别」拼接名的兜底匹配 */
+    /** 结构化筛选（类别 / 颜色 / 风格）；拼接展示名的兜底匹配已在 [combineKeywordFlows] 完成 */
     private suspend fun applyStructuredFilters(
         candidates: List<ClothingItemEntity>,
         categoryKey: String?,

@@ -1,5 +1,6 @@
 package com.yuhinhsiung.clothesmate.feature.wardrobe.ui
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yuhinhsiung.clothesmate.core.image.ImageStorage
@@ -10,7 +11,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -74,7 +74,7 @@ class WardrobeDeleteViewModel @Inject constructor(
         val state = _uiState.value
         val wardrobe = state.wardrobe ?: return
         viewModelScope.launch {
-            _uiState.update { it.copy(deleting = true) }
+            _uiState.update { it.copy(deleting = true, error = null) }
             val transfer = state.transferSelected
             val targetId = state.selectedTargetId
             val destiny = if (transfer && targetId != null) {
@@ -83,10 +83,10 @@ class WardrobeDeleteViewModel @Inject constructor(
                 WardrobeDeleteDestiny.DeleteAll
             }
 
-            var deletedCount = 0
-            var coverFailure: Throwable? = null
-            runCatching {
-                deletedCount = wardrobeRepository.deleteWithDestiny(
+            // review N-1：失败必须走错误上报，绝不能落入「count=0 也回调成功」的
+            // 假成功路径——删除实际失败时用户会看到「0 件衣物已删除」。
+            val deletedCount = runCatching {
+                wardrobeRepository.deleteWithDestiny(
                     wardrobeId = wardrobe.id,
                     destiny = destiny,
                 ) { deletedIds ->
@@ -95,15 +95,18 @@ class WardrobeDeleteViewModel @Inject constructor(
                         deletedIds.forEach { imageStorage.deleteClothingImages(it) }
                     }
                 }
+            }.getOrElse { failure ->
+                Log.w(TAG, "删除衣柜失败 id=${wardrobe.id}", failure)
+                _uiState.update { it.copy(deleting = false, error = "删除失败，请重试") }
+                return@launch
             }
-                .onFailure { deletedCount = 0 }
 
-            // review C-15：删衣柜必须清封面文件。衣柜行删除、Room id 不复用，
+            // review C-15：删衣柜必须清封面文件。Room id 不复用，
             // `wardrobe_cover/{id}.jpg` 会永久孤儿，M4-05 导出备份还会打包它。
             // 两种去向都要清（衣物转移走，封面仍属这个被删的衣柜）。
             // 单独 runCatching：封面清理失败不该让用户以为整个删除失败了。
             runCatching { imageStorage.deleteWardrobeCover(wardrobe.id) }
-                .onFailure { coverFailure = it }
+                .onFailure { t -> Log.w(TAG, "封面清理失败 id=${wardrobe.id}", t) }
 
             _uiState.update { it.copy(deleting = false) }
             val targetName = if (transfer) {
@@ -112,9 +115,11 @@ class WardrobeDeleteViewModel @Inject constructor(
                 null
             }
             onDone(DeleteResult(count = deletedCount, transferredTo = targetName))
-            // 封面清理失败只作记录：删除主体已成功，不应回滚（孤儿文件可后续扫）
-            coverFailure?.let { t -> t.printStackTrace() }
         }
+    }
+
+    private companion object {
+        const val TAG = "WardrobeDeleteVM"
     }
 }
 

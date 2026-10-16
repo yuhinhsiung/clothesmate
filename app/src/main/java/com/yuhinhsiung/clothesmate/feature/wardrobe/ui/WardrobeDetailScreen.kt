@@ -23,7 +23,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -34,6 +37,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -57,19 +63,24 @@ import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 /**
  * 衣柜详情页 —— 开发计划 M1-09 / 开发文档 §2.1.2 W-04/W-09、UI 文档 §7.2、mockup-04。
  *
- * 顶部信息条（件数 + 备注）+ 返回 + 更多菜单；衣物 3 列网格；
- * 状态筛选 chips（全部/正常/已收起/待完善）；空态「这个衣柜还是空的」+ [+ 录衣服]。
+ * 顶部信息条（件数 + 备注）+ 返回 + 更多菜单（review C-12：编辑/删除衣柜入口）；
+ * 衣物 3 列网格；状态筛选 chips（全部/正常/已收起/待完善）；空态「这个衣柜还是空的」+ [+ 录衣服]。
+ *
+ * 衣柜 id 不经形参传入：ViewModel 从 SavedStateHandle 自取（与 ClothingDetail 同模式，
+ * review E-c——原先的形参是死参）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WardrobeDetailRoute(
-    wardrobeId: Long,
     onBack: () -> Unit,
     onItemClick: (Long) -> Unit = {},
     onAddClothing: () -> Unit = {},
+    onEditWardrobe: () -> Unit = {},
+    onDeleteWardrobe: () -> Unit = {},
     viewModel: WardrobeDetailViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var menuExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -83,6 +94,51 @@ fun WardrobeDetailRoute(
                             .clickable(onClick = onBack)
                             .padding(Dimens.Space.s3),
                     )
+                },
+                // review C-12：M1-09 任务原文「返回 + 更多菜单」。编辑 / 删除衣柜
+                // 与列表卡「更多」同款两项
+                actions = {
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(
+                                imageVector = AppIcons.More,
+                                contentDescription = stringResource(R.string.wardrobe_more),
+                                tint = MaterialTheme.colorScheme.onMuted,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.wardrobe_menu_edit)) },
+                                leadingIcon = { Icon(AppIcons.Edit, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onEditWardrobe()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = stringResource(R.string.wardrobe_menu_delete),
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = AppIcons.Delete,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onDeleteWardrobe()
+                                },
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,

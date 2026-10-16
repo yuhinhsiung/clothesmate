@@ -121,12 +121,8 @@ class DefaultWardrobeRepository @Inject constructor(
 
     override suspend fun wardrobeCount(): Int = wardrobeDao.count()
 
-    /** 件数实时查询（不含软删除） */
-    private suspend fun clothingCountOf(id: Long): Int = wardrobeDao.observeClothingCounts()
-        .first()
-        .firstOrNull { it.wardrobeId == id }
-        ?.count
-        ?: 0
+    /** 件数实时查询（不含软删除）。review D-e：定向 COUNT，不走全表 GROUP BY */
+    private suspend fun clothingCountOf(id: Long): Int = wardrobeDao.countByWardrobe(id)
 
     override suspend fun createWardrobe(
         name: String,
@@ -163,12 +159,16 @@ class DefaultWardrobeRepository @Inject constructor(
         )
     }
 
+    /**
+     * 拖拽排序持久化（W-08）：按传入顺序重写 sortOrder。
+     *
+     * review D-d：逐条定向 UPDATE（不再 findById+copy+update 读改写）。
+     * 重排是**全覆盖写**——中途失败会留下局部旧序，但下次拖拽会整体重写，
+     * 可自愈；列表本身仍按 (sortOrder, createdAt) 双键稳定排序，不会乱。
+     */
     override suspend fun persistOrder(orderedIds: List<Long>) {
         orderedIds.forEachIndexed { index, id ->
-            val entity = wardrobeDao.findById(id) ?: return@forEachIndexed
-            if (entity.sortOrder != index) {
-                wardrobeDao.update(entity.copy(sortOrder = index))
-            }
+            wardrobeDao.updateSortOrder(id, index)
         }
     }
 
@@ -260,8 +260,17 @@ class DefaultWardrobeRepository @Inject constructor(
             throw failure
         }
 
-        // 衣柜行确认删除成功，才让调用方清文件——回滚与否都不该留下孤图
+        // 衣柜行确认删除成功，才让调用方清文件——回滚与否都不该留下孤图。
+        // review D-m：清理失败记日志后继续（行已删、删除不可回滚），不能把
+        // 已成功的删除伪装成失败，也不能无痕迹地吞掉。
         runCatching { onImagesDeleted(items.map { it.id }) }
+            .onFailure { t ->
+                android.util.Log.w(
+                    LOG_TAG,
+                    "衣物图片清理失败（衣柜 $wardrobeId 已删，孤儿文件待后续清理）",
+                    t,
+                )
+            }
         return items.size
     }
 
@@ -274,5 +283,9 @@ class DefaultWardrobeRepository @Inject constructor(
     private suspend fun deleteItemPhysically(id: Long) {
         clothingRepository.deleteCrossRefsForItem(id)
         clothingRepository.deletePhysically(id)
+    }
+
+    private companion object {
+        const val LOG_TAG = "WardrobeRepository"
     }
 }

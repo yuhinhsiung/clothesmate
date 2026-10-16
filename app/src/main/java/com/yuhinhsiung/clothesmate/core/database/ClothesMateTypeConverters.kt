@@ -1,5 +1,6 @@
 package com.yuhinhsiung.clothesmate.core.database
 
+import android.util.Log
 import androidx.room.TypeConverter
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -21,8 +22,16 @@ class ClothesMateTypeConverters {
         if (value.isNullOrEmpty()) {
             emptyList()
         } else {
+            // review D-i：坏数据静默归空数组是丢数据无痕迹——至少留一条日志，
+            // 行为本身保持宽松（不因一条坏字段炸掉整个查询）
             runCatching {
                 Json.decodeFromString(ListSerializer(String.serializer()), value)
+            }.onFailure { t ->
+                Log.w(LOG_TAG, "多值字段解析失败，按空数组降级：$value", t)
             }.getOrDefault(emptyList())
         }
+
+    private companion object {
+        const val LOG_TAG = "ClothesMateConverters"
+    }
 }

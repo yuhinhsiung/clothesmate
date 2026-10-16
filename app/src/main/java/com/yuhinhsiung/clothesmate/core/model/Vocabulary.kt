@@ -71,6 +71,9 @@ enum class ClothingCategory(
         val topLevels: List<Pair<String, String>> =
             entries.map { it.topKey to it.topDisplayName }.distinctBy { it.first }
 
+        /** 「鞋包配饰」合并词命中的三个大类（搜索框提示语用词，review D-n） */
+        private val SHOES_BAG_ACC = setOf("shoes", "bag", "acc")
+
         /**
          * 搜索别名表：用户输 中文小类名 / 中文大类名 / 英文 key → 命中的小类集合。
          *
@@ -95,7 +98,11 @@ enum class ClothingCategory(
             putIfAbsent("裤", listOfNotNull(
                 fromKey("pants"), fromKey("shorts"),
             ))
-        }
+            // review D-n：提示语里的合并词「鞋包配饰」要能命中三个大类
+            putIfAbsent(
+                "鞋包配饰",
+                ClothingCategory.entries.filter { it.topKey in SHOES_BAG_ACC },
+            )        }
     }
 }
 
@@ -165,6 +172,12 @@ enum class Season(val key: String, val displayName: String) {
                 put(season.displayName, season)
                 put(season.key, season)
             }
+            // review D-n：双字口语——用户会输「春季 / 夏天 / 秋天 / 冬天」，
+            // 词表只有单字「春/夏/秋/冬」，不补就搜不到
+            put("春季", Spring)
+            put("夏天", Summer)
+            put("秋天", Autumn)
+            put("冬天", Winter)
         }
     }
 }

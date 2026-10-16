@@ -76,7 +76,14 @@ fun ClothingItemEntity.toDomain(): ClothingItem = ClothingItem(
     updatedAt = updatedAt,
 )
 
-fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
+/**
+ * 领域模型 → 实体。
+ *
+ * ⚠️ review D-h：[deletedAt] 显式传参，**不再默认 null**——直接写库的场景
+ * （编辑衣物）必须带上库里的原值，误传 null 会把软删除标记清掉、变相复活已删衣物。
+ * Repository 的 updateItem 路径用 `existing.deletedAt` 回填。
+ */
+fun ClothingItem.toEntity(deletedAt: Long? = null): ClothingItemEntity = ClothingItemEntity(
     id = id,
     code = code,
     wardrobeId = wardrobeId,
@@ -92,7 +99,7 @@ fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
     wearCount = wearCount,
     lastWornAt = lastWornAt,
     status = status,
-    deletedAt = null,
+    deletedAt = deletedAt,
     createdAt = createdAt,
     updatedAt = updatedAt,
 )

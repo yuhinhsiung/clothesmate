@@ -243,23 +243,31 @@ private fun CoverPicker(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
             )
-            // 换封面：右上角圆形关闭钮
+            // 换封面：右上角圆形关闭钮。
+            // review C-18：外壳扩到 48dp 热区（§10 触控目标下限），
+            // 视觉圆钮仍为 24dp 居中——原实现 24dp 即点即热区，硬违反规范。
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(Dimens.Space.s2)
-                    .size(Dimens.minTouchTarget / 2)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(Dimens.Space.s1)
+                    .size(Dimens.minTouchTarget)
                     .clickable(onClick = onClear),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = AppIcons.Close,
-                    contentDescription = stringResource(R.string.wardrobe_cover_remove),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(Dimens.Icon.s),
-                )
+                Box(
+                    modifier = Modifier
+                        .size(Dimens.minTouchTarget / 2)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surface),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = AppIcons.Close,
+                        contentDescription = stringResource(R.string.wardrobe_cover_remove),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(Dimens.Icon.s),
+                    )
+                }
             }
         } else if (compressing) {
             CircularProgressIndicator(

@@ -74,8 +74,15 @@ class DataStoreCodeCounterStore @Inject constructor(
     override suspend fun currentValue(): Long =
         dataStore.data.map { it[KEY_CODE_COUNTER] ?: CodeCounterStore.INITIAL_CODE }.first()
 
-    override suspend fun setValue(value: Long) {
+    /**
+     * 覆盖计数器（仅导入恢复用，正常业务流程不该调）。
+     *
+     * review D-c：必须与 [nextCode] 共用同一把互斥锁——M4-05 导入恢复若与并发的
+     * 自动发放交错，先读后写会把刚发放的计数器值覆盖回去，造成编号重复发放。
+     */
+    override suspend fun setValue(value: Long) = mutex.withLock {
         dataStore.edit { it[KEY_CODE_COUNTER] = value }
+        Unit
     }
 
     override suspend fun nextCode(existsConflict: suspend (Long) -> Boolean): Long =

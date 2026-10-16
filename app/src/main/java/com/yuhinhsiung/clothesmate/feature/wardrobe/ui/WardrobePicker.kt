@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -22,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -62,10 +64,17 @@ private fun WardrobePickerRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    // review U-p：整行一个 selectable 节点 + RadioButton(onClick = null)，
+    // TalkBack 里一行读成一条「单选，已/未选中」；原先整行 clickable + 可点 RadioButton
+    // 是两个可聚焦目标，要跳两跳。
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .selectable(
+                selected = selected,
+                role = Role.RadioButton,
+                onClick = onClick,
+            )
             .padding(horizontal = Dimens.pagePadding, vertical = Dimens.Space.s3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -109,7 +118,7 @@ private fun WardrobePickerRow(
 
         RadioButton(
             selected = selected,
-            onClick = onClick,
+            onClick = null,
             colors = RadioButtonDefaults.colors(
                 selectedColor = MaterialTheme.colorScheme.primary,
             ),
@@ -128,14 +137,19 @@ fun WardrobeRadioRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onSelect)
+            // review U-p：同 WardrobePickerRow，行级 selectable 合并语义
+            .selectable(
+                selected = selected,
+                role = Role.RadioButton,
+                onClick = onSelect,
+            )
             .padding(vertical = Dimens.Space.s2),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Start,
     ) {
         RadioButton(
             selected = selected,
-            onClick = onSelect,
+            onClick = null,
             colors = RadioButtonDefaults.colors(
                 selectedColor = MaterialTheme.colorScheme.primary,
             ),
