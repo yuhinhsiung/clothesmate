@@ -63,4 +63,12 @@ interface OutfitCategoryDao {
     /** 某分类的穿搭套数 */
     @Query("SELECT COUNT(*) FROM outfit_category_cross_ref WHERE categoryId = :categoryId")
     fun observeOutfitCount(categoryId: Long): Flow<Int>
+
+    /** 全部分类-穿搭关联（响应式）——分类首页套数与封面联查（M1-17） */
+    @Query("SELECT outfitId, categoryId FROM outfit_category_cross_ref")
+    fun observeAllRefs(): Flow<List<OutfitCategoryCrossRef>>
+
+    /** 某穿搭所属的全部分类 id（穿搭详情 M1-20 / 编辑预填 M1-18） */
+    @Query("SELECT categoryId FROM outfit_category_cross_ref WHERE outfitId = :outfitId")
+    suspend fun getCategoryIdsForOutfit(outfitId: Long): List<Long>
 }

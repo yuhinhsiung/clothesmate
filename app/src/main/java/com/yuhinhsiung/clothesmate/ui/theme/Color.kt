@@ -79,6 +79,8 @@ val DarkOnError = Color(0xFF4A0B0B)
 val OnPhoto = Color(0xFFFFFFFF)
 /** 照片上的深色渐变蒙层（瀑布卡名称衬底、拍照页底部操作区） */
 val PhotoScrim = Color(0xB3000000)
+/** 照片上的轻蒙层：瀑布卡底部渐变的落色、件数 chip 的 40% 黑底（UI 文档 §6.5） */
+val PhotoScrimLight = Color(0x66000000)
 
 /** 类别分布环形图：玫瑰 → 粉 → 金 → 中性灰（UI 文档 §7.5） */
 val ChartCategoryColors = listOf(

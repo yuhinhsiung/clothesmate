@@ -46,8 +46,12 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.yuhinhsiung.clothesmate.feature.addclothing.ui.CaptureScreen
-import com.yuhinhsiung.clothesmate.feature.overview.ui.OverviewRoute
+import com.yuhinhsiung.clothesmate.feature.outfit.ui.ClothingPickerRoute
+import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitDetailRoute
+import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitFormRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitHomeRoute
+import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitWaterfallRoute
+import com.yuhinhsiung.clothesmate.feature.overview.ui.OverviewRoute
 import com.yuhinhsiung.clothesmate.feature.today.ui.TodayRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.ClothingDetailRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.DeleteResult
@@ -63,9 +67,15 @@ import com.yuhinhsiung.clothesmate.ui.navigation.CaptureTarget
 import com.yuhinhsiung.clothesmate.ui.navigation.CLOTHING_EDIT_SAVED_KEY
 import com.yuhinhsiung.clothesmate.ui.navigation.ClothingDetail
 import com.yuhinhsiung.clothesmate.ui.navigation.ClothingForm
+import com.yuhinhsiung.clothesmate.ui.navigation.ClothingPicker
 import com.yuhinhsiung.clothesmate.ui.navigation.OUTFIT_APPEND_URI_KEY
+import com.yuhinhsiung.clothesmate.ui.navigation.OUTFIT_SAVED_KEY
+import com.yuhinhsiung.clothesmate.ui.navigation.OutfitDetailArgs
+import com.yuhinhsiung.clothesmate.ui.navigation.OutfitForm
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitTab
+import com.yuhinhsiung.clothesmate.ui.navigation.OutfitWaterfall
 import com.yuhinhsiung.clothesmate.ui.navigation.OverviewTab
+import com.yuhinhsiung.clothesmate.ui.navigation.PICKED_ITEM_IDS_KEY
 import com.yuhinhsiung.clothesmate.ui.navigation.TodayTab
 import com.yuhinhsiung.clothesmate.ui.navigation.WardrobeDetail
 import com.yuhinhsiung.clothesmate.ui.navigation.WardrobeTab
@@ -124,6 +134,9 @@ fun ClothesMateNavHost(
     var showClothingPanel by rememberSaveable { mutableStateOf(false) }
     var clothingPreselectWardrobeId by rememberSaveable { mutableStateOf<Long?>(null) }
 
+    // M1-18：创建穿搭入口面板（拍照 / 相册多选 / 跳过）
+    var showOutfitPanel by rememberSaveable { mutableStateOf(false) }
+
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -151,6 +164,15 @@ fun ClothesMateNavHost(
             navController.navigate(
                 ClothingForm(imageUri = it.toString(), wardrobeId = clothingPreselectWardrobeId),
             )
+        }
+    }
+
+    // M1-18：穿搭照片多选（上限 9）
+    val outfitPhotosPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(Dimens.MaxPhotos),
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            navController.navigate(OutfitForm(photoUris = uris.joinToString("\n") { it.toString() }))
         }
     }
 
@@ -242,8 +264,56 @@ fun ClothesMateNavHost(
                     },
                 )
             }
-            composable<OutfitTab> { OutfitHomeRoute() }
+            composable<OutfitTab> {
+                OutfitHomeRoute(
+                    onCreateOutfit = { showOutfitPanel = true },
+                    onOpenAllOutfits = { navController.navigate(OutfitWaterfall(categoryId = null)) },
+                    onOpenCategory = { id -> navController.navigate(OutfitWaterfall(categoryId = id)) },
+                )
+            }
             composable<OverviewTab> { OverviewRoute() }
+            composable<OutfitWaterfall> {
+                OutfitWaterfallRoute(
+                    onBack = { navController.popBackStack() },
+                    onOutfitClick = { outfitId -> navController.navigate(OutfitDetailArgs(outfitId)) },
+                    onCreateOutfit = { showOutfitPanel = true },
+                )
+            }
+            composable<OutfitDetailArgs> {
+                OutfitDetailRoute(
+                    onBack = { navController.popBackStack() },
+                    onEdit = { outfitId -> navController.navigate(OutfitForm(outfitId = outfitId)) },
+                    onItemDetailClick = { itemId -> navController.navigate(ClothingDetail(itemId)) },
+                )
+            }
+            composable<OutfitForm> {
+                OutfitFormRoute(
+                    onBack = { navController.popBackStack() },
+                    // 创建 → 回穿搭分类首页；编辑 → 回详情页（回执触发 Snackbar）
+                    onSaved = {
+                        val isEdit = navController.currentBackStackEntry
+                            ?.toRouteOrNull<OutfitForm>()?.outfitId != null
+                        if (isEdit) {
+                            navController.previousBackStackEntry
+                                ?.savedStateHandle?.set(OUTFIT_SAVED_KEY, true)
+                        }
+                        navController.popBackStack()
+                    },
+                    onOpenPicker = { navController.navigate(ClothingPicker) },
+                    onOpenCapture = {
+                        navController.navigate(Capture(target = CaptureTarget.OUTFIT_APPEND))
+                    },
+                )
+            }
+            composable<ClothingPicker> {
+                ClothingPickerRoute(
+                    onDone = { ids ->
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle?.set(PICKED_ITEM_IDS_KEY, ArrayList(ids))
+                        navController.popBackStack()
+                    },
+                )
+            }
             composable<WardrobeDetail> {
                 // review E-c：衣柜 id 由 ViewModel 从 SavedStateHandle 自取，不再经形参
                 WardrobeDetailRoute(
@@ -407,6 +477,60 @@ fun ClothesMateNavHost(
                                         ActivityResultContracts.PickVisualMedia.ImageOnly,
                                     ),
                                 )
+                            },
+                        ),
+                    ),
+                )
+            }
+        }
+
+        // ── 创建穿搭入口面板（M1-18，§7.4：拍照 / 相册多选 / 跳过） ──
+        if (showOutfitPanel) {
+            @OptIn(ExperimentalMaterial3Api::class)
+            ModalBottomSheet(
+                onDismissRequest = { showOutfitPanel = false },
+                sheetState = androidx.compose.material3.rememberModalBottomSheetState(
+                    skipPartiallyExpanded = true,
+                ),
+                dragHandle = null,
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(
+                    topStart = Dimens.Radius.xl,
+                    topEnd = Dimens.Radius.xl,
+                ),
+            ) {
+                FabActionPanel(
+                    title = stringResource(R.string.outfit_create),
+                    actions = listOf(
+                        FabAction(
+                            icon = AppIcons.PhotoCamera,
+                            title = stringResource(R.string.outfit_photo_take),
+                            description = stringResource(R.string.outfit_panel_camera_desc),
+                            onClick = {
+                                showOutfitPanel = false
+                                navController.navigate(Capture(target = CaptureTarget.OUTFIT_NEW))
+                            },
+                        ),
+                        FabAction(
+                            icon = AppIcons.Image,
+                            title = stringResource(R.string.outfit_photo_album),
+                            description = stringResource(R.string.outfit_panel_album_desc),
+                            onClick = {
+                                showOutfitPanel = false
+                                outfitPhotosPicker.launch(
+                                    PickVisualMediaRequest(
+                                        ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                    ),
+                                )
+                            },
+                        ),
+                        FabAction(
+                            icon = AppIcons.Edit,
+                            title = stringResource(R.string.outfit_panel_skip),
+                            description = stringResource(R.string.outfit_panel_skip_desc),
+                            onClick = {
+                                showOutfitPanel = false
+                                navController.navigate(OutfitForm())
                             },
                         ),
                     ),

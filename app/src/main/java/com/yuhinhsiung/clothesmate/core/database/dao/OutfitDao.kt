@@ -66,6 +66,10 @@ interface OutfitDao {
     @Query("SELECT outfitId, clothingItemId FROM outfit_item_cross_ref")
     suspend fun getAllItemRefs(): List<OutfitItemCrossRef>
 
+    /** 全部衣物关联（响应式版）——瀑布卡件数 chip、穿搭列表联查（M1-19） */
+    @Query("SELECT outfitId, clothingItemId FROM outfit_item_cross_ref")
+    fun observeItemRefs(): Flow<List<OutfitItemCrossRef>>
+
     /** 某衣物出现在哪些穿搭里（一衣多穿 W-10 / M4-03） */
     @Query("SELECT outfitId FROM outfit_item_cross_ref WHERE clothingItemId = :clothingItemId")
     suspend fun getOutfitIdsForItem(clothingItemId: Long): List<Long>

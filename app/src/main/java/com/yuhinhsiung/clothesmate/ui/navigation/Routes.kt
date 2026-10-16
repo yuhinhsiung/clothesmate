@@ -86,9 +86,9 @@ data class Capture(
 @Serializable
 data class OutfitWaterfall(val categoryId: Long? = null)
 
-/** 穿搭详情（M1-20） */
+/** 穿搭详情（M1-20）。命名避让核心领域模型 `core.model.OutfitDetail`，故带 Args 后缀。 */
 @Serializable
-data class OutfitDetail(val outfitId: Long)
+data class OutfitDetailArgs(val outfitId: Long)
 
 /**
  * 穿搭表单 —— M1-18 创建流程的确认穿搭信息页，编辑复用（预填）。

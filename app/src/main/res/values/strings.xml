@@ -137,4 +137,73 @@
     <string name="form_custom_tag_hint">输入标签，如「极简」</string>
     <string name="clothing_saved">已保存</string>
     <string name="clothing_edit_missing">衣物不存在或已被删除</string>
+
+    <!-- 穿搭分类首页（M1-17，UI 文档 §7.4 / mockup-07） -->
+    <string name="outfit_create">创建穿搭</string>
+    <string name="outfit_all_title">全部穿搭</string>
+    <string name="outfit_count">%1$d 套</string>
+    <string name="outfit_category_more">更多</string>
+    <string name="outfit_category_rename">重命名</string>
+    <string name="outfit_category_delete">删除</string>
+    <string name="outfit_rename_title">重命名分类</string>
+    <string name="outfit_category_name_label">分类名</string>
+    <string name="outfit_delete_category_title">删除分类「%1$s」？</string>
+    <string name="outfit_delete_category_body">%1$d 套穿搭将移出本分类（穿搭本身保留；不再属于任何分类的归入「未分类」）</string>
+
+    <!-- 瀑布流（M1-19，mockup-08） -->
+    <string name="outfit_card_count">%1$d 件</string>
+    <string name="empty_no_outfit_title">把喜欢的搭配存下来，早上不纠结</string>
+    <string name="empty_no_outfit_desc">从衣柜里挑几件，组成一套</string>
+    <string name="empty_category_no_outfit_title">这个分类还没有穿搭</string>
+    <string name="empty_category_no_outfit_desc">创建穿搭时勾选本分类即可</string>
+    <string name="empty_outfit_filter_none_title">没有符合条件的穿搭</string>
+
+    <!-- 确认穿搭信息页（M1-18，mockup-15/16） -->
+    <string name="outfit_form_title_create">创建穿搭</string>
+    <string name="outfit_form_title_edit">编辑穿搭</string>
+    <string name="outfit_panel_camera_desc">拍一张上身照（可连续追加）</string>
+    <string name="outfit_panel_album_desc">从相册多选穿搭照片</string>
+    <string name="outfit_panel_skip">跳过，先创建</string>
+    <string name="outfit_panel_skip_desc">不传照片，之后可在编辑页补传</string>
+    <string name="outfit_section_items">包含衣物</string>
+    <string name="outfit_items_count">已选 %1$d 件</string>
+    <string name="outfit_add_item">+ 添加</string>
+    <string name="outfit_remove_item">移除该衣物</string>
+    <string name="outfit_section_categories">所属分类</string>
+    <string name="outfit_new_category">＋ 新建分类</string>
+    <string name="outfit_section_scene">适合场景</string>
+    <string name="outfit_need_items">至少选择 1 件衣物</string>
+    <string name="outfit_save">保存穿搭</string>
+    <string name="outfit_photo_empty_hint">还没照片，先补一张上身照吧</string>
+    <string name="outfit_photo_take">拍照</string>
+    <string name="outfit_photo_album">从相册选择</string>
+    <string name="outfit_photo_add">补一张上身照</string>
+    <string name="outfit_add_photo">+ 添加</string>
+    <string name="outfit_photo_remove">移除照片</string>
+    <string name="outfit_cover_chip">封面</string>
+
+    <!-- 衣物选择器（M1-18，mockup-16） -->
+    <string name="picker_title">选择衣物</string>
+    <string name="picker_search_label">搜索衣物</string>
+    <string name="picker_selected_count">已选 %1$d 件</string>
+    <string name="picker_done">完成</string>
+    <string name="picker_stored_toggle">已收起 %1$d</string>
+    <string name="filter_wardrobe_all">全部衣柜</string>
+    <string name="filter_category_all">全部类别</string>
+    <string name="empty_picker_no_items_title">没有可选的衣物</string>
+    <string name="empty_picker_no_items_desc">先去录入几件衣物，再来组成穿搭</string>
+
+    <!-- 穿搭详情（M1-20，mockup-09） -->
+    <string name="outfit_detail_categories">所属分类</string>
+    <string name="outfit_detail_wear">穿着</string>
+    <string name="outfit_wear_zero">还没穿过</string>
+    <string name="outfit_wear_one">穿过 1 次</string>
+    <string name="outfit_wear_n">穿过 %1$d 次</string>
+    <string name="outfit_detail_items">衣物清单 · %1$d 件</string>
+    <string name="outfit_item_deleted">已删除</string>
+    <string name="outfit_wear_today">今天穿这套</string>
+    <string name="outfit_delete_title">删除「%1$s」？</string>
+    <string name="outfit_delete_body">照片与衣物关联将一并删除，此操作不可恢复</string>
+    <string name="outfit_delete_cleared_hint">将同时彻底清除 %1$d 件已删除衣物</string>
+    <string name="outfit_deleted_snackbar">已删除「%1$s」</string>
 </resources>
