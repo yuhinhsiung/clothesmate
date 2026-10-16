@@ -1,5 +1,6 @@
 package com.yuhinhsiung.clothesmate
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
@@ -21,69 +22,79 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.annotation.StringRes
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
-import com.yuhinhsiung.clothesmate.R
+import androidx.navigation.toRoute
 import com.yuhinhsiung.clothesmate.feature.overview.ui.OverviewRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitHomeRoute
 import com.yuhinhsiung.clothesmate.feature.today.ui.TodayRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.DeleteResult
+import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.ClothingDetailRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeDeleteDialog
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeDetailRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeEditSheet
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobePickerSheet
-import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.ClothingDetailRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeRoute
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
+import com.yuhinhsiung.clothesmate.ui.navigation.ClothingDetail
+import com.yuhinhsiung.clothesmate.ui.navigation.OutfitTab
+import com.yuhinhsiung.clothesmate.ui.navigation.OverviewTab
+import com.yuhinhsiung.clothesmate.ui.navigation.TodayTab
+import com.yuhinhsiung.clothesmate.ui.navigation.WardrobeDetail
+import com.yuhinhsiung.clothesmate.ui.navigation.WardrobeTab
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
 import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 import kotlinx.coroutines.launch
+import kotlin.reflect.KClass
 
 /**
  * 底部导航 4 Tab —— 开发文档 §6.1、UI 设计文档 §6.1。
  *
  * 图标经 `AppIcons` 集中引用（UI 文档 §5.1 清单，字形核对见
  * `design-system/clothesmate/pages/icon-mapping-override.md`）。
- *
- * P0 阶段选中/未选中暂用同一字形（Rounded），仅靠颜色区分；引入 Outlined 线性变体
- * 属 M1-05 实装范围（见 override 文档 C-04 记录）。
+ * 选中/未选中共用同一字形（Rounded），仅靠颜色区分（review C-14 双字形项维持记录）。
  */
 enum class TopLevelDestination(
-    val route: String,
-    /** 标签文案走资源（review E-a：原先硬编码在枚举里，`tab_*` 四条 string 成死资源） */
+    val route: Any,
+    val routeClass: KClass<*>,
+    /** 标签文案走资源（review E-a） */
     @StringRes val labelRes: Int,
     val icon: ImageVector,
 ) {
-    Today(route = "today", labelRes = R.string.tab_today, icon = AppIcons.Today),
-    Wardrobe(route = "wardrobe", labelRes = R.string.tab_wardrobe, icon = AppIcons.Wardrobe),
-    Outfit(route = "outfit", labelRes = R.string.tab_outfit, icon = AppIcons.Outfit),
-    Overview(route = "overview", labelRes = R.string.tab_overview, icon = AppIcons.Overview),
+    Today(TodayTab, TodayTab::class, R.string.tab_today, AppIcons.Today),
+    Wardrobe(WardrobeTab, WardrobeTab::class, R.string.tab_wardrobe, AppIcons.Wardrobe),
+    Outfit(OutfitTab, OutfitTab::class, R.string.tab_outfit, AppIcons.Outfit),
+    Overview(OverviewTab, OverviewTab::class, R.string.tab_overview, AppIcons.Overview),
 }
 
-/**
- * 显隐规则：仅 4 个一级 Tab 页显示底部导航；二级页（详情 / 编辑 / 录入流程 /
- * 搜索结果 / 选择器）一律隐藏，返回依赖系统返回手势 / 顶部返回按钮。
- * UI 设计文档 §6.1 / 开发计划 P0-06。
- */
-private val bottomBarVisibleRoutes: Set<String> = TopLevelDestination.entries.map { it.route }.toSet()
+/** 是否有 FAB 悬浮在当前页（U-h：Snackbar 需上移避开 FAB）——目前仅衣柜列表 / 衣柜详情。 */
+private fun hasFloatingFab(entry: NavBackStackEntry?): Boolean =
+    entry?.destination?.hasRouteAny(WardrobeTab::class, WardrobeDetail::class) == true
 
-fun shouldShowBottomBar(route: String?): Boolean = route in bottomBarVisibleRoutes
+/** @Suppress 仅为收敛 `KClass<*>` 到 `KClass<Any>` 的静态类型；运行时传入的都是真实路由类。 */
+@Suppress("UNCHECKED_CAST")
+private fun androidx.navigation.NavDestination.hasRouteAny(
+    vararg classes: KClass<*>,
+): Boolean = classes.any { hasRoute(it as KClass<Any>) }
 
 @Composable
 fun ClothesMateNavHost(
     navController: NavHostController = rememberNavController(),
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = backStackEntry?.destination?.route
+    val currentDestination = backStackEntry?.destination
+    val showBottomBar = TopLevelDestination.entries.any { dest ->
+        currentDestination?.hasRouteAny(dest.routeClass) == true
+    }
 
     // 衣柜相关弹层状态（M1-06/07/08）。rememberSaveable：旋转/深色切换不丢（review C-06）
     var showAddWardrobe by rememberSaveable { mutableStateOf(false) }
@@ -101,20 +112,18 @@ fun ClothesMateNavHost(
     fun showSnack(message: String) {
         scope.launch { snackbarHostState.showSnackbar(message) }
     }
-    // 删除 Snackbar 的两条模板（review C-04：占位符，勿用 replace 拼串）。
-    // 两模板都带参，故在 Composable 作用域取字符串、参数由调用方提供
     val transferredTpl = stringResource(R.string.wardrobe_delete_snackbar_transferred)
     val deletedTpl = stringResource(R.string.wardrobe_delete_snackbar_deleted)
     fun deleteSnackText(count: Int, target: String?): String =
         if (target != null) transferredTpl.format(count, target) else deletedTpl.format(count)
 
     /** 当前详情页正在看的衣柜 id（C-12：详情页「更多」菜单需要它定位目标） */
-    fun currentWardrobeId(navController: NavHostController): Long =
-        navController.currentBackStackEntry?.arguments?.getLong("wardrobeId") ?: 0L
+    fun currentWardrobeId(): Long =
+        backStackEntry?.toRouteOrNull<WardrobeDetail>()?.wardrobeId ?: 0L
 
     Scaffold(
         bottomBar = {
-            if (shouldShowBottomBar(currentRoute)) {
+            if (showBottomBar) {
                 Column {
                     // NavigationBar 无内建顶部分割线，按 UI 文档 §6.1 自补一条 outline 细线
                     HorizontalDivider(
@@ -127,13 +136,13 @@ fun ClothesMateNavHost(
                         tonalElevation = Dimens.Elevation.none,
                     ) {
                         TopLevelDestination.entries.forEach { destination ->
-                            val selected = backStackEntry?.destination?.hierarchy
-                                ?.any { it.route == destination.route } == true
+                            val selected = currentDestination?.hasRouteAny(destination.routeClass) == true
                             NavigationBarItem(
                                 selected = selected,
                                 onClick = {
                                     if (!selected) {
-                                        navController.navigate(destination.route) {
+                                        @Suppress("UNCHECKED_CAST")
+                                        navController.navigate(destination.routeClass as KClass<Any>) {
                                             // 一级页之间切换：单例栈，不堆叠历史
                                             popUpTo(navController.graph.findStartDestination().id) {
                                                 saveState = true
@@ -165,62 +174,62 @@ fun ClothesMateNavHost(
                 }
             }
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            // U-h：有 FAB 的页面 Snackbar 上移，避免压在「+ 录衣服」按钮上（§6.8「避开 FAB」）
+            val bottomGap = if (hasFloatingFab(backStackEntry)) {
+                Dimens.fabSize + Dimens.Space.s4
+            } else {
+                0.dp
+            }
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.padding(bottom = bottomGap),
+            )
+        },
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = TopLevelDestination.Today.route,
+            startDestination = TodayTab,
             modifier = Modifier.padding(innerPadding),
         ) {
-            composable(TopLevelDestination.Today.route) { TodayRoute() }
-            composable(TopLevelDestination.Wardrobe.route) {
+            composable<TodayTab> { TodayRoute() }
+            composable<WardrobeTab> {
                 WardrobeRoute(
-                    onWardrobeClick = { id ->
-                        navController.navigate("wardrobe_detail/$id") {
-                            launchSingleTop = true
-                        }
-                    },
+                    onWardrobeClick = { id -> navController.navigate(WardrobeDetail(id)) },
                     onShowAddSheet = { showAddWardrobe = true },
                     onEditWardrobe = { id ->
                         editWardrobeId = id
                         showAddWardrobe = true
                     },
                     onShowDelete = { id -> deleteTargetId = id },
-                    // review C-02/C-11：FAB 语义是「+ 录衣服」（§6.4）。
-                    // M1-14 未实装，给它一个明确反馈而不是静默死按钮
+                    // review C-02/C-11：FAB 语义是「+ 录衣服」（§6.4）。M1-14 实装前给反馈
                     onAddClothing = { showSnack(comingSoonText) },
                 )
             }
-            composable(TopLevelDestination.Outfit.route) { OutfitHomeRoute() }
-            composable(TopLevelDestination.Overview.route) { OverviewRoute() }
-            composable(
-                route = "wardrobe_detail/{wardrobeId}",
-                arguments = listOf(navArgument("wardrobeId") { type = NavType.LongType }),
-            ) {
+            composable<OutfitTab> { OutfitHomeRoute() }
+            composable<OverviewTab> { OverviewRoute() }
+            composable<WardrobeDetail> {
                 // review E-c：衣柜 id 由 ViewModel 从 SavedStateHandle 自取，不再经形参
                 WardrobeDetailRoute(
                     onBack = { navController.popBackStack() },
-                    onItemClick = { itemId -> navController.navigate("clothing_detail/$itemId") },
-                    // review C-02（详情页半边）：FAB / 空态按钮给明确反馈，不留死按钮
+                    onItemClick = { itemId -> navController.navigate(ClothingDetail(itemId)) },
+                    // review C-02（详情页半边）：M1-14 实装前给反馈，不留死按钮
                     onAddClothing = { showSnack(comingSoonText) },
                     // review C-12：详情页「更多」菜单的两个去向
                     onEditWardrobe = {
-                        editWardrobeId = currentWardrobeId(navController)
+                        editWardrobeId = currentWardrobeId()
                         showAddWardrobe = true
                     },
                     onDeleteWardrobe = {
-                        deleteTargetId = currentWardrobeId(navController)
+                        deleteTargetId = currentWardrobeId()
                     },
                 )
             }
-            composable(
-                route = "clothing_detail/{itemId}",
-                arguments = listOf(navArgument("itemId") { type = NavType.LongType }),
-            ) {
+            composable<ClothingDetail> {
                 ClothingDetailRoute(
                     onBack = { navController.popBackStack() },
                     onWardrobeClick = { wardrobeId ->
-                        navController.navigate("wardrobe_detail/$wardrobeId") {
+                        navController.navigate(WardrobeDetail(wardrobeId)) {
                             launchSingleTop = true
                         }
                     },
@@ -240,8 +249,7 @@ fun ClothesMateNavHost(
                 onSaved = { _, name ->
                     showAddWardrobe = false
                     editWardrobeId = null
-                    // UI 文档 §7.2：保存成功 Snackbar「已添加 · {名称}」
-                    // （review U-r：名称由 ViewModel 回传，无需另查库）
+                    // UI 文档 §7.2：保存成功 Snackbar「已添加 · {名称}」（review U-r）
                     showSnack(addedTpl.format(name))
                 },
             )
@@ -253,12 +261,10 @@ fun ClothesMateNavHost(
                 onDismiss = { deleteTargetId = null },
                 onDeleted = { result: DeleteResult ->
                     deleteTargetId = null
-                    // review C-04：必须走占位符 string resource——原先用
-                    // "18 件衣物已移到 $it".replace("18", count) 作用于整串，
-                    // 目标柜名里含 18 时会被一起替换掉。
+                    // review C-04：必须走占位符 string resource
                     showSnack(deleteSnackText(result.count, result.transferredTo))
                     // C-12：删除若是从详情页发起的，衣柜已不存在，退回列表页
-                    if (navController.currentDestination?.route?.startsWith("wardrobe_detail") == true) {
+                    if (currentDestination?.hasRouteAny(WardrobeDetail::class) == true) {
                         navController.popBackStack()
                     }
                 },
@@ -266,3 +272,7 @@ fun ClothesMateNavHost(
         }
     }
 }
+
+/** 类型安全路由从当前栈条目读参（读不到返回 null，不抛）。 */
+private inline fun <reified T : Any> NavBackStackEntry.toRouteOrNull(): T? =
+    runCatching { toRoute<T>() }.getOrNull()

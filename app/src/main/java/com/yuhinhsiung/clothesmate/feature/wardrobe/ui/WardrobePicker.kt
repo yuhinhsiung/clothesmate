@@ -26,9 +26,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
 import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.core.model.Wardrobe
+import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
 import com.yuhinhsiung.clothesmate.ui.theme.muted
@@ -88,7 +88,7 @@ private fun WardrobePickerRow(
         ) {
             val path = wardrobe.coverImagePath
             if (path != null) {
-                AsyncImage(model = path, contentDescription = null)
+                CmAsyncImage(model = path, contentDescription = null)
             } else {
                 Icon(
                     imageVector = AppIcons.Wardrobe,

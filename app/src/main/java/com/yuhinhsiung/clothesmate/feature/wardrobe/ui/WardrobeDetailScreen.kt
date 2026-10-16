@@ -50,10 +50,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
 import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.core.model.ClothingItem
 import com.yuhinhsiung.clothesmate.feature.wardrobe.data.WardrobeItemFilter
+import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
 import com.yuhinhsiung.clothesmate.ui.component.EmptyStateSpec
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
@@ -277,7 +277,7 @@ private fun ClothingGridCard(
         val image = item.displayImagePath
         // review U-a：§6.5 要求「已收起」卡「压暗 + 底条」两件套，原先只做了底条
         if (image != null) {
-            AsyncImage(
+            CmAsyncImage(
                 model = image,
                 contentDescription = item.displayName,
                 contentScale = ContentScale.Crop,

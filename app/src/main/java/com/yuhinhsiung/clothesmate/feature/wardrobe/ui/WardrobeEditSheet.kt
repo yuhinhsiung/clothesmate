@@ -49,8 +49,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
 import com.yuhinhsiung.clothesmate.R
+import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
+import com.yuhinhsiung.clothesmate.ui.component.CmTextField
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
 import com.yuhinhsiung.clothesmate.ui.theme.onMuted
@@ -142,35 +143,33 @@ fun WardrobeEditSheet(
                 onClear = viewModel::onClearCover,
             )
 
-            // 名称：必填，实时非空校验，错误就近提示
-            OutlinedTextField(
+            // 名称：必填，实时非空校验，错误就近提示（§6.7 口径的 CmTextField）
+            CmTextField(
                 value = uiState.name,
                 onValueChange = viewModel::onNameChange,
-                label = { Text(stringResource(R.string.wardrobe_field_name)) },
-                placeholder = { Text("主卧大衣柜") },
+                label = stringResource(R.string.wardrobe_field_name),
+                placeholder = "主卧大衣柜",
                 isError = uiState.showNameError,
-                supportingText = if (uiState.showNameError) {
-                    { Text(stringResource(R.string.wardrobe_error_name_required)) }
+                errorMessage = if (uiState.showNameError) {
+                    stringResource(R.string.wardrobe_error_name_required)
                 } else {
                     null
                 },
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(Dimens.Radius.s),
+                imeAction = ImeAction.Next,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = Dimens.Space.s4),
             )
 
             // 备注：可选
-            OutlinedTextField(
+            CmTextField(
                 value = uiState.note,
                 onValueChange = viewModel::onNoteChange,
-                label = { Text(stringResource(R.string.wardrobe_field_note)) },
-                placeholder = { Text("位置描述，如「朝南 · 阳台侧」") },
+                label = stringResource(R.string.wardrobe_field_note),
+                placeholder = "位置描述，如「朝南 · 阳台侧」",
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(Dimens.Radius.s),
+                imeAction = ImeAction.Done,
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -237,7 +236,7 @@ private fun CoverPicker(
         contentAlignment = Alignment.Center,
     ) {
         if (coverPath != null) {
-            AsyncImage(
+            CmAsyncImage(
                 model = coverPath,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,

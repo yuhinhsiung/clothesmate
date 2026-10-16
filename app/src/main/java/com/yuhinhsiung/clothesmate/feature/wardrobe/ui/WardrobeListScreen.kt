@@ -45,9 +45,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
 import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.core.model.Wardrobe
+import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
 import com.yuhinhsiung.clothesmate.ui.component.ShimmerCard
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
@@ -211,7 +211,7 @@ private fun WardrobeCard(
                 ) {
                     val imageFile = wardrobe.coverImagePath
                     if (imageFile != null) {
-                        AsyncImage(
+                        CmAsyncImage(
                             model = imageFile,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
