@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yuhinhsiung.clothesmate.core.model.Wardrobe
+import com.yuhinhsiung.clothesmate.feature.wardrobe.data.KEY_LAST_WARDROBE
 import com.yuhinhsiung.clothesmate.feature.wardrobe.data.WardrobeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,7 +39,7 @@ class WardrobePickerViewModel @Inject constructor(
     fun load(currentSelected: Long? = null) {
         viewModelScope.launch {
             val all = wardrobeRepository.getAllWardrobes()
-            val lastUsed = dataStore.data.first()[KEY_LAST_WARDROBE]
+            val lastUsed = dataStore.data.first()[longPreferencesKey(KEY_LAST_WARDROBE)]
             // 优先级：当前已选 > 上次使用 > 首个（sortOrder 升序的首个）
             val default = currentSelected
                 ?: lastUsed?.takeIf { last -> all.any { it.id == last } }
@@ -68,14 +69,10 @@ class WardrobePickerViewModel @Inject constructor(
         val picked = state.wardrobes.firstOrNull { it.id == state.selectedId } ?: return
         viewModelScope.launch {
             runCatching {
-                dataStore.edit { prefs -> prefs[KEY_LAST_WARDROBE] = picked.id }
+                dataStore.edit { prefs -> prefs[longPreferencesKey(KEY_LAST_WARDROBE)] = picked.id }
             }
             onPicked(picked)
         }
-    }
-
-    private companion object {
-        val KEY_LAST_WARDROBE = longPreferencesKey("last_wardrobe_id")
     }
 }
 

@@ -47,6 +47,18 @@ class CodeAllocator @Inject constructor(
         .nextCode { candidate -> conflictChecker.isCodeTaken(candidate.toString()) }
         .toString()
 
+    /**
+     * 预览下一个可用编号，**不推进计数器**——录入确认页（M1-14）的编号预填用。
+     * 真正保存时仍走 [nextCode]：即使预览后有并发发放，保存时会拿到新的可用号。
+     */
+    suspend fun peekNextCode(): String {
+        var candidate = counterStore.currentValue()
+        while (conflictChecker.isCodeTaken(candidate.toString())) {
+            candidate += 1
+        }
+        return candidate.toString()
+    }
+
     /** 当前计数器值，仅供连拍前预览「将发放 {起始}–{结束}」（M4-02） */
     suspend fun peekNextValue(): Long = counterStore.currentValue()
 }

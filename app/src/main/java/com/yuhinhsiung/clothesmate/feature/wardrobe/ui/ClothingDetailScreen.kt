@@ -76,6 +76,16 @@ fun ClothingDetailRoute(
     val item = uiState.item
     val deletedTemplate = stringResource(R.string.clothing_deleted)
     val undoLabel = stringResource(R.string.action_undo)
+    val savedText = stringResource(R.string.clothing_saved)
+
+    // 编辑页保存成功回执 →「已保存」Snackbar（M1-12 验收）
+    val savedSignal by viewModel.savedSignal.collectAsStateWithLifecycle()
+    LaunchedEffect(savedSignal) {
+        if (savedSignal) {
+            snackbarHostState.showSnackbar(savedText)
+            viewModel.consumeSavedSignal()
+        }
+    }
 
     // 软删除成功后 Flow 会把 item 置空：此时若用户没点撤销，才退出页面
     LaunchedEffect(uiState.notFound) {

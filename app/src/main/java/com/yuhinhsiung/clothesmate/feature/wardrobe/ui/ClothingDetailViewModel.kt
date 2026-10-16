@@ -26,10 +26,21 @@ import javax.inject.Inject
 class ClothingDetailViewModel @Inject constructor(
     private val clothingRepository: ClothingRepository,
     private val wardrobeRepository: WardrobeRepository,
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val itemId: Long = savedStateHandle["itemId"] ?: 0L
+
+    /**
+     * 编辑页（M1-12）保存成功的回执：编辑页写回本条目的 SavedStateHandle 后 pop，
+     * 详情页据此弹「已保存」Snackbar（M1-12 验收「保存成功 Snackbar」）。
+     */
+    val savedSignal: StateFlow<Boolean> =
+        savedStateHandle.getStateFlow(KEY_EDIT_SAVED, false)
+
+    fun consumeSavedSignal() {
+        savedStateHandle[KEY_EDIT_SAVED] = false
+    }
 
     // 撤销软删除后无需手动触发重查：observeItem 的 Room Flow 会在 restore
     // 清掉 deletedAt 后自然重发该行（review U-i：原先那个 reloadTrigger 是死代码）
@@ -114,3 +125,6 @@ data class ClothingDetailUiState(
     val seasonLabels: List<String>
         get() = item?.seasonTags?.mapNotNull { Season.fromKey(it)?.displayName } ?: emptyList()
 }
+
+/** 编辑页 → 详情页的保存回执 key（ClothingDetailViewModel.savedSignal） */
+private const val KEY_EDIT_SAVED = "clothing_edit_saved"

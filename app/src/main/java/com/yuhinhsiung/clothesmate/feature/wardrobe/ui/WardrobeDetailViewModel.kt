@@ -29,7 +29,8 @@ class WardrobeDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
-    private val wardrobeId: Long = savedStateHandle["wardrobeId"] ?: 0L
+    /** 详情页 FAB「+ 录衣服」需要知道当前衣柜，作为录入确认页的衣柜预选（M1-14） */
+    val wardrobeId: Long = savedStateHandle["wardrobeId"] ?: 0L
 
     private val selectedFilter = kotlinx.coroutines.flow.MutableStateFlow(WardrobeItemFilter.All)
 
@@ -40,6 +41,7 @@ class WardrobeDetailViewModel @Inject constructor(
     ) { wardrobes, items, filter ->
         val wardrobe = wardrobes.firstOrNull { it.id == wardrobeId }
         WardrobeDetailUiState(
+            wardrobeId = wardrobeId,
             wardrobeName = wardrobe?.name.orEmpty(),
             wardrobeNote = wardrobe?.note,
             filter = filter,
@@ -76,6 +78,7 @@ class WardrobeDetailViewModel @Inject constructor(
 
 /** 衣柜详情页 UI 状态 */
 data class WardrobeDetailUiState(
+    val wardrobeId: Long = 0L,
     val wardrobeName: String = "",
     val wardrobeNote: String? = null,
     val filter: WardrobeItemFilter = WardrobeItemFilter.All,

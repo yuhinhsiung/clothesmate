@@ -106,3 +106,17 @@ data class OutfitForm(
 /** 衣物选择器（M1-18，全屏二级页；结果经 SavedStateHandle 回传） */
 @Serializable
 data object ClothingPicker
+
+// ── SavedStateHandle 回传 key（不走路由参数的结果传递） ──────────
+
+/** 拍照页（OUTFIT_APPEND）→ 穿搭确认页：追加照片的 Uri 字符串 */
+const val OUTFIT_APPEND_URI_KEY = "outfit_append_uri"
+
+/** 衣物选择器 → 穿搭确认页：已选衣物 id 列表（ArrayList<Long>，选择顺序） */
+const val PICKED_ITEM_IDS_KEY = "picked_item_ids"
+
+/** 穿搭表单 → 穿搭详情：编辑保存成功回执 */
+const val OUTFIT_SAVED_KEY = "outfit_saved"
+
+/** 编辑衣物表单 → 衣物详情：保存成功回执（M1-12 Snackbar） */
+const val CLOTHING_EDIT_SAVED_KEY = "clothing_edit_saved"

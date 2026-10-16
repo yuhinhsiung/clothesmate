@@ -74,7 +74,8 @@ import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 fun WardrobeDetailRoute(
     onBack: () -> Unit,
     onItemClick: (Long) -> Unit = {},
-    onAddClothing: () -> Unit = {},
+    /** 录衣服：带当前衣柜 id 作为录入确认页预选（M1-14） */
+    onAddClothing: (Long?) -> Unit = {},
     onEditWardrobe: () -> Unit = {},
     onDeleteWardrobe: () -> Unit = {},
     viewModel: WardrobeDetailViewModel = hiltViewModel(),
@@ -147,7 +148,7 @@ fun WardrobeDetailRoute(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = onAddClothing,
+                onClick = { onAddClothing(uiState.wardrobeId) },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
             ) {
@@ -232,7 +233,7 @@ fun WardrobeDetailRoute(
                         title = stringResource(R.string.empty_wardrobe_no_items_title),
                         description = stringResource(R.string.empty_wardrobe_no_items_desc),
                         actionLabel = stringResource(R.string.clothing_add),
-                        onAction = onAddClothing,
+                        onAction = { onAddClothing(uiState.wardrobeId) },
                     ),
                 )
 

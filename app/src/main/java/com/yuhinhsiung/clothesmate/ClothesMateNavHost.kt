@@ -1,11 +1,21 @@
 package com.yuhinhsiung.clothesmate
 
 import androidx.annotation.StringRes
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -20,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -34,18 +45,25 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.yuhinhsiung.clothesmate.feature.addclothing.ui.CaptureScreen
 import com.yuhinhsiung.clothesmate.feature.overview.ui.OverviewRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitHomeRoute
 import com.yuhinhsiung.clothesmate.feature.today.ui.TodayRoute
-import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.DeleteResult
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.ClothingDetailRoute
+import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.DeleteResult
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeDeleteDialog
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeDetailRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeEditSheet
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobePickerSheet
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeRoute
+import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.form.ClothingFormRoute
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
+import com.yuhinhsiung.clothesmate.ui.navigation.Capture
+import com.yuhinhsiung.clothesmate.ui.navigation.CaptureTarget
+import com.yuhinhsiung.clothesmate.ui.navigation.CLOTHING_EDIT_SAVED_KEY
 import com.yuhinhsiung.clothesmate.ui.navigation.ClothingDetail
+import com.yuhinhsiung.clothesmate.ui.navigation.ClothingForm
+import com.yuhinhsiung.clothesmate.ui.navigation.OUTFIT_APPEND_URI_KEY
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitTab
 import com.yuhinhsiung.clothesmate.ui.navigation.OverviewTab
 import com.yuhinhsiung.clothesmate.ui.navigation.TodayTab
@@ -101,13 +119,17 @@ fun ClothesMateNavHost(
     var deleteTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
     /** 非空 = 弹层处于「编辑衣柜」模式，值即被编辑的衣柜 id（review C-03） */
     var editWardrobeId by rememberSaveable { mutableStateOf<Long?>(null) }
+
+    // M1-14：FAB 半屏动作面板（§6.4）与衣柜预选。快速连拍 M4 再加入
+    var showClothingPanel by rememberSaveable { mutableStateOf(false) }
+    var clothingPreselectWardrobeId by rememberSaveable { mutableStateOf<Long?>(null) }
+
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
     // Snackbar 文案在 Composable 作用域用 stringResource 求值，再交给协程——
     // lint（LocalContextGetResourceValueCall）：在 lambda 里经 context.getString
     // 读资源不感知配置变更（切语言/字号后拿到旧值）
-    val comingSoonText = stringResource(R.string.coming_soon_camera)
     val addedTpl = stringResource(R.string.wardrobe_added)
     fun showSnack(message: String) {
         scope.launch { snackbarHostState.showSnackbar(message) }
@@ -120,6 +142,17 @@ fun ClothesMateNavHost(
     /** 当前详情页正在看的衣柜 id（C-12：详情页「更多」菜单需要它定位目标） */
     fun currentWardrobeId(): Long =
         backStackEntry?.toRouteOrNull<WardrobeDetail>()?.wardrobeId ?: 0L
+
+    // M1-14：相册导入（单张）。选完直接进录入确认页，带上衣柜预选
+    val albumPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        uri?.let {
+            navController.navigate(
+                ClothingForm(imageUri = it.toString(), wardrobeId = clothingPreselectWardrobeId),
+            )
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -202,8 +235,11 @@ fun ClothesMateNavHost(
                         showAddWardrobe = true
                     },
                     onShowDelete = { id -> deleteTargetId = id },
-                    // review C-02/C-11：FAB 语义是「+ 录衣服」（§6.4）。M1-14 实装前给反馈
-                    onAddClothing = { showSnack(comingSoonText) },
+                    // M1-14：FAB 打开半屏动作面板（§6.4）
+                    onAddClothing = {
+                        clothingPreselectWardrobeId = null
+                        showClothingPanel = true
+                    },
                 )
             }
             composable<OutfitTab> { OutfitHomeRoute() }
@@ -213,8 +249,11 @@ fun ClothesMateNavHost(
                 WardrobeDetailRoute(
                     onBack = { navController.popBackStack() },
                     onItemClick = { itemId -> navController.navigate(ClothingDetail(itemId)) },
-                    // review C-02（详情页半边）：M1-14 实装前给反馈，不留死按钮
-                    onAddClothing = { showSnack(comingSoonText) },
+                    // M1-14：详情页 FAB 带当前衣柜作为预选
+                    onAddClothing = { wardrobeId ->
+                        clothingPreselectWardrobeId = wardrobeId
+                        showClothingPanel = true
+                    },
                     // review C-12：详情页「更多」菜单的两个去向
                     onEditWardrobe = {
                         editWardrobeId = currentWardrobeId()
@@ -232,6 +271,60 @@ fun ClothesMateNavHost(
                         navController.navigate(WardrobeDetail(wardrobeId)) {
                             launchSingleTop = true
                         }
+                    },
+                    // M1-12：衣物编辑页（复用确认页表单）
+                    onEdit = { itemId -> navController.navigate(ClothingForm(itemId = itemId)) },
+                )
+            }
+            composable<Capture> { entry ->
+                val route = entry.toRoute<Capture>()
+                CaptureScreen(
+                    onBack = { navController.popBackStack() },
+                    onCaptured = { imageUri ->
+                        when (route.target) {
+                            CaptureTarget.CLOTHING_NEW -> navController.navigate(
+                                ClothingForm(imageUri = imageUri, wardrobeId = route.wardrobeId),
+                            ) {
+                                // 拍照页使命完成，弹掉自己：确认页返回 → 放弃确认 → 直接回 Tab
+                                popUpTo<Capture> { inclusive = true }
+                            }
+
+                            CaptureTarget.OUTFIT_NEW -> navController.navigate(
+                                com.yuhinhsiung.clothesmate.ui.navigation.OutfitForm(photoUris = imageUri),
+                            ) {
+                                popUpTo<Capture> { inclusive = true }
+                            }
+
+                            // 穿搭确认页内追加：回传上一页后收掉自己（M1-18）
+                            CaptureTarget.OUTFIT_APPEND -> {
+                                navController.previousBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set(OUTFIT_APPEND_URI_KEY, imageUri)
+                                navController.popBackStack()
+                            }
+                        }
+                    },
+                )
+            }
+            composable<ClothingForm> {
+                ClothingFormRoute(
+                    onBack = { navController.popBackStack() },
+                    // M1-14 验收：保存后分配编号并回到衣柜详情
+                    onSavedCreate = { wardrobeId ->
+                        navController.navigate(WardrobeTab) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = false
+                            }
+                            launchSingleTop = true
+                        }
+                        navController.navigate(WardrobeDetail(wardrobeId)) { launchSingleTop = true }
+                    },
+                    // M1-12：编辑保存 → 回详情页并触发「已保存」Snackbar
+                    onSavedEdit = {
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle
+                            ?.set(CLOTHING_EDIT_SAVED_KEY, true)
+                        navController.popBackStack()
                     },
                 )
             }
@@ -269,6 +362,114 @@ fun ClothesMateNavHost(
                     }
                 },
             )
+        }
+
+        // ── FAB 半屏动作面板（M1-14，§6.4：完整录入 / 从相册导入；快速连拍 M4 加入） ──
+        if (showClothingPanel) {
+            @OptIn(ExperimentalMaterial3Api::class)
+            ModalBottomSheet(
+                onDismissRequest = { showClothingPanel = false },
+                sheetState = androidx.compose.material3.rememberModalBottomSheetState(
+                    skipPartiallyExpanded = true,
+                ),
+                dragHandle = null,
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(
+                    topStart = Dimens.Radius.xl,
+                    topEnd = Dimens.Radius.xl,
+                ),
+            ) {
+                FabActionPanel(
+                    title = stringResource(R.string.fab_panel_title),
+                    actions = listOf(
+                        FabAction(
+                            icon = AppIcons.PhotoCamera,
+                            title = stringResource(R.string.fab_panel_full),
+                            description = stringResource(R.string.fab_panel_full_desc),
+                            onClick = {
+                                showClothingPanel = false
+                                navController.navigate(
+                                    Capture(
+                                        target = CaptureTarget.CLOTHING_NEW,
+                                        wardrobeId = clothingPreselectWardrobeId,
+                                    ),
+                                )
+                            },
+                        ),
+                        FabAction(
+                            icon = AppIcons.Image,
+                            title = stringResource(R.string.fab_panel_album),
+                            description = stringResource(R.string.fab_panel_album_desc),
+                            onClick = {
+                                showClothingPanel = false
+                                albumPicker.launch(
+                                    PickVisualMediaRequest(
+                                        ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                    ),
+                                )
+                            },
+                        ),
+                    ),
+                )
+            }
+        }
+    }
+}
+
+/** FAB 动作面板的单个动作 */
+private data class FabAction(
+    val icon: ImageVector,
+    val title: String,
+    val description: String,
+    val onClick: () -> Unit,
+)
+
+/**
+ * 半屏动作面板内容（§6.4 / mockup-13 的入口面板）。行式大触控区，图标 + 标题 + 副文案。
+ */
+@Composable
+private fun FabActionPanel(
+    title: String,
+    actions: List<FabAction>,
+) {
+    Column(
+        modifier = Modifier
+            .padding(horizontal = Dimens.pagePadding)
+            .padding(bottom = Dimens.Space.s6),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(vertical = Dimens.Space.s3),
+        )
+        actions.forEach { action ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = action.onClick)
+                    .padding(vertical = Dimens.Space.s3),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = action.icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(Dimens.Icon.l),
+                )
+                Column(modifier = Modifier.padding(start = Dimens.Space.s3)) {
+                    Text(
+                        text = action.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = action.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onMuted,
+                    )
+                }
+            }
         }
     }
 }

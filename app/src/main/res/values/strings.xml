@@ -94,4 +94,47 @@
     <!-- 空态文案（UI 文档 §6.9 表格，M1-23 逐条落位） -->
     <string name="empty_no_wardrobe_title">还没有衣柜，先建一个吧</string>
     <string name="empty_no_wardrobe_desc">把家里的衣柜、衣帽架、储物箱都登记进来</string>
+
+    <!-- FAB 半屏动作面板（M1-14，UI 文档 §6.4；快速连拍 M4 再加入） -->
+    <string name="fab_panel_title">录衣服</string>
+    <string name="fab_panel_full">完整录入</string>
+    <string name="fab_panel_full_desc">拍照建档，编号自动生成</string>
+    <string name="fab_panel_album">从相册导入</string>
+    <string name="fab_panel_album_desc">从相册选择一张照片</string>
+    <string name="action_confirm">确定</string>
+
+    <!-- 拍照页（M1-14，UI 文档 §7.3 / mockup-13） -->
+    <string name="capture_close">关闭</string>
+    <string name="capture_flash_on">关闭闪光灯</string>
+    <string name="capture_flash_off">打开闪光灯</string>
+    <string name="capture_flip">翻转镜头</string>
+    <string name="capture_album">从相册选择</string>
+    <string name="capture_guide">平铺在浅色背景上效果更好</string>
+    <string name="capture_permission_desc">拍照录入需要使用相机；没有相机也可以直接从相册导入照片</string>
+    <string name="capture_permission_fallback">从相册导入</string>
+
+    <!-- 衣物表单（M1-14 确认页 / M1-12 编辑页共用） -->
+    <string name="clothing_form_title_add">录入衣物</string>
+    <string name="clothing_form_title_edit">编辑衣物</string>
+    <string name="form_section_category">类别</string>
+    <string name="form_section_color">主颜色</string>
+    <string name="form_section_style">风格</string>
+    <string name="form_section_season">适合季节</string>
+    <string name="form_field_brand">品牌</string>
+    <string name="form_field_note">备注</string>
+    <string name="form_field_wardrobe">所属衣柜</string>
+    <string name="form_wardrobe_unset">选择衣柜</string>
+    <string name="form_need_wardrobe">先选择所属衣柜，衣物总要有个家</string>
+    <string name="form_field_code">编号</string>
+    <string name="form_code_hint">纯数字，如 102</string>
+    <string name="form_code_empty">编号不能为空</string>
+    <string name="form_code_not_number">编号必须是纯数字</string>
+    <string name="form_code_conflict">编号 %1$s 已被使用</string>
+    <string name="form_save_auto">保存 · 编号自动生成</string>
+    <string name="form_save">保存</string>
+    <string name="form_add_custom">＋ 自定义</string>
+    <string name="form_custom_tag">自定义标签</string>
+    <string name="form_custom_tag_hint">输入标签，如「极简」</string>
+    <string name="clothing_saved">已保存</string>
+    <string name="clothing_edit_missing">衣物不存在或已被删除</string>
 </resources>
