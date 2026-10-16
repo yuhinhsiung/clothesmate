@@ -116,6 +116,15 @@ private fun androidx.navigation.NavDestination.hasRouteAny(
     vararg classes: KClass<*>,
 ): Boolean = classes.any { hasRoute(it as KClass<Any>) }
 
+/** 一级页之间切换的通用选项：单例栈，不堆叠历史。 */
+private fun androidx.navigation.NavOptionsBuilder.topLevelNavOptions(graph: androidx.navigation.NavGraph) {
+    popUpTo(graph.findStartDestination().id) {
+        saveState = true
+    }
+    launchSingleTop = true
+    restoreState = true
+}
+
 @Composable
 fun ClothesMateNavHost(
     navController: NavHostController = rememberNavController(),
@@ -199,14 +208,25 @@ fun ClothesMateNavHost(
                                 selected = selected,
                                 onClick = {
                                     if (!selected) {
-                                        @Suppress("UNCHECKED_CAST")
-                                        navController.navigate(destination.routeClass as KClass<Any>) {
-                                            // 一级页之间切换：单例栈，不堆叠历史
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
+                                        // 必须走 reified 实例重载 navigate(TodayTab)：KClass 重载
+                                        // 运行时对 @Serializable data object 解析不到 serializer，
+                                        // 点 Tab 直接崩（真机冒烟抓出；见Routes.kt E-b 注）
+                                        when (destination) {
+                                            TopLevelDestination.Today -> navController.navigate(TodayTab) {
+                                                topLevelNavOptions(navController.graph)
                                             }
-                                            launchSingleTop = true
-                                            restoreState = true
+
+                                            TopLevelDestination.Wardrobe -> navController.navigate(WardrobeTab) {
+                                                topLevelNavOptions(navController.graph)
+                                            }
+
+                                            TopLevelDestination.Outfit -> navController.navigate(OutfitTab) {
+                                                topLevelNavOptions(navController.graph)
+                                            }
+
+                                            TopLevelDestination.Overview -> navController.navigate(OverviewTab) {
+                                                topLevelNavOptions(navController.graph)
+                                            }
                                         }
                                     }
                                 },
