@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -21,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -156,12 +158,21 @@ private fun DestinyOption(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // 整行 selectable（与 U-p 的 WardrobePicker 行同款）：点标题文字也能切换选项，
+            // 不再只有单选圈本身可点——真机验证时点「一并删除」文字无响应即此问题。
+            // 内层 WardrobeRadioRow 自带 selectable，子级可点目标优先命中，互不干扰。
+            .selectable(
+                selected = selected,
+                enabled = enabled,
+                role = Role.RadioButton,
+                onClick = onClick,
+            )
             .padding(top = Dimens.Space.s4),
         verticalAlignment = Alignment.Top,
     ) {
         RadioButton(
             selected = selected,
-            onClick = onClick,
+            onClick = null,
             enabled = enabled,
             colors = RadioButtonDefaults.colors(
                 selectedColor = MaterialTheme.colorScheme.primary,
