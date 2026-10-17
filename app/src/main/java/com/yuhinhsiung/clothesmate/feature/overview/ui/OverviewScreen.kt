@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -212,36 +213,39 @@ private fun CategoryDonutCard(uiState: OverviewUiState) {
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = Dimens.Space.s3),
+            // 视觉建议 3：360dp + 200% 字号下，固定 168dp 的环形图仍占掉一半宽度，
+            // 右侧图例只剩百来 dp，「连衣裙」被拆成「连衣 / 裙」。内容宽度不够时
+            // 改为上下布局——图例拿到整行宽度，字号不必缩。
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = Dimens.Space.s3),
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    DonutChart(
-                        slices = uiState.categorySlices,
-                        modifier = Modifier.size(Dimens.Chart.donutSize),
-                    )
-                    // 中心总件数（Playfair）
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = uiState.clothingCount.toString(),
-                            fontFamily = PlayfairDisplay,
-                            fontWeight = FontWeight.SemiBold,
-                            style = MaterialTheme.typography.displaySmall,
-                            color = MaterialTheme.colorScheme.onSurface,
+                val stackVertically = maxWidth < DonutLegendSideBySideMinWidth
+                val chart: @Composable () -> Unit = {
+                    Box(contentAlignment = Alignment.Center) {
+                        DonutChart(
+                            slices = uiState.categorySlices,
+                            modifier = Modifier.size(Dimens.Chart.donutSize),
                         )
-                        Text(
-                            text = stringResource(R.string.overview_total_items),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onMuted,
-                        )
+                        // 中心总件数（Playfair）
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = uiState.clothingCount.toString(),
+                                fontFamily = PlayfairDisplay,
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.displaySmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = stringResource(R.string.overview_total_items),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onMuted,
+                            )
+                        }
                     }
                 }
-                Spacer(modifier = Modifier.width(Dimens.Space.s4))
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(Dimens.Space.s1),
-                ) {
+                val legend: @Composable () -> Unit = {
                     uiState.categorySlices.forEachIndexed { index, slice ->
                         LegendRow(
                             color = ChartCategoryColors[index % ChartCategoryColors.size],
@@ -250,10 +254,41 @@ private fun CategoryDonutCard(uiState: OverviewUiState) {
                         )
                     }
                 }
+
+                if (stackVertically) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        chart()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = Dimens.Space.s3),
+                            verticalArrangement = Arrangement.spacedBy(Dimens.Space.s1),
+                        ) {
+                            legend()
+                        }
+                    }
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        chart()
+                        Spacer(modifier = Modifier.width(Dimens.Space.s4))
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(Dimens.Space.s1),
+                        ) {
+                            legend()
+                        }
+                    }
+                }
             }
         }
     }
 }
+
+/** 环形图与图例并排所需的最小内容宽度；不足则改为上下布局（视觉建议 3） */
+private val DonutLegendSideBySideMinWidth = 300.dp
 
 /** 环形图：等宽圆环逐扇区绘制（-90° 起笔，无间隙即首尾相接）。 */
 @Composable

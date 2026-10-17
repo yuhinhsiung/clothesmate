@@ -145,6 +145,7 @@ class ClothingFormViewModel @Inject constructor(
                 it.copy(
                     isEdit = true,
                     imagePath = item.displayImagePath,
+                    name = item.name.orEmpty(),
                     categoryKey = item.categoryKey,
                     // 编辑预填：展开既有类别所属大类（B-02 两级上下文完整可见）
                     expandedTopKey = item.categoryKey?.let { key ->
@@ -206,6 +207,15 @@ class ClothingFormViewModel @Inject constructor(
     }
 
     fun onBrandChange(value: String) = updateState { it.copy(brand = value) }
+
+    /**
+     * 自定义名称（review R-08）。
+     *
+     * M1-12 要求「全字段可改」，而 `clothing_item.name` 原先在编辑页没有输入框，
+     * 衣物只能长期用「主色 · 类别」兜底名。**仅编辑模式提供**——创建确认页不强迫
+     * 用户起名是既定规则（§2.3.3），保持不动。
+     */
+    fun onNameChange(value: String) = updateState { it.copy(name = value) }
 
     fun onNoteChange(value: String) = updateState { it.copy(note = value) }
 
@@ -270,6 +280,12 @@ class ClothingFormViewModel @Inject constructor(
                             error = failure.message ?: "保存失败，请重试",
                         )
                     }
+                    // review R-14：建档失败会把**本次预约的编号占用**一并撤回，
+                    // 于是失败前算出的 codeError 可能已经过期（比如"编号已被使用"其实
+                    // 只因为库里有那条半截行）。重新对一次账，避免用户下一次点保存时
+                    // 被一个已经不成立的错误挡住。
+                    codeCheckJob?.cancel()
+                    codeCheckJob = viewModelScope.launch { validateCode(state.code) }
                 }
         }
     }
@@ -303,9 +319,11 @@ class ClothingFormViewModel @Inject constructor(
                 updatedAt = now,
             ),
         )
-        // review B-12：照片归位/回写失败时补偿回滚——删掉已建行，避免「孤儿行 + 重试
-        // 重复建档」（编号计数器已按「删除不回收」语义推进，是既定设计而非缺陷）。
-        // 跨 DB/文件两界无法真事务，此为尽力补偿；回滚自身失败则留痕交 M4-05 导出前清理。
+        // review B-12 / R-14：照片归位/回写失败时补偿回滚——删掉已建行，避免
+        // 「孤儿行 + 重试重复建档」（编号计数器已按「删除不回收」语义推进，是既定设计）。
+        // review R-14 补上关键一步：**先把已归位的原图退回暂存区**。promote 会 consume
+        // 暂存源，只删归位产物的话草稿指向的文件已经不存在，用户按提示重试仍然失败。
+        // 退回之后草稿恢复成可重试状态，同时不留孤儿图片文件。
         try {
             staged?.let { image ->
                 val path = imageStore.promote(image, imageStorage.clothingOriginalFile(id))
@@ -315,10 +333,17 @@ class ClothingFormViewModel @Inject constructor(
             }
         } catch (failure: Throwable) {
             runCatching {
-                clothingRepository.deleteCrossRefsForItem(id)
-                clothingRepository.deletePhysically(id)
+                // 先把已归位的原图退回暂存区（R-14）：promote 会 consume 暂存源，
+                // 只删归位产物的话草稿指向的文件已经不存在，用户按提示重试仍然失败
+                staged?.let { image ->
+                    imageStore.restoreStaged(image, imageStorage.clothingOriginalFile(id))
+                }
+                // 再回滚数据库：删行 + **撤回本次预约的编号占用**。
+                // 不撤回的话，同一个草稿重试会被「编号 500 已被使用」拦住——
+                // 用户什么都没得到，号却永久归给了刚被删掉的那一行（R-14 场景 A）。
+                clothingRepository.rollbackFailedCreate(id, code)
             }.onFailure { rollbackFailure ->
-                android.util.Log.e("ClothingForm", "建档回滚失败，残留无图行 id=$id", rollbackFailure)
+                android.util.Log.e(LOG_TAG, "建档回滚失败，残留无图行 id=$id", rollbackFailure)
             }
             throw failure
         }
@@ -333,6 +358,8 @@ class ClothingFormViewModel @Inject constructor(
             ?: error("衣物不存在或已被删除")
         clothingRepository.updateItem(
             item.copy(
+                // review R-08：清空即回到「主色 · 类别」兜底名（displayName 自带兜底）
+                name = state.name.trim().takeIf { it.isNotEmpty() },
                 categoryKey = state.categoryKey,
                 colorKeys = state.colorKeys,
                 styleTags = state.styleTags,
@@ -347,13 +374,22 @@ class ClothingFormViewModel @Inject constructor(
         return item.wardrobeId
     }
 
-    /** 选中的风格标签写入词典（M1-21）：已存在则 usageCount +1，不存在则插入。 */
+    /**
+     * 选中的风格标签写入词典（M1-21）：已存在则 usageCount +1，不存在则插入。
+     *
+     * review R-14：词典是辅助索引，写失败只留日志——不能把「衣物已经存好」报成
+     * 保存失败，否则用户重试会多建一条。
+     */
     private suspend fun recordStyleTags(tags: List<String>) {
-        tags.forEach { tag ->
-            val trimmed = tag.trim()
-            if (trimmed.isNotEmpty()) {
-                tagDictionaryDao.insertOrIncrement(TagType.Style.key, trimmed, isPreset = false)
+        runCatching {
+            tags.forEach { tag ->
+                val trimmed = tag.trim()
+                if (trimmed.isNotEmpty()) {
+                    tagDictionaryDao.insertOrIncrement(TagType.Style.key, trimmed, isPreset = false)
+                }
             }
+        }.onFailure { failure ->
+            android.util.Log.w(LOG_TAG, "风格词典登记失败（衣物已保存，仅词典缺词）", failure)
         }
     }
 
@@ -365,6 +401,10 @@ class ClothingFormViewModel @Inject constructor(
             viewModelScope.launch { imageStore.clearStaged(toClear) }
         }
     }
+
+    private companion object {
+        const val LOG_TAG = "ClothingForm"
+    }
 }
 
 /** 衣物表单 UI 状态（创建 + 编辑共用） */
@@ -373,6 +413,11 @@ data class ClothingFormUiState(
     /** 展示用照片路径：创建模式 = 暂存图绝对路径；编辑模式 = 既有相对路径 */
     val imagePath: String? = null,
     val compressing: Boolean = false,
+    /**
+     * 自定义名称（review R-08）。**仅编辑模式可编辑**：创建确认页按 §2.3.3 不提供名称输入，
+     * 空值展示侧回落「主色 · 类别」兜底名。
+     */
+    val name: String = "",
     val categoryKey: String? = null,
     /** 已展开的大类（review B-02：与 categoryKey 解耦——此前由 categoryKey 反推，
      *  多小类大类点开即置空导致二级行永不渲染、6/8 个大类选不中） */

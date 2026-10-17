@@ -2,6 +2,9 @@ package com.yuhinhsiung.clothesmate.feature.wardrobe.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
@@ -42,9 +46,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yuhinhsiung.clothesmate.R
@@ -78,10 +87,17 @@ fun WardrobeRoute(
         onWardrobeLongPress = onShowDelete,
         onAddClothing = onAddClothing,
         onOpenSearch = onOpenSearch,
-        viewModel = viewModel,
+        onPersistOrder = viewModel::persistOrder,
     )
 }
 
+/**
+ * 衣柜列表页主体。
+ *
+ * review R-07：排序落库经 [onPersistOrder] 回调注入，而不在这里直接拿 ViewModel——
+ * 拖拽手势是**交互逻辑**，必须能被 Compose UI 测试直接驱动（见 WardrobeDragReorderTest），
+ * 而 `hiltViewModel()` 的默认参数会把它焊死在 Hilt 容器上。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WardrobeListScreen(
@@ -92,20 +108,71 @@ fun WardrobeListScreen(
     onWardrobeLongPress: (Long) -> Unit = {},
     onAddClothing: () -> Unit = {},
     onOpenSearch: () -> Unit = {},
-    viewModel: WardrobeListViewModel = hiltViewModel(),
+    onPersistOrder: (List<Long>) -> Unit = {},
 ) {
     // 拖拽重排时的本地顺序：松手后才经 ViewModel 落库，拖拽中只动 UI。
     // review B-13：重同步条件从「个数变化」改为「内容不一致」——改名/件数增减
     // （size 不变）时旧实现渲染过期对象，列表卡不随编辑刷新。
-    // ⚠️ 未来接入拖拽手势时须补 dragging 守卫（拖拽中本地顺序有意与 Flow 不一致）
+    // review R-07：与源快照比较（而不是和本地列表比），并加**拖拽守卫**——
+    // 松手落库到 Flow 重发之间有窗口期，若此时按「本地 != 源」重同步，
+    // 刚拖好的顺序会被旧顺序顶回去。
     val reordered = remember { mutableStateListOf<Wardrobe>() }
+    var syncedSource by remember { mutableStateOf<List<Wardrobe>>(emptyList()) }
     val wardrobes = when (val s = uiState) {
         is WardrobeListUiState.Content -> s.wardrobes
         else -> emptyList()
     }
-    if (reordered != wardrobes) {
+
+    // ── 长按拖拽排序（review R-07 / W-08）──────────────────────
+    // 数据层（persistOrder）与 UI 骨架此前就在，缺的是网格卡上的手势与坐标重排。
+    val gridState = rememberLazyGridState()
+    /** 非空 = 正在拖这张卡（值为衣柜 id）。拖拽期间禁用上面的重同步。 */
+    var draggingId by remember { mutableStateOf<Long?>(null) }
+    /** 拖拽累计位移（相对当前格子）。换格子时按两格位移补偿，视觉上才连续 */
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+
+    if (draggingId == null && wardrobes != syncedSource) {
         reordered.clear()
         reordered.addAll(wardrobes)
+        syncedSource = wardrobes
+    }
+
+    fun endDrag() {
+        val dragged = draggingId
+        draggingId = null
+        dragOffset = Offset.Zero
+        // 松手即持久化（W-08）；顺序由 UI 决定，Repository 只落库
+        if (dragged != null && reordered.isNotEmpty()) {
+            onPersistOrder(reordered.map { it.id })
+        }
+    }
+
+    /**
+     * 拖拽中：把「被拖卡片中心」落在哪个格子上算出来，跨格就换位。
+     *
+     * 坐标取自 [gridState] 的可见项布局（相对网格视口），所以滚动中同样成立。
+     * 换位后按「原格 → 目标格」的位移**补偿** [dragOffset]，否则卡片会在换位瞬间
+     * 跳出去一格的距离（格子跟着走、位移却没扣掉）。
+     */
+    fun onDrag(id: Long, dragAmount: Offset) {
+        val fromIndex = reordered.indexOfFirst { it.id == id }
+        if (fromIndex < 0) return
+        val visible = gridState.layoutInfo.visibleItemsInfo
+        val fromBounds = visible.firstOrNull { it.index == fromIndex } ?: return
+        dragOffset += dragAmount
+        val centerX = fromBounds.offset.x + fromBounds.size.width / 2f + dragOffset.x
+        val centerY = fromBounds.offset.y + fromBounds.size.height / 2f + dragOffset.y
+        val targetBounds = visible.firstOrNull { info ->
+            centerX >= info.offset.x && centerX <= info.offset.x + info.size.width &&
+                centerY >= info.offset.y && centerY <= info.offset.y + info.size.height
+        } ?: return
+        val target = targetBounds.index
+        if (target == fromIndex || target !in reordered.indices) return
+        dragOffset -= Offset(
+            x = (targetBounds.offset.x - fromBounds.offset.x).toFloat(),
+            y = (targetBounds.offset.y - fromBounds.offset.y).toFloat(),
+        )
+        reordered.add(target, reordered.removeAt(fromIndex))
     }
 
     Scaffold(
@@ -205,6 +272,7 @@ fun WardrobeListScreen(
                     is WardrobeListUiState.Content -> {
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(2),
+                            state = gridState,
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(Dimens.pagePadding),
                             horizontalArrangement = Arrangement.spacedBy(Dimens.waterfallColumnSpacing),
                             verticalArrangement = Arrangement.spacedBy(Dimens.waterfallColumnSpacing),
@@ -214,12 +282,59 @@ fun WardrobeListScreen(
                                 items = reordered,
                                 key = { _, w -> w.id },
                             ) { _, wardrobe ->
-                                WardrobeCard(
-                                    wardrobe = wardrobe,
-                                    onClick = { onWardrobeClick(wardrobe.id) },
-                                    onEdit = { onEditWardrobe(wardrobe.id) },
-                                    onDelete = { onWardrobeLongPress(wardrobe.id) },
-                                )
+                                val isDragging = draggingId == wardrobe.id
+                                Box(
+                                    modifier = Modifier
+                                        // 被拖的卡浮到最上层，盖住相邻格子
+                                        .zIndex(if (isDragging) 1f else 0f)
+                                        .graphicsLayer {
+                                            if (isDragging) {
+                                                translationX = dragOffset.x
+                                                translationY = dragOffset.y
+                                                scaleX = 1.03f
+                                                scaleY = 1.03f
+                                            }
+                                        }
+                                        // 长按拖拽：见 [wardrobeDragToReorder]。
+                                        // 这里不用现成的 detectDragGesturesAfterLongPress——
+                                        // 它长按成立后只消费移动事件、**不消费抬指**，
+                                        // 于是「长按后松手不拖」会被卡片自身的 clickable
+                                        // 当成一次点击、顺手打开详情（本页 Compose 测试抓出）。
+                                        .pointerInput(wardrobe.id) {
+                                            wardrobeDragToReorder(
+                                                onStart = {
+                                                    draggingId = wardrobe.id
+                                                    dragOffset = Offset.Zero
+                                                },
+                                                onDragged = { amount ->
+                                                    onDrag(wardrobe.id, amount)
+                                                },
+                                                onFinished = { endDrag() },
+                                            )
+                                        }
+                                        // 非拖拽卡换位时补间动画；被拖的卡不能加，
+                                        // 否则会和上面的手势位移叠加成二段跳
+                                        .then(
+                                            if (isDragging) {
+                                                Modifier
+                                            } else {
+                                                Modifier.animateItem()
+                                            },
+                                        ),
+                                ) {
+                                    WardrobeCard(
+                                        wardrobe = wardrobe,
+                                        // 长按序列里的抬指会被卡片自身的 clickable 当成一次点击
+                                        // （Main 传递自内向外，子节点先于本手势处理抬指，
+                                        // 我们在父层再消费也来不及）——「长按后松手不拖」
+                                        // 不该顺手打开详情，故在点击入口加一道拖拽守卫。
+                                        onClick = {
+                                            if (draggingId == null) onWardrobeClick(wardrobe.id)
+                                        },
+                                        onEdit = { onEditWardrobe(wardrobe.id) },
+                                        onDelete = { onWardrobeLongPress(wardrobe.id) },
+                                    )
+                                }
                             }
                         }
                     }
@@ -263,8 +378,13 @@ private fun WardrobeCard(
                             modifier = Modifier.fillMaxSize(),
                         )
                     } else {
+                        // 视觉建议 1：注释一直写着「muted 底 + 衣架图标占位」，
+                        // 但这里实际没设背景——整张白卡只剩一个居中的衣架，
+                        // 封面区与文字区没有分隔。补上 muted 底。
                         Box(
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.muted),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
@@ -354,4 +474,46 @@ private fun EmptyWardrobeState(onAddWardrobe: () -> Unit) {
             onAction = onAddWardrobe,
         ),
     )
+}
+
+/**
+ * 「长按 → 拖动排序」手势（review R-07）。
+ *
+ * ## 为什么不直接用 `detectDragGesturesAfterLongPress`
+ *
+ * 卡片自身是 `Card(onClick)`（clickable 会消费 down），长按成立后它仍在等抬指。
+ * 现成的手势检测器长按后只消费**移动**事件，抬指不消费——于是「长按后松手、没拖」
+ * 会被卡片当成一次普通点击，顺手打开详情页（WardrobeDragReorderTest 抓出）。
+ * 这里把长按后的**全部**事件（含抬指）一律消费：本手势一旦接管，就不该再有
+ * 第二个消费者拿它做别的事。
+ *
+ * 长按**未**成立（普通点按）时什么都不消费，卡片的 clickable 照常工作。
+ */
+private suspend fun PointerInputScope.wardrobeDragToReorder(
+    onStart: () -> Unit,
+    onDragged: (Offset) -> Unit,
+    onFinished: () -> Unit,
+) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        val longPress = awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
+        onStart()
+        var pointer = longPress.id
+        while (true) {
+            val event = awaitPointerEvent()
+            val change = event.changes.firstOrNull { it.id == pointer }
+            // 注意顺序：位移必须在 consume 之前取（positionChange() 在 change
+            // 被消费后返回 Zero），抬指判定也要用「忽略消费」的版本
+            val delta = if (change == null || (change.previousPressed && !change.pressed)) {
+                null
+            } else {
+                change.position - change.previousPosition
+            }
+            event.changes.forEach { it.consume() }
+            if (change == null || delta == null) break
+            onDragged(delta)
+            pointer = change.id
+        }
+        onFinished()
+    }
 }

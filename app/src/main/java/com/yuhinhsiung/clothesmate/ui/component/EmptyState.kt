@@ -7,14 +7,18 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -61,64 +65,93 @@ data class EmptyStateSpec(
 
 /**
  * 空态容器：`muted` 底圆形 120dp + 线性图标 48dp（`onMuted`）+ 文案 + 主按钮（§6.9）。
+ *
+ * ## 矮视口自适应（review UI-02）
+ *
+ * 横屏（约 800×360dp）时空衣柜页顶栏、信息条、筛选行占掉大半，剩下给空态的空间
+ * 不到 150dp：固定 120dp 的装饰圆 + 四要素被压成一条线，标题、副文案、「+ 录衣服」
+ * 全部不可见，UI 树里也没有任何可滚动容器，用户无从找回。两条兜底同时上：
+ *
+ * 1. **紧凑模式**：可用高度低于阈值时收小装饰圆与图标、压缩间距，减少装饰占比；
+ * 2. **纵向可滚**：内容用 `heightIn(min = 视口高)` 撑满视口，放得下时依旧居中，
+ *    放不下时可滚动——大字号等更极端的情形也不会再把内容吞掉。
+ *
+ * 全 App 共用本组件，所有调用页一并受益。
  */
 @Composable
 fun EmptyState(
     spec: EmptyStateSpec,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier.fillMaxSize().padding(Dimens.Space.s6),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Box(
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val bounded = maxHeight != Dp.Infinity
+        val compact = bounded && maxHeight < CompactHeightThreshold
+        val circleSize = if (compact) Dimens.emptyStateCircle / 2 else Dimens.emptyStateCircle
+        val iconSize = if (compact) {
+            Dimens.Icon.m
+        } else {
+            Dimens.Icon.l + Dimens.Space.s4
+        }
+        Column(
             modifier = Modifier
-                .size(Dimens.emptyStateCircle)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.muted),
-            contentAlignment = Alignment.Center,
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .heightIn(min = if (bounded) maxHeight else 0.dp)
+                .padding(Dimens.Space.s6),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
         ) {
-            Icon(
-                imageVector = spec.icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onMuted,
-                modifier = Modifier.size(Dimens.Icon.l + Dimens.Space.s4),
-            )
-        }
-
-        Text(
-            text = spec.title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = Dimens.Space.s5),
-        )
-
-        spec.description?.let { description ->
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onMuted,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = Dimens.Space.s2),
-            )
-        }
-
-        if (spec.actionLabel != null && spec.onAction != null) {
-            Button(
-                onClick = spec.onAction,
-                shape = RoundedCornerShape(Dimens.Radius.m),
-                modifier = Modifier.padding(top = Dimens.Space.s6),
+            Box(
+                modifier = Modifier
+                    .size(circleSize)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.muted),
+                contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = spec.actionLabel,
-                    style = MaterialTheme.typography.labelLarge,
+                Icon(
+                    imageVector = spec.icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onMuted,
+                    modifier = Modifier.size(iconSize),
                 )
+            }
+
+            Text(
+                text = spec.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = if (compact) Dimens.Space.s3 else Dimens.Space.s5),
+            )
+
+            spec.description?.let { description ->
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onMuted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = Dimens.Space.s2),
+                )
+            }
+
+            if (spec.actionLabel != null && spec.onAction != null) {
+                Button(
+                    onClick = spec.onAction,
+                    shape = RoundedCornerShape(Dimens.Radius.m),
+                    modifier = Modifier.padding(top = if (compact) Dimens.Space.s4 else Dimens.Space.s6),
+                ) {
+                    Text(
+                        text = spec.actionLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
             }
         }
     }
 }
+
+/** 判定「矮视口」的高度阈值（横屏手机约 360dp 高，减去顶栏后远低于此值） */
+private val CompactHeightThreshold = 360.dp
 
 /**
  * 骨架屏卡片 —— §6.9「列表加载：骨架屏（灰粉 shimmer 卡片占位），不用转圈菊花」。

@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -63,6 +62,9 @@ import com.yuhinhsiung.clothesmate.ui.theme.onMuted
  * 三种入口共用：列表右上「+」、空态按钮、选择衣柜弹层内「＋ 新建衣柜」（M1-08）。
  *
  * @param wardrobeId 非空 = 编辑该衣柜（预填）；null = 新建
+ * @param sessionId 会话身份（review A-01）：由调用方在**每次打开弹层**时递增，
+ *   并经 `rememberSaveable` 跨配置重建保持。旋转/切字号后送达的是同一个 id，
+ *   VM 据此判断「同一次会话的重建」而不是「用户又开了一次」，草稿不再被清空。
  * @param onDismiss 关闭弹层
  * @param onSaved (衣柜 id, 衣柜名)。带回名称供上层 Snackbar 出「已添加 · {名称}」
  *   （UI 文档 §7.2 / review U-r）
@@ -71,6 +73,7 @@ import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 @Composable
 fun WardrobeEditSheet(
     wardrobeId: Long? = null,
+    sessionId: Int = 0,
     onDismiss: () -> Unit,
     onSaved: (Long, String) -> Unit,
     viewModel: WardrobeEditViewModel = hiltViewModel(),
@@ -85,8 +88,11 @@ fun WardrobeEditSheet(
     }
 
     // review B-31：副作用从 remember 块迁到 LaunchedEffect（规范做法）
-    LaunchedEffect(wardrobeId) {
-        if (wardrobeId != null) viewModel.loadForEdit(wardrobeId)
+    // review R-02 + A-01：**会话由 sessionId 标识**，不是由「这个 composable 又组合了一次」标识。
+    // 配置重建会让 LaunchedEffect 重跑，但 sessionId 不变 → VM 判定为同一会话、保留草稿；
+    // 只有用户真的重新打开弹层（id 递增）才会复位。
+    LaunchedEffect(sessionId) {
+        viewModel.startSession(sessionId, wardrobeId)
     }
 
     ModalBottomSheet(
@@ -184,14 +190,19 @@ fun WardrobeEditSheet(
             }
 
             // 主按钮「保存衣柜」：名称为空时禁用（§7.2）
+            // review UI-01：`height(52dp)` 写在 `padding(top=24dp)` **之后**，24dp 被算进
+            // 固定高度里，按钮本体只剩 28dp，普通字号就能看见文字被上下裁掉
+            // （视觉高度也不符合 §6.3 的 52dp 主按钮口径）。
+            // 修法：外部间距放到高度约束之外，高度改成「至少 52dp」——大字号下按钮能长高，
+            // 不再把文案裁掉；四个组合（360/411dp × 字号 1.0/2.0）都不会变成细条。
             Button(
                 onClick = { viewModel.save(onSaved) },
                 enabled = uiState.canSave,
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(Dimens.Radius.m),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(Dimens.buttonHeight)
-                    .padding(top = Dimens.Space.s5),
+                    .padding(top = Dimens.Space.s5)
+                    .heightIn(min = Dimens.buttonHeight),
                 // 禁用态 38% 透明（§6.3）。review C-07：必须显式给 alpha——
                 // 若把 disabledContainerColor 设成饱和的 primary，会把 M3
                 // 插槽自带的 alpha 覆盖掉，禁用与可用长得一模一样。

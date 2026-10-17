@@ -40,6 +40,8 @@
     <string name="wardrobe_delete_no_target">还没有其他衣柜可以转移，先新建一个吧</string>
     <string name="wardrobe_delete_all">一并删除 %1$d 件衣物</string>
     <string name="wardrobe_delete_irreversible">此操作不可恢复</string>
+    <!-- review R-01：展示件数不含已删除条目，实际处理面更大时必须说清楚 -->
+    <string name="wardrobe_delete_includes_deleted">其中 %1$d 件是已删除条目，也会一并处理</string>
     <string name="wardrobe_delete_confirm">确认删除</string>
 
     <!-- 通用操作 -->
@@ -81,6 +83,8 @@
     <string name="clothing_action_edit">编辑</string>
     <string name="clothing_delete_title">删除 No.%1$s？</string>
     <string name="clothing_delete_subtitle">删除后可在提示里撤回，图片不会从手机丢失</string>
+    <!-- review R-10：被穿搭引用时的后果说明（引用数 > 0 才显示） -->
+    <string name="clothing_delete_refs_hint">它被 %1$d 套穿搭引用，删除后这些穿搭中将显示「已删除」</string>
     <string name="action_delete">删除</string>
     <string name="action_undo">撤销</string>
     <string name="clothing_deleted">已删除 No.%1$s</string>
@@ -109,6 +113,8 @@
     <string name="capture_flash_off">打开闪光灯</string>
     <string name="capture_flip">翻转镜头</string>
     <string name="capture_album">从相册选择</string>
+    <!-- review UI-06：快门原先是「无文本 Box + clickable」，读屏既无名称也无按钮角色 -->
+    <string name="capture_shutter">拍照</string>
     <string name="capture_guide">平铺在浅色背景上效果更好</string>
     <string name="capture_permission_desc">拍照录入需要使用相机；没有相机也可以直接从相册导入照片</string>
     <string name="capture_permission_fallback">从相册导入</string>
@@ -121,6 +127,9 @@
     <string name="form_section_style">风格</string>
     <string name="form_section_season">适合季节</string>
     <string name="form_field_brand">品牌</string>
+    <!-- review R-08：名称仅编辑模式可改（创建确认页按 §2.3.3 不强迫起名） -->
+    <string name="form_field_name">名称</string>
+    <string name="form_field_name_hint">可选，如「旧蓝色毛衣」</string>
     <string name="form_field_note">备注</string>
     <string name="form_field_wardrobe">所属衣柜</string>
     <string name="form_wardrobe_unset">选择衣柜</string>
@@ -152,6 +161,9 @@
     <string name="empty_category_no_outfit_title">这个分类还没有穿搭</string>
     <string name="empty_category_no_outfit_desc">创建穿搭时勾选本分类即可</string>
     <string name="empty_outfit_filter_none_title">没有符合条件的穿搭</string>
+    <!-- review R-12：筛选无结果必须有说明与一键清除，不能只给一个死文案 -->
+    <string name="empty_outfit_filter_none_desc">上面的筛选条件没有命中任何一套</string>
+    <string name="outfit_filter_clear">清除筛选</string>
 
     <!-- 确认穿搭信息页（M1-18，mockup-15/16） -->
     <string name="outfit_form_title_create">创建穿搭</string>
@@ -194,6 +206,8 @@
     <string name="outfit_wear_one">穿过 1 次</string>
     <string name="outfit_wear_n">穿过 %1$d 次</string>
     <string name="outfit_detail_items">衣物清单 · %1$d 件</string>
+    <!-- review R-11：有效件数与「已删除」占位数是两个数，不能都叫「衣物件数」 -->
+    <string name="outfit_detail_items_deleted">衣物清单 · %1$d 件 · %2$d 件已删除</string>
     <string name="outfit_item_deleted">已删除</string>
     <string name="outfit_wear_today">今天穿这套</string>
     <string name="outfit_delete_title">删除「%1$s」？</string>

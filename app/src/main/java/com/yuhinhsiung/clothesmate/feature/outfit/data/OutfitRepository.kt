@@ -1,5 +1,7 @@
 package com.yuhinhsiung.clothesmate.feature.outfit.data
 
+import androidx.room.withTransaction
+import com.yuhinhsiung.clothesmate.core.database.ClothesMateDatabase
 import com.yuhinhsiung.clothesmate.core.database.dao.ClothingItemDao
 import com.yuhinhsiung.clothesmate.core.database.dao.OutfitCategoryDao
 import com.yuhinhsiung.clothesmate.core.database.dao.OutfitDao
@@ -87,38 +89,59 @@ interface OutfitRepository {
 
 @Singleton
 class DefaultOutfitRepository @Inject constructor(
+    private val db: ClothesMateDatabase,
     private val outfitDao: OutfitDao,
     private val categoryDao: OutfitCategoryDao,
     private val clothingDao: ClothingItemDao,
     private val wardrobeDao: WardrobeDao,
 ) : OutfitRepository {
 
+    /**
+     * 各穿搭的**有效衣物件数**（review R-11：唯一口径）。
+     *
+     * 口径 = 关联表里仍指向**未软删除衣物**的行数：
+     * - 全部穿搭、分类内穿搭、详情标题三处共用同一个来源；
+     * - 依赖 `clothingDao.observeAll()`（它带 `deletedAt IS NULL`），软删 / 撤销后自动重发，
+     *   所以件数会实时刷新；
+     * - 「已删除」占位卡**不计入**件数（`Outfit.itemCount` 注释的既有承诺）。
+     */
+    private fun outfitItemCounts(): Flow<Map<Long, Int>> =
+        combine(outfitDao.observeItemRefs(), clothingDao.observeAll()) { refs, clothing ->
+            val liveIds = clothing.mapTo(HashSet()) { it.id }
+            refs.filter { it.clothingItemId in liveIds }
+                .groupingBy { it.outfitId }
+                .eachCount()
+        }
+
     override fun observeOutfits(): Flow<List<Outfit>> =
-        combine(outfitDao.observeAll(), outfitDao.observeItemRefs()) { outfits, refs ->
-            val counts = refs.groupingBy { it.outfitId }.eachCount()
+        combine(outfitDao.observeAll(), outfitItemCounts()) { outfits, counts ->
             outfits.map { it.toDomain(itemCount = counts[it.id] ?: 0) }
         }
 
     override fun observeOutfitDetail(outfitId: Long): Flow<OutfitDetail?> =
         combine(
-            outfitDao.observeById(outfitId),
-            wardrobeDao.observeAll(),
-            categoryDao.observeAll(),
-        ) { outfit, wardrobes, categories ->
+            // review R-11：**全部数据源都必须响应式**。原实现只组合 outfit / wardrobe /
+            // category 三张表，衣物用一次性 `findByIdsIncludingDeleted()` 取——衣物表怎么变
+            // 详情都不会重发：软删后有效件数停在 1、占位卡不出现，改名也要退出重进才看得到。
+            // 「每次 `.first()` 重新订阅能取到新值」证明的是重查正确，不是实时刷新。
+            combine(
+                outfitDao.observeById(outfitId),
+                outfitDao.observeItemRefsOf(outfitId),
+                // 衣物清单必须**含软删除行**（W-13「已删除」占位卡渲染）——
+                // 不能用 observeAll()（它过滤 deletedAt，占位卡会凭空消失）
+                clothingDao.observeAllIncludingDeleted(),
+            ) { outfit, refs, clothing -> Triple(outfit, refs, clothing) },
+            combine(
+                wardrobeDao.observeAll(),
+                categoryDao.observeAll(),
+                categoryDao.observeCategoryIdsForOutfit(outfitId),
+            ) { wardrobes, categories, categoryIds -> Triple(wardrobes, categories, categoryIds) },
+        ) { (outfit, refs, clothing), (wardrobes, categories, categoryIds) ->
             outfit ?: return@combine null
-            // 衣物清单必须**含软删除行**（W-13「已删除」占位卡渲染）——
-            // 不能用 observeAll()（它过滤 deletedAt，占位卡会凭空消失，
-            // 该缺口由 OutfitRepositoryTest.softDeletedItemsAreNotCountedInDetailItems 锁定）。
-            // 已知让步：衣物字段级变更不会主动触发本流重发（combine 源不含衣物表），
-            // 从衣物编辑页返回详情页时 WhileSubscribed 重订阅会取到新值。
-            val itemIds = outfitDao.getClothingIds(outfitId)
-            val items = if (itemIds.isEmpty()) {
-                emptyList()
-            } else {
-                clothingDao.findByIdsIncludingDeleted(itemIds)
-            }
-            val categoryIds = categoryDao.getCategoryIdsForOutfit(outfitId).toSet()
-            val itemRefs = items.mapNotNull { entity ->
+            val byId = clothing.associateBy { it.id }
+            // 关联已按 position 排序（DAO 的 ORDER BY），据此重建业务顺序与占位卡
+            val itemRefs = refs.mapNotNull { ref ->
+                val entity = byId[ref.clothingItemId] ?: return@mapNotNull null
                 val domain = entity.toDomain()
                 OutfitItemRef(
                     itemId = domain.id,
@@ -156,73 +179,113 @@ class DefaultOutfitRepository @Inject constructor(
     }
 
     override fun observeOutfitsInCategory(categoryId: Long): Flow<List<Outfit>> =
-        combine(categoryDao.observeOutfitIds(categoryId), outfitDao.observeAll()) { ids, outfits ->
+        combine(
+            categoryDao.observeOutfitIds(categoryId),
+            outfitDao.observeAll(),
+            outfitItemCounts(),
+        ) { ids, outfits, counts ->
             if (ids.isEmpty()) {
                 emptyList()
             } else {
                 val idSet = ids.toSet()
-                outfits.filter { it.id in idSet }.map { it.toDomain() }
+                outfits.filter { it.id in idSet }
+                    // review R-11：分类内同样带件数——原先走不带参的 toDomain()，
+                    // itemCount 恒为默认 0，分类页所有卡片都显示「0 件」
+                    .map { it.toDomain(itemCount = counts[it.id] ?: 0) }
             }
         }
 
+    /**
+     * 新建穿搭（M1-18）。
+     *
+     * review R-13：主行 + 衣物关联 + 分类关联三张表**同事务**。原先依次插入，
+     * 关联写入失败时 `createOutfit()` 直接抛出，而异常到达表单层时表单还没拿到 id，
+     * 补偿逻辑根本找不到这条已创建的主行——孤儿穿搭就此留下，用户重试再建一条。
+     * `OutfitItemCrossRef` 的衣物外键是 NO_ACTION，传进来的衣物 id 必须真实存在，
+     * 这也正是可以拿它注入失败来验证事务的抓手。
+     *
+     * 衣物关联按选择顺序写 `position`（review R-06），查询侧按它排序。
+     */
     override suspend fun createOutfit(draft: OutfitDraft): Long {
         val now = System.currentTimeMillis()
-        val id = outfitDao.insert(
-            OutfitEntity(
-                name = draft.name?.trim()?.takeIf { it.isNotEmpty() },
-                photoPaths = draft.photoPaths,
-                styleTags = draft.styleTags,
-                sceneTags = draft.sceneTags,
-                seasonTags = draft.seasonTags,
-                note = draft.note?.trim()?.takeIf { it.isNotEmpty() },
-                createdAt = now,
-                updatedAt = now,
-            ),
-        )
-        outfitDao.insertCrossRefs(draft.clothingIds.map { OutfitItemCrossRef(id, it) })
-        categoryDao.insertCrossRefs(draft.categoryIds.map { OutfitCategoryCrossRef(id, it) })
-        return id
+        return db.withTransaction {
+            val id = outfitDao.insert(
+                OutfitEntity(
+                    name = draft.name?.trim()?.takeIf { it.isNotEmpty() },
+                    photoPaths = draft.photoPaths,
+                    styleTags = draft.styleTags,
+                    sceneTags = draft.sceneTags,
+                    seasonTags = draft.seasonTags,
+                    note = draft.note?.trim()?.takeIf { it.isNotEmpty() },
+                    createdAt = now,
+                    updatedAt = now,
+                ),
+            )
+            outfitDao.insertCrossRefs(draft.clothingIds.toPositionedRefs(id))
+            categoryDao.insertCrossRefs(draft.categoryIds.map { OutfitCategoryCrossRef(id, it) })
+            id
+        }
     }
 
+    /**
+     * 编辑（M1-18 编辑复用）。wearCount / lastWornAt / createdAt 保留原值。
+     *
+     * review R-13：主行更新 + 两张关联表「先删后插」同事务。原先分步执行，
+     * 删完旧关联再插新关联时失败，原关联**永久丢失**（用户下次打开发现自己删掉的衣服全没了）。
+     */
     override suspend fun updateOutfit(outfitId: Long, draft: OutfitDraft) {
-        val existing = outfitDao.findById(outfitId) ?: return
-        outfitDao.update(
-            existing.copy(
-                name = draft.name?.trim()?.takeIf { it.isNotEmpty() },
-                photoPaths = draft.photoPaths,
-                styleTags = draft.styleTags,
-                sceneTags = draft.sceneTags,
-                seasonTags = draft.seasonTags,
-                note = draft.note?.trim()?.takeIf { it.isNotEmpty() },
-                updatedAt = System.currentTimeMillis(),
-            ),
-        )
-        // 关联全量重写（多对多增量合并复杂度不值当，个人量级直接重建）
-        outfitDao.deleteCrossRefsByOutfit(outfitId)
-        outfitDao.insertCrossRefs(draft.clothingIds.map { OutfitItemCrossRef(outfitId, it) })
-        categoryDao.deleteCrossRefsByOutfit(outfitId)
-        categoryDao.insertCrossRefs(draft.categoryIds.map { OutfitCategoryCrossRef(outfitId, it) })
+        db.withTransaction {
+            val existing = outfitDao.findById(outfitId) ?: return@withTransaction
+            outfitDao.update(
+                existing.copy(
+                    name = draft.name?.trim()?.takeIf { it.isNotEmpty() },
+                    photoPaths = draft.photoPaths,
+                    styleTags = draft.styleTags,
+                    sceneTags = draft.sceneTags,
+                    seasonTags = draft.seasonTags,
+                    note = draft.note?.trim()?.takeIf { it.isNotEmpty() },
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+            // 关联全量重写（多对多增量合并复杂度不值当，个人量级直接重建）
+            outfitDao.deleteCrossRefsByOutfit(outfitId)
+            outfitDao.insertCrossRefs(draft.clothingIds.toPositionedRefs(outfitId))
+            categoryDao.deleteCrossRefsByOutfit(outfitId)
+            categoryDao.insertCrossRefs(draft.categoryIds.map { OutfitCategoryCrossRef(outfitId, it) })
+        }
     }
 
+    /** 衣物 id 列表 → 带业务顺序的关联行（顺序 = 列表下标，review R-06） */
+    private fun List<Long>.toPositionedRefs(outfitId: Long): List<OutfitItemCrossRef> =
+        mapIndexed { index, clothingId -> OutfitItemCrossRef(outfitId, clothingId, index) }
+
+    /**
+     * 删除穿搭（M1-20 / W-13）。
+     *
+     * review R-13：三张表的删除与 W-13 连带判定同事务，失败不留半截；
+     * **文件清理放在提交之后**（[onDeleted] 在事务外回调），避免回滚后仍有文件被删。
+     */
     override suspend fun deleteOutfit(
         outfitId: Long,
         onDeleted: suspend (Long, List<Long>) -> Unit,
     ): Int {
-        val itemIds = outfitDao.getClothingIds(outfitId)
-        // 分类 / 衣物关联先行清理（outfit 行 FK 是 CASCADE，但显式删除语义更清楚，
-        // 且 CASCADE 不会触发 W-13 的连带判定——那要逐件查剩余引用）
-        categoryDao.deleteCrossRefsByOutfit(outfitId)
-        outfitDao.deleteCrossRefsByOutfit(outfitId)
-        outfitDao.deleteById(outfitId)
+        val cleared = db.withTransaction {
+            val itemIds = outfitDao.getClothingIds(outfitId)
+            // 分类 / 衣物关联先行清理（outfit 行 FK 是 CASCADE，但显式删除语义更清楚，
+            // 且 CASCADE 不会触发 W-13 的连带判定——那要逐件查剩余引用）
+            categoryDao.deleteCrossRefsByOutfit(outfitId)
+            outfitDao.deleteCrossRefsByOutfit(outfitId)
+            outfitDao.deleteById(outfitId)
 
-        // W-13 连带：软删衣物若不再被任何现存穿搭引用 → 物理删除
-        val cleared = itemIds.mapNotNull { itemId ->
-            val entity = clothingDao.findById(itemId) ?: return@mapNotNull null
-            if (entity.deletedAt != null && outfitDao.getOutfitIdsForItem(itemId).isEmpty()) {
-                clothingDao.deleteById(itemId)
-                itemId
-            } else {
-                null
+            // W-13 连带：软删衣物若不再被任何现存穿搭引用 → 物理删除
+            itemIds.mapNotNull { itemId ->
+                val entity = clothingDao.findById(itemId) ?: return@mapNotNull null
+                if (entity.deletedAt != null && outfitDao.getOutfitIdsForItem(itemId).isEmpty()) {
+                    clothingDao.deleteById(itemId)
+                    itemId
+                } else {
+                    null
+                }
             }
         }
         onDeleted(outfitId, cleared)

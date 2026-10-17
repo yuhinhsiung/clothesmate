@@ -60,16 +60,25 @@ class ClothingDetailViewModel @Inject constructor(
 
     // 撤销软删除后无需手动触发重查：observeItem 的 Room Flow 会在 restore
     // 清掉 deletedAt 后自然重发该行（review U-i：原先那个 reloadTrigger 是死代码）
+
+    /**
+     * 删除弹窗用的「被几套穿搭引用」（review R-10）。
+     * 打开弹窗时按需查一次——引用关系会随别处增删穿搭变化，缓存到进页面时算不准。
+     */
+    private val outfitRefCount = MutableStateFlow(0)
+
     val uiState: StateFlow<ClothingDetailUiState> = combine(
         clothingRepository.observeItem(itemId),
         wardrobeRepository.observeWardrobes(),
-    ) { item, wardrobes ->
+        outfitRefCount,
+    ) { item, wardrobes, refCount ->
         if (item == null) {
             ClothingDetailUiState(notFound = true)
         } else {
             ClothingDetailUiState(
                 item = item,
                 wardrobeName = wardrobes.firstOrNull { it.id == item.wardrobeId }?.name,
+                outfitRefCount = refCount,
             )
         }
     }.stateIn(
@@ -77,6 +86,13 @@ class ClothingDetailViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = ClothingDetailUiState(),
     )
+
+    /** 打开删除确认前刷新引用数（M1-13 / W-13 的「这些穿搭中将显示『已删除』」） */
+    fun loadOutfitRefCount() {
+        viewModelScope.launch {
+            outfitRefCount.value = clothingRepository.countOutfitsForItem(itemId)
+        }
+    }
 
     /** 一键切换 收起 / 恢复正常（W-09） */
     fun toggleStored() {
@@ -101,6 +117,8 @@ data class ClothingDetailUiState(
     val item: ClothingItem? = null,
     val wardrobeName: String? = null,
     val notFound: Boolean = false,
+    /** 被几套现存穿搭引用（删除弹窗警示，review R-10） */
+    val outfitRefCount: Int = 0,
 ) {
     val isStored: Boolean
         get() = item?.isStored == true

@@ -93,7 +93,9 @@ class OutfitFormViewModel @Inject constructor(
         viewModelScope.launch {
             navResultBus.pickedItemIds().collect { picked ->
                 if (picked != null) {
-                    _uiState.update { it.copy(selectedItemIds = picked, userModified = true) }
+                    // userModified 由「与 baseline 比对」统一算出（review R-05），
+                    // 这里只落值：选完没改就是没改，不该弹放弃确认
+                    _uiState.update { it.copy(selectedItemIds = picked) }
                     navResultBus.consumePickedItemIds()
                 }
             }
@@ -151,8 +153,8 @@ class OutfitFormViewModel @Inject constructor(
                 _uiState.update { it.copy(notFound = true) }
                 return@launch
             }
-            _uiState.update {
-                it.copy(
+            _uiState.update { loaded ->
+                val filled = loaded.copy(
                     existingPaths = outfit.photoPaths,
                     selectedItemIds = outfitRepository.getClothingIds(outfitId),
                     selectedCategoryIds = outfitRepository.getCategoryIdsForOutfit(outfitId).toSet(),
@@ -161,6 +163,8 @@ class OutfitFormViewModel @Inject constructor(
                     seasonTags = outfit.seasonTags,
                     note = outfit.note.orEmpty(),
                 )
+                // 预填完成即固定 baseline：预填本身不算「用户改过」（review R-05）
+                filled.copy(baseline = filled.snapshot())
             }
         }
     }
@@ -254,7 +258,13 @@ class OutfitFormViewModel @Inject constructor(
         )
     }
 
-    /** 现场新建分类（M1-18「＋ 新建分类」：输入即建并选中） */
+    /**
+     * 现场新建分类（M1-18「＋ 新建分类」：输入即建并选中）。
+     *
+     * **策略（review R-05 要求明确记录）**：分类是全局词表，创建即落库；
+     * 之后放弃这套穿搭**不回滚分类**。理由是分类本身是用户资产（别处也能用），
+     * 而「放弃穿搭」只该丢弃这次的表单草稿。此策略与本条修复一并登记。
+     */
     fun createAndSelectCategory(name: String) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
@@ -290,8 +300,13 @@ class OutfitFormViewModel @Inject constructor(
     private fun List<String>.toggle(tag: String): List<String> =
         if (tag in this) this - tag else this + tag
 
+    /**
+     * 字段变更的统一入口。**不再无条件置 `userModified`**（review R-05）：改动与否
+     * 由 [OutfitFormUiState.userModified] 拿当前状态和 baseline 比出来，
+     * 照片、分类这些走 `_uiState.update` 直连的路径因此也自然纳入脏判定。
+     */
     private inline fun update(transform: (OutfitFormUiState) -> OutfitFormUiState) {
-        _uiState.update { transform(it).copy(userModified = true) }
+        _uiState.update { transform(it) }
     }
 
     // ── 保存 ────────────────────────────────────────────────────
@@ -321,6 +336,8 @@ class OutfitFormViewModel @Inject constructor(
     }
 
     private suspend fun saveCreate(state: OutfitFormUiState): Long {
+        // review R-13：主行 + 衣物关联 + 分类关联已在 Repository 内部**同事务**提交。
+        // 这里只剩「DB 与文件」两界——事务管不到文件，用显式补偿。
         val id = outfitRepository.createOutfit(
             OutfitDraft(
                 photoPaths = emptyList(),
@@ -332,8 +349,11 @@ class OutfitFormViewModel @Inject constructor(
                 categoryIds = state.selectedCategoryIds.toList(),
             ),
         )
-        // review B-12：归位/回写失败时补偿回滚（删行 + 关联 + 已归位文件），
-        // 避免「孤儿穿搭 + 重试重复建档」。跨 DB/文件两界无法真事务，尽力补偿。
+        // review R-14：归位/回写失败时补偿回滚。
+        // 关键是**先把已归位的图退回暂存区**——promote 会 consume 暂存源，第 2 张失败时
+        // 第 1 张的暂存文件已经没了；只删归位产物的话草稿会指向不存在的文件，
+        // 用户按提示重试仍然失败。退回之后草稿恢复成「什么都没发生」的可重试状态，
+        // 同时也不会留下孤儿图片文件。
         val promoted = mutableListOf<String>()
         try {
             stagedPhotos.forEachIndexed { index, staged ->
@@ -344,10 +364,10 @@ class OutfitFormViewModel @Inject constructor(
             }
         } catch (failure: Throwable) {
             runCatching {
-                outfitRepository.deleteOutfit(id)
-                promoted.forEach { path ->
-                    imageStorage.deleteOutfitPhoto(id, path.substringAfterLast('/').substringBeforeLast('.').toIntOrNull() ?: return@forEach)
+                stagedPhotos.forEachIndexed { index, staged ->
+                    imageStore.restoreStaged(staged, imageStorage.outfitPhotoFile(id, index))
                 }
+                outfitRepository.deleteOutfit(id)
             }.onFailure { rollbackFailure ->
                 android.util.Log.e("OutfitForm", "建档回滚失败，残留无图穿搭 id=$id", rollbackFailure)
             }
@@ -364,21 +384,41 @@ class OutfitFormViewModel @Inject constructor(
             .mapNotNull(::indexOfPhotoPath)
             .maxOrNull()
             ?.plus(1) ?: 0
-        val promoted = stagedPhotos.mapIndexed { offset, staged ->
-            imageStore.promote(staged, imageStorage.outfitPhotoFile(outfitId, nextIndex + offset))
+        val promoted = mutableListOf<String>()
+        try {
+            stagedPhotos.forEachIndexed { offset, staged ->
+                promoted += imageStore.promote(
+                    staged,
+                    imageStorage.outfitPhotoFile(outfitId, nextIndex + offset),
+                )
+            }
+            // review R-13：主行更新与两张关联表的「先删后插」已在 Repository 事务里，
+            // 失败则一行未改；这里只需把刚归位的图退回暂存区，草稿即可原地重试
+            outfitRepository.updateOutfit(
+                outfitId,
+                OutfitDraft(
+                    photoPaths = state.existingPaths + promoted,
+                    styleTags = state.styleTags,
+                    sceneTags = state.sceneTags,
+                    seasonTags = state.seasonTags,
+                    note = state.note.trim().takeIf { it.isNotEmpty() },
+                    clothingIds = state.selectedItemIds,
+                    categoryIds = state.selectedCategoryIds.toList(),
+                ),
+            )
+        } catch (failure: Throwable) {
+            runCatching {
+                stagedPhotos.forEachIndexed { offset, staged ->
+                    imageStore.restoreStaged(
+                        staged,
+                        imageStorage.outfitPhotoFile(outfitId, nextIndex + offset),
+                    )
+                }
+            }.onFailure { rollbackFailure ->
+                android.util.Log.e("OutfitForm", "编辑失败后暂存图退回失败 id=$outfitId", rollbackFailure)
+            }
+            throw failure
         }
-        outfitRepository.updateOutfit(
-            outfitId,
-            OutfitDraft(
-                photoPaths = state.existingPaths + promoted,
-                styleTags = state.styleTags,
-                sceneTags = state.sceneTags,
-                seasonTags = state.seasonTags,
-                note = state.note.trim().takeIf { it.isNotEmpty() },
-                clothingIds = state.selectedItemIds,
-                categoryIds = state.selectedCategoryIds.toList(),
-            ),
-        )
         // 保存成功后才真正删除被移除的既有照片文件（编辑期间放弃可无损恢复）
         state.removedExistingPaths.forEach { path ->
             indexOfPhotoPath(path)?.let { index ->
@@ -395,24 +435,45 @@ class OutfitFormViewModel @Inject constructor(
             .substringBeforeLast('.')
             .toIntOrNull()
 
+    /**
+     * 选中的自定义风格 / 场景标签写入词典（M1-21）。
+     *
+     * review R-14：**词典是辅助索引，不是用户的数据**。原先它排在主记录保存之后、
+     * 补偿块之外，登记失败会一路冒泡成「保存失败」——可穿搭其实已经存好了，
+     * 用户以为没存、再点一次保存就多出一条重复记录。现在失败只留日志，
+     * 保存成功的语义与主记录保持一致。
+     */
     private suspend fun recordCustomTags(state: OutfitFormUiState) {
-        state.styleTags.forEach {
-            val tag = it.trim()
-            if (tag.isNotEmpty()) tagDictionaryDao.insertOrIncrement(TagType.Style.key, tag, isPreset = false)
-        }
-        state.sceneTags.forEach {
-            val tag = it.trim()
-            if (tag.isNotEmpty()) tagDictionaryDao.insertOrIncrement(TagType.Scene.key, tag, isPreset = false)
+        runCatching {
+            state.styleTags.forEach {
+                val tag = it.trim()
+                if (tag.isNotEmpty()) tagDictionaryDao.insertOrIncrement(TagType.Style.key, tag, isPreset = false)
+            }
+            state.sceneTags.forEach {
+                val tag = it.trim()
+                if (tag.isNotEmpty()) tagDictionaryDao.insertOrIncrement(TagType.Scene.key, tag, isPreset = false)
+            }
+        }.onFailure { failure ->
+            android.util.Log.w(TAG, "标签词典登记失败（穿搭已保存，仅词典缺词）", failure)
         }
     }
 
-    /** 放弃 / 关闭：清掉本次会话的暂存图（M1-15 同规则） */
+    /** 放弃 / 关闭：清掉本次会话的暂存图（M1-15 同规则）。
+     *
+     * review R-05：所有「不保存就离开」的路径都必须走这里——包括**没有改动**时
+     * 直接返回的那条。原先只有弹层里点了「放弃」才调 discard()，直接返回路径
+     * 会把暂存图留在 `cache/tmp_images/` 里等系统回收。
+     */
     fun discard() {
         val staged = stagedPhotos.toList()
         stagedPhotos.clear()
         viewModelScope.launch {
             staged.forEach { imageStore.clearStaged(it) }
         }
+    }
+
+    private companion object {
+        const val TAG = "OutfitForm"
     }
 }
 
@@ -439,7 +500,11 @@ data class OutfitFormUiState(
     val saving: Boolean = false,
     val error: String? = null,
     val notFound: Boolean = false,
-    val userModified: Boolean = false,
+    /**
+     * 进入表单时的初始快照（新建 = 全空；编辑 = 预填完成的那一刻）。
+     * [userModified] 拿它与当前状态比对（review R-05）。
+     */
+    val baseline: OutfitFormBaseline = OutfitFormBaseline(),
 ) {
     /** 上限 9 张（§7.4 / §3.2） */
     val photoCount: Int get() = existingPaths.size + stagedDisplayPaths.size
@@ -449,7 +514,50 @@ data class OutfitFormUiState(
     val canSave: Boolean
         get() = selectedItemIds.isNotEmpty() && !addingPhoto && !saving && !notFound
 
+    /**
+     * 是否有未保存的改动（M1-15 返回确认的唯一依据）。
+     *
+     * review R-05：原实现靠一个 `userModified` 布尔，只有走字段 setter 才置位——
+     * **相册/拍照追加、移除照片、现场新建并选中分类都绕过了它**，于是「只改了照片」
+     * 的返回直接丢弃、没有确认。现在改成拿当前状态和 [baseline] 逐项比对：
+     * 照片、分类、衣物、标签、备注任何一项变了都算，不可能再漏。
+     *
+     * `stagedDisplayPaths` 非空 = 本次会话新增过照片（edge：加完又删光则回到不脏，
+     * 与「什么都没改」等价，正确）。
+     */
+    val userModified: Boolean
+        get() = existingPaths != baseline.existingPaths ||
+            stagedDisplayPaths.isNotEmpty() ||
+            selectedItemIds != baseline.selectedItemIds ||
+            selectedCategoryIds != baseline.selectedCategoryIds ||
+            styleTags != baseline.styleTags ||
+            sceneTags != baseline.sceneTags ||
+            seasonTags != baseline.seasonTags ||
+            note != baseline.note
+
+    /** 当前状态的可比对快照（预填完成后用它固定 baseline） */
+    fun snapshot(): OutfitFormBaseline = OutfitFormBaseline(
+        existingPaths = existingPaths,
+        selectedItemIds = selectedItemIds,
+        selectedCategoryIds = selectedCategoryIds,
+        styleTags = styleTags,
+        sceneTags = sceneTags,
+        seasonTags = seasonTags,
+        note = note,
+    )
+
     companion object {
         const val MAX_OUTFIT_PHOTOS = 9
     }
 }
+
+/** 表单初始快照（review R-05 的脏判定基准）。字段与 [OutfitFormUiState] 中「用户可改」的部分一一对应。 */
+data class OutfitFormBaseline(
+    val existingPaths: List<String> = emptyList(),
+    val selectedItemIds: List<Long> = emptyList(),
+    val selectedCategoryIds: Set<Long> = emptySet(),
+    val styleTags: List<String> = emptyList(),
+    val sceneTags: List<String> = emptyList(),
+    val seasonTags: List<String> = emptyList(),
+    val note: String = "",
+)

@@ -5,11 +5,13 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import com.yuhinhsiung.clothesmate.core.database.dao.ClothingItemDao
+import com.yuhinhsiung.clothesmate.core.database.dao.CodeHistoryDao
 import com.yuhinhsiung.clothesmate.core.database.dao.OutfitCategoryDao
 import com.yuhinhsiung.clothesmate.core.database.dao.OutfitDao
 import com.yuhinhsiung.clothesmate.core.database.dao.TagDictionaryDao
 import com.yuhinhsiung.clothesmate.core.database.dao.WardrobeDao
 import com.yuhinhsiung.clothesmate.core.database.dao.WearRecordDao
+import com.yuhinhsiung.clothesmate.core.database.entity.ClothingCodeHistoryEntity
 import com.yuhinhsiung.clothesmate.core.database.entity.ClothingItemEntity
 import com.yuhinhsiung.clothesmate.core.database.entity.OutfitCategoryCrossRef
 import com.yuhinhsiung.clothesmate.core.database.entity.OutfitCategoryEntity
@@ -26,12 +28,14 @@ import com.yuhinhsiung.clothesmate.core.database.entity.WearRecordEntity
  *
  * 版本与迁移策略：M1–M3 允许 `fallbackToDestructiveMigration`（迭代期用户无敏感数据留存），
  * M4 起必须提供真实 Migration。schema 已导出到 `app/schemas/` 纳入版本控制，
- * 以便后续按名单编写迁移。
+ * 以便后续按名单编写迁移。**已有真迁移的版本升级一律走迁移**（见 [Migrations]），
+ * destructive 只作为兜底。
  */
 @Database(
     entities = [
         WardrobeEntity::class,
         ClothingItemEntity::class,
+        ClothingCodeHistoryEntity::class,
         OutfitCategoryEntity::class,
         OutfitEntity::class,
         OutfitItemCrossRef::class,
@@ -39,13 +43,14 @@ import com.yuhinhsiung.clothesmate.core.database.entity.WearRecordEntity
         WearRecordEntity::class,
         TagDictionaryEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @TypeConverters(ClothesMateTypeConverters::class)
 abstract class ClothesMateDatabase : RoomDatabase() {
     abstract fun wardrobeDao(): WardrobeDao
     abstract fun clothingItemDao(): ClothingItemDao
+    abstract fun codeHistoryDao(): CodeHistoryDao
     abstract fun outfitCategoryDao(): OutfitCategoryDao
     abstract fun outfitDao(): OutfitDao
     abstract fun wearRecordDao(): WearRecordDao

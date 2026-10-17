@@ -41,10 +41,15 @@ class WardrobeDeleteViewModel @Inject constructor(
         viewModelScope.launch {
             val wardrobe = wardrobeRepository.getWardrobe(wardrobeId) ?: return@launch
             val others = wardrobeRepository.getAllWardrobes().filter { it.id != wardrobeId }
+            // review R-01：可见件数（不含软删）与**实际需处理行数**分开。
+            // 软删行的外键仍指向本衣柜，删衣柜时必须一并处理；弹层只说「2 件」
+            // 而实际动了 3 件，用户没有任何心理准备。
+            val includingDeleted = wardrobeRepository.clothingCountIncludingDeleted(wardrobeId)
             _uiState.update {
                 it.copy(
                     wardrobe = wardrobe,
                     itemCount = wardrobe.clothingCount,
+                    deletedItemCount = (includingDeleted - wardrobe.clothingCount).coerceAtLeast(0),
                     targets = others,
                     // 默认选中①；若只有一件衣柜则无目标可转，退到②
                     selectedTargetId = others.firstOrNull()?.id,
@@ -132,7 +137,10 @@ data class DeleteResult(
 /** 删除弹层 UI 状态 */
 data class WardrobeDeleteUiState(
     val wardrobe: Wardrobe? = null,
+    /** 展示件数（不含软删除），弹层副标题用 */
     val itemCount: Int = 0,
+    /** 其中的软删除条目数（review R-01：与展示件数分开说明） */
+    val deletedItemCount: Int = 0,
     val targets: List<Wardrobe> = emptyList(),
     val selectedTargetId: Long? = null,
     /** true = 选中①转移；false = 选中②一并删除 */
@@ -140,6 +148,10 @@ data class WardrobeDeleteUiState(
     val deleting: Boolean = false,
     val error: String? = null,
 ) {
+    /** 「一并删除」的实际影响面 = 可见件数 + 软删除条目（review R-01） */
+    val totalItemCount: Int
+        get() = itemCount + deletedItemCount
+
     /** 只有一件衣柜时无转移目标，选项①不可用 */
     val canTransfer: Boolean
         get() = targets.isNotEmpty()

@@ -39,7 +39,7 @@ class ClothingRepositoryTest {
         database = Room.inMemoryDatabaseBuilder(context, ClothesMateDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        repository = DefaultClothingRepository(database.clothingItemDao(), database.outfitDao())
+        repository = DefaultClothingRepository(database, database.clothingItemDao(), database.outfitDao(), database.codeHistoryDao())
         // 外键需要父行：先建两个衣柜
         database.wardrobeDao().insertAll(
             listOf(
@@ -335,5 +335,96 @@ class ClothingRepositoryTest {
         // 「%」是字面字符，任何字段都不含它 → 0 命中（修复前会命中全部）
         assertTrue(repository.search("%").first().isEmpty())
         assertTrue(repository.search("_").first().isEmpty())
+    }
+
+    // ── review R-03：编号历史占用（物理删除后也不回收） ──────────
+
+    /** 物理删除会抹掉唯一性校验的唯一证据——本用例是 R-03 的现场复现。 */
+    @Test
+    fun `物理删除后旧编号不可被另一件衣物重新使用`() = runTest {
+        val id = repository.createItem(item("500"))
+        repository.softDelete(id)
+        repository.deleteCrossRefsForItem(id)
+        repository.deletePhysically(id)
+
+        assertNull(database.clothingItemDao().findById(id))
+        assertFalse("物理删除后 500 仍是已占用", repository.isCodeAvailable("500"))
+        assertTrue("自动发号的冲突判定同样要看到它", repository.isCodeTaken("500"))
+
+        val error = runCatching { repository.createItem(item("500")) }.exceptionOrNull()
+        assertTrue("另一件衣物不能拿走这个号", error is IllegalArgumentException)
+    }
+
+    /** 关闭条件之一：手动高位号不能把自动序列推高。 */
+    @Test
+    fun `历史占用不推进自动序列`() = runTest {
+        repository.createItem(item("500"))
+
+        // 计数器内是外部的 CodeCounterStore；这里锁的是 Repository 侧的口径：
+        // 500 被判为已占用，但 1、2、3…的可用性完全不受影响
+        assertTrue(repository.isCodeTaken("500"))
+        assertFalse(repository.isCodeTaken("1"))
+        assertFalse(repository.isCodeTaken("2"))
+    }
+
+    /** 关闭条件之一：改号后旧号仍被占用，新号归本件。 */
+    @Test
+    fun `改号后旧号仍不可被他人使用`() = runTest {
+        val id = repository.createItem(item("7"))
+        val created = repository.getItem(id)!!
+
+        repository.updateItem(created.copy(code = "9"))
+
+        assertEquals("9", repository.getItem(id)!!.code)
+        assertFalse("旧号 7 不回收", repository.isCodeAvailable("7", excludeId = 0L))
+        // 本件自己可以改回自己用过的号（历史行的 holder 仍是它）
+        assertTrue(repository.isCodeAvailable("7", excludeId = id))
+        // 别人不行
+        assertFalse(repository.isCodeAvailable("7", excludeId = 12345L))
+    }
+
+    /** 关闭条件之一：软删除 + 撤销两个阶段都不放号。 */
+    @Test
+    fun `软删除与撤销期间编号始终不可被占用`() = runTest {
+        val id = repository.createItem(item("42"))
+
+        repository.softDelete(id)
+        assertFalse(repository.isCodeAvailable("42"))
+
+        repository.restore(id)
+        assertFalse(repository.isCodeAvailable("42"))
+        // 撤销后持有人仍是本件
+        assertTrue(repository.isCodeAvailable("42", excludeId = id))
+    }
+
+    @Test
+    fun `创建编号时同步登记历史占用`() = runTest {
+        val id = repository.createItem(item("8"))
+        assertEquals(id, database.codeHistoryDao().holderOf("8"))
+    }
+
+    /**
+     * review D-01：`recordedAt` 的语义是**首次登记时间**，不能被后续写入刷新。
+     *
+     * 旧实现用 `@Insert(REPLACE)` + 每次 `System.currentTimeMillis()`，连「只改备注」
+     * 的编辑都会把时间刷成今天。这里先把首次时间改成一个可辨认的旧值，再走一次编辑：
+     * 若实现退回 REPLACE 写法，断言会立刻失败。
+     */
+    @Test
+    fun `编号历史的首次登记时间不被后续编辑覆盖`() = runTest {
+        val id = repository.createItem(item("9"))
+        // 人为把首次时间改成旧值（DAO 没有「改时间」的口子，正是希望它永远别被改）
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE clothing_code_history SET recordedAt = 12345 WHERE code = '9'",
+        )
+
+        repository.updateItem(repository.getItem(id)!!.copy(note = "只改备注"))
+
+        assertEquals(
+            "只改备注不得刷新首次登记时间",
+            12345L,
+            database.codeHistoryDao().recordedAt("9"),
+        )
+        assertEquals("持有人仍应是本件", id, database.codeHistoryDao().holderOf("9"))
     }
 }

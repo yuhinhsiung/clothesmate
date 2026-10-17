@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yuhinhsiung.clothesmate.R
@@ -64,8 +65,7 @@ fun OutfitWaterfallRoute(
     onCreateOutfit: () -> Unit,
     viewModel: OutfitWaterfallViewModel = hiltViewModel(),
 ) {
-    val outfits by viewModel.outfits.collectAsStateWithLifecycle()
-    val availableTags by viewModel.availableTags.collectAsStateWithLifecycle()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val categoryName by viewModel.categoryName.collectAsStateWithLifecycle()
     val styleSelection by viewModel.styleSelection().collectAsStateWithLifecycle()
     val sceneSelection by viewModel.sceneSelection().collectAsStateWithLifecycle()
@@ -101,9 +101,9 @@ fun OutfitWaterfallRoute(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            if (!availableTags.isEmpty) {
+            if (!state.availableTags.isEmpty) {
                 OutfitFilterBar(
-                    tags = availableTags,
+                    tags = state.availableTags,
                     styleSelection = styleSelection,
                     sceneSelection = sceneSelection,
                     seasonSelection = seasonSelection,
@@ -114,43 +114,54 @@ fun OutfitWaterfallRoute(
             }
 
             when {
-                // review B-11：分类内无穿搭必须是「这个分类还没有穿搭」空态——
-                // 此前以「数据源空 + 筛选条空」判定，而筛选条恒取全部穿搭 → 空分类
-                // 被误判成「筛选无结果」+ 一排无关 chips
-                viewModel.isCategoryScoped && outfits.isEmpty() -> {
-                    com.yuhinhsiung.clothesmate.ui.component.EmptyState(
-                        spec = EmptyStateSpec(
+                // 首帧数据未到（review R-12：与「真的没有穿搭」分开，避免闪一下空态）
+                state.loading -> {
+                    Column(
+                        modifier = Modifier.padding(Dimens.pagePadding),
+                        verticalArrangement = Arrangement.spacedBy(Dimens.Space.s3),
+                    ) {
+                        repeat(3) {
+                            com.yuhinhsiung.clothesmate.ui.component.ShimmerCard(height = 120.dp)
+                        }
+                    }
+                }
+
+                // 源列表为空才是「这里还没有穿搭」（review B-11 + R-12）：
+                // 分类内写「这个分类还没有穿搭」，全部入口写「把喜欢的搭配存下来」
+                state.sourceCount == 0 -> {
+                    val spec = if (viewModel.isCategoryScoped) {
+                        EmptyStateSpec(
                             icon = AppIcons.Tag,
                             title = stringResource(R.string.empty_category_no_outfit_title),
                             description = stringResource(R.string.empty_category_no_outfit_desc),
                             actionLabel = stringResource(R.string.outfit_create),
                             onAction = onCreateOutfit,
-                        ),
-                    )
-                }
-
-                outfits.isEmpty() && availableTags.isEmpty -> {
-                    // 无穿搭（O-04）：全部穿搭入口在数据源为空时（无任何标签可选）
-                    com.yuhinhsiung.clothesmate.ui.component.EmptyState(
-                        spec = EmptyStateSpec(
+                        )
+                    } else {
+                        EmptyStateSpec(
                             icon = AppIcons.Outfit,
                             title = stringResource(R.string.empty_no_outfit_title),
                             description = stringResource(R.string.empty_no_outfit_desc),
                             actionLabel = stringResource(R.string.outfit_create),
                             onAction = onCreateOutfit,
+                        )
+                    }
+                    com.yuhinhsiung.clothesmate.ui.component.EmptyState(spec = spec)
+                }
+
+                // 源列表有内容、过滤后为空 = **筛选没命中**（review R-12 的核心分支）。
+                // 原先这里会被上一分支吞掉，还甩出一个「创建穿搭」按钮。
+                state.outfits.isEmpty() && state.hasActiveFilter -> {
+                    com.yuhinhsiung.clothesmate.ui.component.EmptyState(
+                        spec = EmptyStateSpec(
+                            icon = AppIcons.Filter,
+                            title = stringResource(R.string.empty_outfit_filter_none_title),
+                            description = stringResource(R.string.empty_outfit_filter_none_desc),
+                            actionLabel = stringResource(R.string.outfit_filter_clear),
+                            onAction = viewModel::clearFilters,
                         ),
                     )
                 }
-
-                outfits.isEmpty() -> com.yuhinhsiung.clothesmate.ui.component.EmptyState(
-                    spec = EmptyStateSpec(
-                        icon = AppIcons.Filter,
-                        title = stringResource(R.string.empty_outfit_filter_none_title),
-                        description = null,
-                        actionLabel = null,
-                        onAction = null,
-                    ),
-                )
 
                 else -> {
                     LazyVerticalStaggeredGrid(
@@ -160,7 +171,7 @@ fun OutfitWaterfallRoute(
                         verticalItemSpacing = Dimens.waterfallColumnSpacing,
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        items(outfits, key = { it.id }) { outfit ->
+                        items(state.outfits, key = { it.id }) { outfit ->
                             OutfitWaterfallCard(
                                 outfit = outfit,
                                 onClick = { onOutfitClick(outfit.id) },

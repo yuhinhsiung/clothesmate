@@ -1,5 +1,6 @@
 package com.yuhinhsiung.clothesmate.feature.wardrobe.data
 
+import androidx.room.withTransaction
 import com.yuhinhsiung.clothesmate.core.database.dao.WardrobeDao
 import com.yuhinhsiung.clothesmate.core.database.entity.WardrobeEntity
 import com.yuhinhsiung.clothesmate.core.model.Wardrobe
@@ -49,8 +50,16 @@ interface WardrobeRepository {
     /** 删除衣柜本身（衣物去向由调用方先经 [deleteWithDestiny] 处理，见 W-12） */
     suspend fun deleteWardrobe(id: Long)
 
-    /** 某衣柜衣物数（删除弹层提示） */
+    /** 某衣柜衣物数（删除弹层提示；**不含软删除**，展示口径） */
     suspend fun clothingCount(id: Long): Int
+
+    /**
+     * 某衣柜**含软删除**的衣物数（review R-01）。
+     *
+     * 与 [clothingCount] 分开：弹层「内有 N 件衣物」展示可见件数（不含软删），
+     * 「一并删除」的实际影响面更大，UI 需要据此补一句「含已删除条目」。
+     */
+    suspend fun clothingCountIncludingDeleted(id: Long): Int
 
     /**
      * 删除衣柜并处理衣物去向（W-12 / UI 文档 §7.2）。
@@ -83,6 +92,7 @@ sealed interface WardrobeDeleteDestiny {
 
 @Singleton
 class DefaultWardrobeRepository @Inject constructor(
+    private val db: com.yuhinhsiung.clothesmate.core.database.ClothesMateDatabase,
     private val wardrobeDao: WardrobeDao,
     private val clothingRepository: ClothingRepository,
 ) : WardrobeRepository {
@@ -178,6 +188,9 @@ class DefaultWardrobeRepository @Inject constructor(
 
     override suspend fun clothingCount(id: Long): Int = wardrobeDao.countByWardrobe(id)
 
+    override suspend fun clothingCountIncludingDeleted(id: Long): Int =
+        clothingRepository.countItemsInWardrobeIncludingDeleted(id)
+
     /**
      * 删除衣柜并处理衣物去向（W-12 / UI 文档 §7.2）。
      *
@@ -189,7 +202,7 @@ class DefaultWardrobeRepository @Inject constructor(
      *   「此操作不可恢复」，开发文档 W-13 对彻底删除的定义也是「行 + 关联 + 图片文件」，
      *   所以这里不能退化成软删除。
      *
-     * ## 为什么删衣柜前必须清光衣物（踩过的坑）
+     * ## 必须处理**软删除行**（review R-01 修复）
      *
      * `clothing_item.wardrobeId` 的外键声明是 `onDelete = NO_ACTION`，看字面像
      * 「什么都不做、随便删父行」，**但 SQLite 的 NO_ACTION 仍然会做外键检查**
@@ -199,47 +212,43 @@ class DefaultWardrobeRepository @Inject constructor(
      * 这正是 M1-04 测试首次跑起来时抓到的真 bug——首版把「一并删除」做成软删除，
      * 行还赖在表里，衣柜必然删不掉。
      *
-     * ## 为什么不用 Room 事务
+     * 但「任何衣物」**包含软删除行**：它们的 `deletedAt` 非空、不出现在列表里、
+     * 也不计入「内有 N 件」的展示件数，外键却照样指着本衣柜。M1 首版用的
+     * `getItemsInWardrobe()` 带 `deletedAt IS NULL`，于是「衣柜里只剩一件软删衣物、
+     * 弹层显示 0 件」时删除必然失败；混合数据下「一并删除」还会先物理删掉正常行、
+     * 再在删衣柜那步失败，用户看到失败但数据已经少了一半。
+     * 现在统一用 [ClothingRepository.getItemsInWardrobeIncludingDeleted]：
+     * 转移时连同软删行一起转移（`deletedAt` 原样保留），彻底删除时一并清理关联与行。
      *
-     * 首选本该是 `androidx.room.withTransaction(db) { ... }`，但 **Room 2.8.5 的该扩展
-     * 在 Kotlin 侧解析不了**：`room-ktx` 2.8.5 的 AAR 只剩一个版本文件（协程支持已挪去
-     * runtime），而 runtime 里同时存在 `RoomDatabaseKt`（common）与
-     * `RoomDatabaseKt__RoomDatabase_androidKt`（android）两个同名同签名的
-     * `withTransaction`，`import androidx.room.withTransaction` 在 kotlinc 2.4.20 下报
-     * `receiver type mismatch`（显式 cast receiver、显式类型参数均无效）。
-     * 暂不为它动依赖，改为**补偿式顺序执行**。
+     * ## 原子性（review R-13 同源要求）
      *
-     * ## 补偿的边界（如实说明，不假装万能）
+     * 数据库步骤全部包在 `db.withTransaction { }` 里：逐件处理衣物 + 删衣柜行要么
+     * 全部生效、要么全部回滚。文件清理**放在提交之后**——回滚与否都不该留下孤图，
+     * 也不该在事务里做 IO。
      *
-     * ① 逐件处理衣物 → ② 删衣柜行 → ③ 通知调用方清图。
-     * 第 ② 步失败时：转移路径可完整还原（把衣物移回来）；物理删除路径**不可**还原
-     * （行已经没了，只能尽力补 cross ref）。这是相对真事务的已知让步，
-     * 登记在开发计划 M1-04 完成记录里；真要用事务得先解决上面的编译问题。
+     * （旧注释记的「Room 2.8.5 的 withTransaction 在 Kotlin 侧解析不了」已复核为
+     * **不成立**：`androidx.room.withTransaction` 在本工程 Kotlin 2.4.20 + Room 2.8.5
+     * 下正常编译，补偿式顺序执行因此不再需要。）
      */
     override suspend fun deleteWithDestiny(
         wardrobeId: Long,
         destiny: WardrobeDeleteDestiny,
         onImagesDeleted: suspend (List<Long>) -> Unit,
     ): Int {
-        val items = clothingRepository.getItemsInWardrobe(wardrobeId)
-
         // 防御自毁：目标就是被删的衣柜时，衣物无处可去。UI 层本就不该给这个组合
         // （只有一件衣柜时应引导先新建），这里兜底不让数据进入悬空状态。
         if (destiny is WardrobeDeleteDestiny.TransferTo && destiny.targetWardrobeId == wardrobeId) {
             throw IllegalArgumentException("转移目标不能是被删除的衣柜自身")
         }
 
-        // 空衣柜：无子行要处理，直接删
-        if (items.isEmpty()) {
-            wardrobeDao.deleteById(wardrobeId)
-            return 0
-        }
+        // 含软删除行——它们是外键的真实约束对象（见上方说明）
+        val items = clothingRepository.getItemsInWardrobeIncludingDeleted(wardrobeId)
 
-        var wardrobeDeleted = false
-        try {
+        db.withTransaction {
             when (destiny) {
                 is WardrobeDeleteDestiny.TransferTo -> {
                     items.forEach { item ->
+                        // 只改 wardrobeId；deletedAt 由 updateWardrobe 保留原值
                         clothingRepository.moveToWardrobe(item.id, destiny.targetWardrobeId)
                     }
                 }
@@ -249,18 +258,9 @@ class DefaultWardrobeRepository @Inject constructor(
                 }
             }
             wardrobeDao.deleteById(wardrobeId)
-            wardrobeDeleted = true
-        } catch (failure: Throwable) {
-            // 只有转移路径能完整回滚（物理删除的行复活不了）
-            if (!wardrobeDeleted && destiny is WardrobeDeleteDestiny.TransferTo) {
-                items.forEach { item ->
-                    clothingRepository.moveToWardrobe(item.id, wardrobeId)
-                }
-            }
-            throw failure
         }
 
-        // 衣柜行确认删除成功，才让调用方清文件——回滚与否都不该留下孤图。
+        // 衣柜行确认删除（事务已提交）后，才让调用方清文件——回滚就绝不会留下孤图。
         // review D-m：清理失败记日志后继续（行已删、删除不可回滚），不能把
         // 已成功的删除伪装成失败，也不能无痕迹地吞掉。
         runCatching { onImagesDeleted(items.map { it.id }) }

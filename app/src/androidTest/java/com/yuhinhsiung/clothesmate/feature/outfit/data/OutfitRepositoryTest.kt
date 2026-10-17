@@ -9,8 +9,17 @@ import com.yuhinhsiung.clothesmate.core.database.entity.OutfitCategoryEntity
 import com.yuhinhsiung.clothesmate.core.database.entity.OutfitEntity
 import com.yuhinhsiung.clothesmate.core.database.entity.WardrobeEntity
 import com.yuhinhsiung.clothesmate.core.model.OutfitDraft
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -50,6 +59,7 @@ class OutfitRepositoryTest {
             .allowMainThreadQueries()
             .build()
         repository = DefaultOutfitRepository(
+            database,
             database.outfitDao(),
             database.outfitCategoryDao(),
             database.clothingItemDao(),
@@ -285,5 +295,186 @@ class OutfitRepositoryTest {
         // 有效件数不含软删占位
         assertEquals(1, detail.outfit.itemCount)
         assertEquals(1, detail.deletedItemCount)
+    }
+
+    // ── review R-06：衣物选择顺序必须持久化 ──────────────────────
+
+    @Test
+    fun createOutfitPersistsClothingSelectionOrder() = runTest {
+        val outfitId = repository.createOutfit(draft(clothingIds = listOf(103L, 101L, 102L)))
+
+        assertEquals(
+            "保存后顺序必须与选择顺序一致（原先按 SQLite 扫描序，重进详情就变序）",
+            listOf(103L, 101L, 102L),
+            database.outfitDao().getClothingIds(outfitId),
+        )
+        // 详情联查（IN (...) 不保序）也按同一顺序重建
+        val detail = repository.observeOutfitDetail(outfitId).first()!!
+        assertEquals(listOf(103L, 101L, 102L), detail.items.map { it.itemId })
+    }
+
+    @Test
+    fun updateOutfitKeepsSelectionOrderAfterRebuild() = runTest {
+        val outfitId = repository.createOutfit(draft(clothingIds = listOf(101L, 102L, 103L)))
+
+        repository.updateOutfit(outfitId, draft(clothingIds = listOf(102L, 103L, 101L)))
+
+        assertEquals(listOf(102L, 103L, 101L), repository.getClothingIds(outfitId))
+        assertEquals(
+            listOf(102L, 103L, 101L),
+            repository.observeOutfitDetail(outfitId).first()!!.items.map { it.itemId },
+        )
+    }
+
+    @Test
+    fun removingMiddleItemKeepsRemainingOrder() = runTest {
+        val outfitId = repository.createOutfit(draft(clothingIds = listOf(103L, 101L, 102L)))
+
+        repository.updateOutfit(outfitId, draft(clothingIds = listOf(103L, 102L)))
+
+        assertEquals(listOf(103L, 102L), repository.getClothingIds(outfitId))
+    }
+
+    // ── review R-11：件数口径三处一致 ───────────────────────────
+
+    @Test
+    fun itemCountExcludesSoftDeletedAndRefreshesOnRestore() = runTest {
+        val categoryId = database.outfitCategoryDao().insert(
+            OutfitCategoryEntity(name = "通勤", sortOrder = 0, createdAt = 0L),
+        )
+        val outfitId = repository.createOutfit(
+            draft(clothingIds = listOf(101L, 102L, 103L), categoryIds = listOf(categoryId)),
+        )
+
+        // 三处口径必须一致
+        assertEquals(3, repository.observeOutfits().first().single().itemCount)
+        assertEquals(3, repository.observeOutfitsInCategory(categoryId).first().single().itemCount)
+        assertEquals(3, repository.observeOutfitDetail(outfitId).first()!!.outfit.itemCount)
+
+        // 软删一件：全部 / 分类内 / 详情都变 2，绝不能出现 0
+        database.clothingItemDao().update(clothingEntity(id = 102L, code = "2", deletedAt = 5L))
+        assertEquals(2, repository.observeOutfits().first().single().itemCount)
+        assertEquals(2, repository.observeOutfitsInCategory(categoryId).first().single().itemCount)
+        assertEquals(2, repository.observeOutfitDetail(outfitId).first()!!.outfit.itemCount)
+
+        // 撤销软删：回到 3（值变化即证明订阅链是活的）
+        database.clothingItemDao().restore(102L, updatedAt = 6L)
+        assertEquals(3, repository.observeOutfits().first().single().itemCount)
+        assertEquals(3, repository.observeOutfitsInCategory(categoryId).first().single().itemCount)
+    }
+
+    // ── review R-11：**持续订阅**必须随衣物表变化重发 ─────────────
+
+    /**
+     * 与 [itemCountExcludesSoftDeletedAndRefreshesOnRestore] 的关键差别：那条每次 `.first()`
+     * **重新订阅**，只能证明「重查正确」；本条**保持同一个订阅**，才证明详情是实时刷新的。
+     *
+     * 旧实现只组合 outfit / wardrobe / category 三张表，衣物是一次性查出来的，
+     * 所以软删衣物后这个订阅会一直停在 1 件、占位卡也不出现（review R-11 独立探针抓出）。
+     *
+     * 用 `runBlocking` + 真实等待而非 `runTest` 的虚拟时间：Room 的 Flow 在别的线程发射，
+     * 虚拟时钟会在真实发射到达之前就把 `withTimeout` 走完，测出来的是假超时。
+     */
+    @Test
+    fun activeDetailSubscriptionRefreshesOnSoftDeleteAndRestore() = runBlocking {
+        val outfitId = repository.createOutfit(draft(clothingIds = listOf(101L, 102L)))
+
+        val counts = MutableStateFlow<Int?>(null)
+        val collectJob = launch(Dispatchers.Default) {
+            repository.observeOutfitDetail(outfitId).collect { counts.value = it?.outfit?.itemCount }
+        }
+        try {
+            withTimeout(5_000) { counts.filterNotNull().first() }
+            assertEquals(2, counts.value)
+
+            // 同一个订阅：软删一件 → 立刻变 1（占位卡同步出现）
+            database.clothingItemDao().update(clothingEntity(id = 102L, code = "2", deletedAt = 9L))
+            assertTrue(
+                "R-11：详情订阅在软删后必须自动重发（停在 ${counts.value}）",
+                withTimeoutOrNull(2_000) { counts.filter { it == 1 }.first(); true } ?: false,
+            )
+            val softDeleted = repository.observeOutfitDetail(outfitId).first()!!
+            assertTrue("占位卡必须同步出现", softDeleted.items.first { it.itemId == 102L }.deleted)
+
+            // 撤销 → 立刻回到 2
+            database.clothingItemDao().restore(102L, updatedAt = 10L)
+            assertTrue(
+                "R-11：撤销后必须回到 2 件（停在 ${counts.value}）",
+                withTimeoutOrNull(2_000) { counts.filter { it == 2 }.first(); true } ?: false,
+            )
+        } finally {
+            collectJob.cancelAndJoin()
+        }
+    }
+
+    /** 改名也要实时反映到打开的详情上，不能靠「退出很久再重进」 */
+    @Test
+    fun activeDetailSubscriptionRefreshesOnClothingRename() = runBlocking {
+        val outfitId = repository.createOutfit(draft(clothingIds = listOf(101L)))
+
+        val names = MutableStateFlow<String?>(null)
+        val collectJob = launch(Dispatchers.Default) {
+            repository.observeOutfitDetail(outfitId).collect { names.value = it?.items?.firstOrNull()?.displayName }
+        }
+        try {
+            withTimeout(5_000) { names.filterNotNull().first() }
+
+            database.clothingItemDao().update(clothingEntity(id = 101L, code = "1").copy(name = "旧蓝毛衣"))
+            assertTrue(
+                "R-11：改名必须实时反映（停在 ${names.value}）",
+                withTimeoutOrNull(2_000) { names.filter { it == "旧蓝毛衣" }.first(); true } ?: false,
+            )
+        } finally {
+            collectJob.cancelAndJoin()
+        }
+    }
+
+    // ── review R-13：多表操作必须原子 ───────────────────────────
+
+    /**
+     * 注入方式：衣物关联里塞一个不存在的衣物 id。`outfit_item_cross_ref.clothingItemId`
+     * 的外键是 NO_ACTION（SQLite 的 ON CONFLICT 不覆盖外键），写入必然失败。
+     *
+     * 修复前的行为：主行已经插入成功、异常抛出时表单还没拿到 id，补偿逻辑找不到那条
+     * 孤儿穿搭——库里留下一条无关联的穿搭。现在整段在一个事务里，必须零残留。
+     */
+    @Test
+    fun createOutfitRollsBackEntirelyWhenCrossRefWriteFails() = runTest {
+        val error = runCatching {
+            repository.createOutfit(draft(clothingIds = listOf(101L, 999_999L)))
+        }.exceptionOrNull()
+
+        assertNotNull("外键不存在，写入应当失败", error)
+        assertEquals("不能留下孤儿穿搭主行", 0, database.outfitDao().count())
+        assertTrue(database.outfitDao().getAllItemRefs().isEmpty())
+    }
+
+    @Test
+    fun updateOutfitRollsBackAndKeepsOldRefsWhenNewRefsFail() = runTest {
+        val catA = database.outfitCategoryDao().insert(
+            OutfitCategoryEntity(name = "A", sortOrder = 0, createdAt = 0L),
+        )
+        val outfitId = repository.createOutfit(
+            draft(clothingIds = listOf(101L, 102L), categoryIds = listOf(catA)),
+        )
+
+        val error = runCatching {
+            repository.updateOutfit(
+                outfitId,
+                draft(clothingIds = listOf(103L, 999_999L), categoryIds = emptyList()),
+            )
+        }.exceptionOrNull()
+
+        assertNotNull(error)
+        assertEquals(
+            "旧衣物关联必须完整保留（原先「先删后插」失败会永久丢失）",
+            listOf(101L, 102L),
+            repository.getClothingIds(outfitId),
+        )
+        assertEquals(
+            "旧分类关联同样保留",
+            listOf(catA),
+            repository.getCategoryIdsForOutfit(outfitId),
+        )
     }
 }

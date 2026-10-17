@@ -38,8 +38,9 @@ class WardrobeRepositoryTest {
         database = Room.inMemoryDatabaseBuilder(context, ClothesMateDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        clothingRepository = DefaultClothingRepository(database.clothingItemDao(), database.outfitDao())
+        clothingRepository = DefaultClothingRepository(database, database.clothingItemDao(), database.outfitDao(), database.codeHistoryDao())
         repository = DefaultWardrobeRepository(
+            db = database,
             wardrobeDao = database.wardrobeDao(),
             clothingRepository = clothingRepository
         )
@@ -191,7 +192,7 @@ class WardrobeRepositoryTest {
         repository.persistOrder(listOf(b, a))
 
         // 模拟重启：丢掉 Repository 实例、从同一内存库重建
-        val revived = DefaultWardrobeRepository(database.wardrobeDao(), clothingRepository)
+        val revived = DefaultWardrobeRepository(database, database.wardrobeDao(), clothingRepository)
         assertEquals(listOf("B", "A"), revived.observeWardrobes().first().map { it.name })
     }
 
@@ -313,5 +314,121 @@ class WardrobeRepositoryTest {
         )
 
         assertEquals(listOf(i1, i2), seen)
+    }
+
+    // ── review R-01：软删除行必须一并处理（外键不认 deletedAt） ──────────
+
+    /**
+     * 现场复现的问题：软删行不出现在列表里、弹层显示「0 件」，外键却仍指着本衣柜，
+     * 于是「0 件衣柜」删除必失败。修复前这条测试会收到 SQLiteConstraintException。
+     */
+    @Test
+    fun `衣柜只剩软删除衣物时也能删掉`() = runTest {
+        val w = newWardrobe("只剩软删行")
+        val ghost = newItem("3", w)
+        clothingRepository.softDelete(ghost)
+        assertEquals("展示件数为 0（软删不计入）", 0, repository.getWardrobe(w)!!.clothingCount)
+
+        val handled = repository.deleteWithDestiny(w, WardrobeDeleteDestiny.TransferTo(newWardrobe("目标")))
+
+        assertEquals("内部需处理的行数是 1，不是 0", 1, handled)
+        assertNull(repository.getWardrobe(w))
+    }
+
+    @Test
+    fun `混合数据一并删除时正常行与软删行都被物理清除、衣柜删掉`() = runTest {
+        val w = newWardrobe("混合")
+        val live = newItem("101", w)
+        val ghost = newItem("102", w)
+        clothingRepository.softDelete(ghost)
+
+        val deleted = repository.deleteWithDestiny(w, WardrobeDeleteDestiny.DeleteAll)
+
+        assertEquals(2, deleted)
+        assertNull(repository.getWardrobe(w))
+        assertNull(database.clothingItemDao().findById(live))
+        assertNull(database.clothingItemDao().findById(ghost))
+    }
+
+    @Test
+    fun `转移时软删行随行、deletedAt原样保留`() = runTest {
+        val from = newWardrobe("源")
+        val to = newWardrobe("目标")
+        val live = newItem("101", from)
+        val ghost = newItem("102", from)
+        clothingRepository.softDelete(ghost)
+
+        repository.deleteWithDestiny(from, WardrobeDeleteDestiny.TransferTo(to))
+
+        assertEquals(to, rawItem(live)!!.wardrobeId)
+        assertEquals(to, rawItem(ghost)!!.wardrobeId)
+        assertNotNull("软删状态必须保留，不能变相复活", rawItem(ghost)!!.deletedAt)
+        assertEquals("展示件数只算活的", 1, repository.getWardrobe(to)!!.clothingCount)
+    }
+
+    @Test
+    fun `被穿搭引用的软删行在一并删除时关联也清掉`() = runTest {
+        val w = newWardrobe("待删")
+        val ghost = newItem("101", w)
+        val outfitId = database.outfitDao().insert(
+            com.yuhinhsiung.clothesmate.core.database.entity.OutfitEntity(
+                name = null,
+                photoPaths = emptyList(),
+                styleTags = emptyList(),
+                sceneTags = emptyList(),
+                seasonTags = emptyList(),
+                note = null,
+                wearCount = 0,
+                lastWornAt = null,
+                createdAt = 0L,
+                updatedAt = 0L,
+            ),
+        )
+        database.outfitDao().insertCrossRef(
+            com.yuhinhsiung.clothesmate.core.database.entity.OutfitItemCrossRef(outfitId, ghost),
+        )
+        clothingRepository.softDelete(ghost)
+
+        repository.deleteWithDestiny(w, WardrobeDeleteDestiny.DeleteAll)
+
+        assertTrue(database.outfitDao().getClothingIds(outfitId).isEmpty())
+        assertNull(database.clothingItemDao().findById(ghost))
+    }
+
+    /**
+     * 事务的关闭条件（review R-01）：「在最后一步制造失败，所有数据库行及关联保持原状」。
+     * 注入方式：转移目标是不存在的衣柜 id → 第一件衣物的 `wardrobeId` 更新就撞外键。
+     */
+    @Test
+    fun `转移中途失败时衣物与衣柜全部保持原状`() = runTest {
+        val from = newWardrobe("源")
+        val i1 = newItem("101", from)
+        val i2 = newItem("102", from)
+        val ghost = newItem("103", from)
+        clothingRepository.softDelete(ghost)
+
+        val error = runCatching {
+            repository.deleteWithDestiny(from, WardrobeDeleteDestiny.TransferTo(9999L))
+        }.exceptionOrNull()
+
+        assertNotNull("目标不存在，应该失败", error)
+        assertNotNull("衣柜必须还在", repository.getWardrobe(from))
+        assertEquals(from, rawItem(i1)!!.wardrobeId)
+        assertEquals(from, rawItem(i2)!!.wardrobeId)
+        assertEquals(from, rawItem(ghost)!!.wardrobeId)
+        assertNotNull(rawItem(ghost)!!.deletedAt)
+        assertEquals(2, repository.getWardrobe(from)!!.clothingCount)
+    }
+
+    @Test
+    fun `含软删除的件数口径与展示件数分开`() = runTest {
+        val w = newWardrobe("衣柜")
+        newItem("101", w)
+        newItem("102", w)
+        val ghost = newItem("103", w)
+        clothingRepository.softDelete(ghost)
+
+        assertEquals(2, repository.clothingCount(w))
+        assertEquals(3, repository.clothingCountIncludingDeleted(w))
     }
 }

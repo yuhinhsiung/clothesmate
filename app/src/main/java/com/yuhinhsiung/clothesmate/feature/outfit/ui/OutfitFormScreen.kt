@@ -105,7 +105,15 @@ fun OutfitFormRoute(
     }
 
     // M1-15 同规则：有填写内容时返回先确认
+    // review R-05：脏判定改为「当前状态 vs 初始快照」的比对（VM 侧），照片与分类
+    // 的改动也不再漏判——原先只改了照片就返回会直接丢弃、没有任何确认。
     BackHandler(enabled = uiState.userModified && !uiState.saving) { showDiscard = true }
+
+    /** 不保存离开：**先收起本次暂存的图片**再退（review R-05：直接返回路径原先不清暂存） */
+    fun leaveWithoutSaving() {
+        viewModel.discard()
+        onBack()
+    }
 
     Scaffold(
         topBar = {
@@ -125,7 +133,7 @@ fun OutfitFormRoute(
                         contentDescription = stringResource(R.string.action_back),
                         modifier = Modifier
                             .clickable {
-                                if (uiState.userModified) showDiscard = true else onBack()
+                                if (uiState.userModified) showDiscard = true else leaveWithoutSaving()
                             }
                             .padding(Dimens.Space.s3),
                     )
@@ -206,8 +214,9 @@ fun OutfitFormRoute(
             onDismiss = { showDiscard = false },
             onDiscard = {
                 showDiscard = false
-                viewModel.discard()
-                onBack()
+                // review R-05：放弃 = 清暂存 + 退页（leaveWithoutSaving 内含 discard）。
+                // 编辑模式下被移除的既有照片**不动文件**，旧照片因此不受损。
+                leaveWithoutSaving()
             },
         )
     }

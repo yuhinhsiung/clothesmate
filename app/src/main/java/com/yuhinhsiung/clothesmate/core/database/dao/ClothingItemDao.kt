@@ -102,6 +102,16 @@ interface ClothingItemDao {
     fun observeAll(): Flow<List<ClothingItemEntity>>
 
     /**
+     * **含软删除**的全部衣物（响应式）。
+     *
+     * 用途：穿搭详情需要「持续订阅」衣物表才谈得上实时——软删 / 撤销要立刻把有效件数
+     * 从 1 变 0 再变回 1，改名字也要立刻反映到清单上（review R-11）。
+     * 详情不能像列表页那样只订阅未删除行，否则软删那一刻占位卡与件数都不会动。
+     */
+    @Query("SELECT * FROM clothing_item")
+    fun observeAllIncludingDeleted(): Flow<List<ClothingItemEntity>>
+
+    /**
      * 编号唯一性校验（W-06 实时校验 + §2.1.3 计数器冲突顺延）。
      * 传 excludeId 以支持编辑时排除自身。
      *
@@ -208,9 +218,28 @@ interface ClothingItemDao {
     @Query("SELECT * FROM clothing_item WHERE wardrobeId = :wardrobeId AND deletedAt IS NULL")
     suspend fun getByWardrobe(wardrobeId: Long): List<ClothingItemEntity>
 
+    /**
+     * 按衣柜取**含软删除**的全部衣物 —— 删除衣柜时的专用查询（review R-01）。
+     *
+     * `clothing_item.wardrobeId` 的外键是 NO_ACTION，**软删除行的外键依然指向本衣柜**，
+     * 漏掉它们会导致 `DELETE FROM wardrobe` 抛 `FOREIGN KEY constraint failed`；
+     * 更糟的是「一并删除」路径会先物理删掉正常行、再在删衣柜时失败，留下半截数据。
+     */
+    @Query("SELECT * FROM clothing_item WHERE wardrobeId = :wardrobeId")
+    suspend fun getByWardrobeIncludingDeleted(wardrobeId: Long): List<ClothingItemEntity>
+
     /** 某衣柜下衣物数（删除衣柜弹层提示 W-12） */
     @Query("SELECT COUNT(*) FROM clothing_item WHERE wardrobeId = :wardrobeId AND deletedAt IS NULL")
     suspend fun countByWardrobe(wardrobeId: Long): Int
+
+    /**
+     * 某衣柜下**含软删除**的衣物数（review R-01）。
+     *
+     * 与 [countByWardrobe] 的分工：列表卡 / 弹层「内有 N 件」展示**可见件数**（不含软删），
+     * 「一并删除」的实际影响面用本方法——两个口径必须分开，否则弹层说 2 件、实际删 3 件。
+     */
+    @Query("SELECT COUNT(*) FROM clothing_item WHERE wardrobeId = :wardrobeId")
+    suspend fun countByWardrobeIncludingDeleted(wardrobeId: Long): Int
 
     /** 类别分布（概览页 M1-22，不含软删除） */
     @Query(

@@ -2,6 +2,7 @@ package com.yuhinhsiung.clothesmate.ui.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
@@ -21,6 +22,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.VisualTransformation
@@ -63,8 +68,12 @@ fun CmTextField(
         else -> MaterialTheme.colorScheme.outline
     }
     val borderWidth = if (isError || focused) 2.dp else 1.dp
+    // review UI-05：没传 focusRequester 时也备一个，供「点视觉框任意处即聚焦」使用
+    val effectiveFocusRequester = focusRequester ?: remember { FocusRequester() }
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+    ) {
         if (label != null) {
             Text(
                 text = label,
@@ -78,6 +87,12 @@ fun CmTextField(
                 .fillMaxWidth()
                 .border(width = borderWidth, color = borderColor, shape = shape)
                 .background(color = MaterialTheme.colorScheme.muted, shape = shape)
+                // review UI-05：视觉框内边距也要能聚焦，而不是只有文本那一小条可点
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = { effectiveFocusRequester.requestFocus() },
+                )
                 .padding(horizontal = Dimens.Space.s3, vertical = Dimens.Space.s3),
         ) {
             BasicTextField(
@@ -97,9 +112,24 @@ fun CmTextField(
                 visualTransformation = visualTransformation,
                 interactionSource = interactionSource,
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                modifier = focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier,
+                // review UI-05：原先没有 fillMaxWidth，编辑节点只有「文本宽度」——
+                // 新建衣柜的名称框可编辑区只有 ~114dp，而视觉框有 ~379dp，
+                // 右侧大片空白点了没反应，光标定位与读屏焦点框也都对不上。
+                //
+                // review UI-06：字段名原先是与 BasicTextField 平行的独立 Text，
+                // 输入节点本身没有任何名称——有值之后只靠输入节点分不清在编辑哪个属性。
+                // 标签、错误、禁用状态直接挂到**可编辑节点**上（而不是靠父级
+                // mergeDescendants 合并）：读屏读得到，UI 树里也能逐节点核对。
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(effectiveFocusRequester)
+                    .semantics {
+                        label?.let { contentDescription = it }
+                        if (!enabled) disabled()
+                        if (isError && errorMessage != null) error(errorMessage)
+                    },
                 decorationBox = { innerTextField ->
-                    Box {
+                    Box(modifier = Modifier.fillMaxWidth()) {
                         if (value.isEmpty() && placeholder != null) {
                             Text(
                                 text = placeholder,

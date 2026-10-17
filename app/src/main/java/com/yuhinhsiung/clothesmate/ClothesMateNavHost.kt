@@ -7,7 +7,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +27,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -138,6 +141,23 @@ fun ClothesMateNavHost(
     /** 非空 = 弹层处于「编辑衣柜」模式，值即被编辑的衣柜 id（review C-03） */
     var editWardrobeId by rememberSaveable { mutableStateOf<Long?>(null) }
 
+    /**
+     * 衣柜弹层的**会话身份**（review A-01）：只在「打开弹层」这个用户动作上递增，
+     * 且随配置重建一起保存（`rememberSaveable`）。
+     *
+     * 旋转 / 切字号会让整个组合重建、`LaunchedEffect` 重跑；若每次都当作新会话，
+     * 用户填了一半的名称与刚选的封面会被清空。VM 用这个 id 区分
+     * 「同一次会话的重建」与「真的又开了一次」。
+     */
+    var wardrobeSheetSession by rememberSaveable { mutableIntStateOf(0) }
+
+    /** 打开衣柜弹层：会话身份 +1（新建传 null，编辑传 id） */
+    fun openWardrobeSheet(wardrobeId: Long?) {
+        wardrobeSheetSession++
+        editWardrobeId = wardrobeId
+        showAddWardrobe = true
+    }
+
     // M1-14：FAB 半屏动作面板（§6.4）与衣柜预选。快速连拍 M4 再加入
     var showClothingPanel by rememberSaveable { mutableStateOf(false) }
     var clothingPreselectWardrobeId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -189,6 +209,13 @@ fun ClothesMateNavHost(
     }
 
     Scaffold(
+        // review UI-04：根 Scaffold **不消费系统栏 insets**，只负责报告底部导航的高度。
+        // 原先它按 M3 默认（systemBars）处理，innerPadding 又被直接当作 NavHost 的外边距，
+        // 而每个二级页的 TopAppBar 会再按自己的 WindowInsets 处理一次状态栏 —— 顶栏因此
+        // 多出一整条状态栏高度（420dpi 下 63px），没有底部导航的页面底部也重复留白。
+        // 现在系统区域由**页面自己**处理（各页都是完整的 Scaffold，默认 insets 不变）；
+        // 相机页作全屏页单独自理（见 CaptureScreen 的 statusBars / navigationBars）。
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (showBottomBar) {
                 Column {
@@ -261,7 +288,12 @@ fun ClothesMateNavHost(
             }
             SnackbarHost(
                 hostState = snackbarHostState,
-                modifier = Modifier.padding(bottom = bottomGap),
+                modifier = Modifier
+                    // review UI-04：根 Scaffold 不再消费 insets，无底部导航的页面
+                    // 需要自己避开系统导航栏——有底部导航时 NavigationBar 已处理过，
+                    // 再加一次会多出空白
+                    .then(if (showBottomBar) Modifier else Modifier.navigationBarsPadding())
+                    .padding(bottom = bottomGap),
             )
         },
     ) { innerPadding ->
@@ -274,11 +306,8 @@ fun ClothesMateNavHost(
             composable<WardrobeTab> {
                 WardrobeRoute(
                     onWardrobeClick = { id -> navController.navigate(WardrobeDetail(id)) },
-                    onShowAddSheet = { showAddWardrobe = true },
-                    onEditWardrobe = { id ->
-                        editWardrobeId = id
-                        showAddWardrobe = true
-                    },
+                    onShowAddSheet = { openWardrobeSheet(wardrobeId = null) },
+                    onEditWardrobe = { id -> openWardrobeSheet(wardrobeId = id) },
                     onShowDelete = { id -> deleteTargetId = id },
                     // M1-14：FAB 打开半屏动作面板（§6.4）
                     onAddClothing = {
@@ -353,10 +382,7 @@ fun ClothesMateNavHost(
                         showClothingPanel = true
                     },
                     // review C-12：详情页「更多」菜单的两个去向
-                    onEditWardrobe = {
-                        editWardrobeId = currentWardrobeId()
-                        showAddWardrobe = true
-                    },
+                    onEditWardrobe = { openWardrobeSheet(wardrobeId = currentWardrobeId()) },
                     onDeleteWardrobe = {
                         deleteTargetId = currentWardrobeId()
                     },
@@ -437,6 +463,8 @@ fun ClothesMateNavHost(
             WardrobeEditSheet(
                 // 非空 = 编辑既有衣柜（预填）；null = 新建（review C-03）
                 wardrobeId = editWardrobeId,
+                // review A-01：会话身份跨配置重建保持，旋转不再清空草稿
+                sessionId = wardrobeSheetSession,
                 onDismiss = {
                     showAddWardrobe = false
                     editWardrobeId = null

@@ -1,7 +1,10 @@
 package com.yuhinhsiung.clothesmate.feature.wardrobe.data
 
+import com.yuhinhsiung.clothesmate.core.database.ClothesMateDatabase
 import com.yuhinhsiung.clothesmate.core.database.dao.ClothingItemDao
+import com.yuhinhsiung.clothesmate.core.database.dao.CodeHistoryDao
 import com.yuhinhsiung.clothesmate.core.database.dao.OutfitDao
+import com.yuhinhsiung.clothesmate.core.database.entity.ClothingCodeHistoryEntity
 import com.yuhinhsiung.clothesmate.core.database.entity.ClothingItemEntity
 import com.yuhinhsiung.clothesmate.core.model.ClothingCategory
 import com.yuhinhsiung.clothesmate.core.model.ClothingColor
@@ -10,6 +13,7 @@ import com.yuhinhsiung.clothesmate.core.model.Season
 import com.yuhinhsiung.clothesmate.core.model.toDomain
 import com.yuhinhsiung.clothesmate.core.model.toEntity
 import com.yuhinhsiung.clothesmate.core.model.ClothingStatus
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -38,6 +42,21 @@ interface ClothingRepository : com.yuhinhsiung.clothesmate.feature.wardrobe.doma
     suspend fun getItem(id: Long): ClothingItem?
 
     suspend fun getItemsInWardrobe(wardrobeId: Long): List<ClothingItem>
+
+    /**
+     * 衣柜内**含软删除**的全部衣物 —— 删除衣柜（W-12）专用（review R-01）。
+     *
+     * 软删除行的 `wardrobeId` 外键仍指向本衣柜，删除衣柜前必须一并处理，
+     * 否则 `DELETE FROM wardrobe` 会因外键约束失败（且「一并删除」路径已先删掉正常行，
+     * 用户看到失败但部分数据已经消失）。
+     */
+    suspend fun getItemsInWardrobeIncludingDeleted(wardrobeId: Long): List<ClothingItem>
+
+    /** 衣柜内**含软删除**的衣物数（「一并删除」的实际影响面，review R-01 口径分离） */
+    suspend fun countItemsInWardrobeIncludingDeleted(wardrobeId: Long): Int
+
+    /** 某衣物被几套现存穿搭引用（M1-13 删除前警示，review R-10） */
+    suspend fun countOutfitsForItem(id: Long): Int
 
     suspend fun getItemsByIds(ids: List<Long>): List<ClothingItem>
 
@@ -84,6 +103,21 @@ interface ClothingRepository : com.yuhinhsiung.clothesmate.feature.wardrobe.doma
     suspend fun deletePhysically(id: Long)
 
     /**
+     * 回滚一次**未完成的建档**（review R-14 场景 A）。
+     *
+     * 建档是「插入行（含编号历史）→ 归位图片 → 回写路径」三步；后两步失败时补偿要走这里，
+     * 而不是裸的 [deletePhysically]：
+     *
+     * - 删行 + 清关联（与物理删除相同）；
+     * - **同时撤回本次预约的编号占用**——`code` 的历史行只有在持有人恰好是 [id] 时才删。
+     *   不撤回的话，同一个草稿重试会被「编号已被使用」拦住：用户什么都没得到、号却没了；
+     *   而一刀切清空编号历史又会重新引入 R-03 的「物理删除后旧号可复用」。
+     *
+     * @param code 本次建档使用的编号（原始输入即可，内部归一）
+     */
+    suspend fun rollbackFailedCreate(id: Long, code: String)
+
+    /**
      * 搜索 + 组合筛选（W-07 / M1-10）。
      *
      * 分词规则：按空格切分，各 token 之间 **AND**（全部命中才入选）。
@@ -118,8 +152,10 @@ enum class WardrobeItemFilter {
 
 @Singleton
 class DefaultClothingRepository @Inject constructor(
+    private val db: ClothesMateDatabase,
     private val dao: ClothingItemDao,
     private val outfitDao: OutfitDao,
+    private val codeHistoryDao: CodeHistoryDao,
 ) : ClothingRepository {
 
     override fun observeItemsInWardrobe(wardrobeId: Long): Flow<List<ClothingItem>> =
@@ -142,6 +178,14 @@ class DefaultClothingRepository @Inject constructor(
     override suspend fun getItemsInWardrobe(wardrobeId: Long): List<ClothingItem> =
         dao.getByWardrobe(wardrobeId).map { it.toDomain() }
 
+    override suspend fun getItemsInWardrobeIncludingDeleted(wardrobeId: Long): List<ClothingItem> =
+        dao.getByWardrobeIncludingDeleted(wardrobeId).map { it.toDomain() }
+
+    override suspend fun countItemsInWardrobeIncludingDeleted(wardrobeId: Long): Int =
+        dao.countByWardrobeIncludingDeleted(wardrobeId)
+
+    override suspend fun countOutfitsForItem(id: Long): Int = outfitDao.countOutfitsForItem(id)
+
     override suspend fun getItemsByIds(ids: List<Long>): List<ClothingItem> =
         if (ids.isEmpty()) {
             emptyList()
@@ -155,39 +199,81 @@ class DefaultClothingRepository @Inject constructor(
     /**
      * W-06 实时校验：某编号是否可用。
      *
-     * 直接查 DAO（带 excludeId），比先问 [isCodeTaken] 再排除更直白；
-     * [isCodeTaken] 面向 [com.yuhinhsiung.clothesmate.feature.wardrobe.domain.CodeAllocator]
-     * 的全表判定（发放时不排除任何 id）。
+     * review R-03：占用判定 = **现存行（含软删）+ 历史占用表**。只查 `clothing_item`
+     * 的话，物理删除会抹掉唯一的占用证据，旧号立即可被重新使用。
+     *
+     * @param excludeId 编辑时排除自身。历史表记的是「编号当前持有人」，
+     *   `holderId == excludeId` 视为本人持有——用户没换号，或改号后想改回来，都放行；
+     *   **别的衣物任何情况下都拿不到这个号**。
      */
-    override suspend fun isCodeAvailable(code: String, excludeId: Long): Boolean =
-        dao.countByCode(code, excludeId) == 0
+    override suspend fun isCodeAvailable(code: String, excludeId: Long): Boolean {
+        val normalized = normalizedOrRaw(code)
+        if (dao.countByCode(normalized, excludeId) > 0) return false
+        val holder = codeHistoryDao.holderOf(normalized) ?: return true
+        return holder == excludeId
+    }
 
     /**
-     * CodeConflictChecker 实现：全表判定（含软删行），不排除任何 id。
-     * DAO 的 countByCode 刻意不过滤 deletedAt，与 code 的全表 UNIQUE 索引同口径。
+     * CodeConflictChecker 实现：全表判定（含软删行 + 历史占用），不排除任何 id。
+     * 自动发号的冲突判定与手动校验共用同一占用来源（review R-03 修复建议）。
      */
-    override suspend fun isCodeTaken(code: String): Boolean =
-        dao.countByCode(code, excludeId = 0L) > 0
+    override suspend fun isCodeTaken(code: String): Boolean {
+        val normalized = normalizedOrRaw(code)
+        return dao.countByCode(normalized, excludeId = 0L) > 0 ||
+            codeHistoryDao.countByCode(normalized) > 0
+    }
 
+    /**
+     * 新增衣物。
+     *
+     * 校验通过后「插入行 + 登记编号历史」必须同事务提交（review R-13 同源要求）：
+     * 中途失败若只留下行或只留下历史，都会让编号占用状态与实际不符。
+     */
     override suspend fun createItem(item: ClothingItem): Long {
         val code = normalizeCode(item.code)
         require(isCodeAvailable(code)) { "编号 $code 已被使用" }
-        return dao.insert(item.toEntity().copy(code = code))
+        return db.withTransaction {
+            val id = dao.insert(item.toEntity().copy(code = code))
+            recordCodeHistory(code, id)
+            id
+        }
     }
 
     override suspend fun updateItem(item: ClothingItem) {
         val code = normalizeCode(item.code)
         require(isCodeAvailable(code, excludeId = item.id)) { "编号 $code 已被使用" }
-        val existing = dao.findById(item.id) ?: return
-        // 保留软删除标记与创建时间：编辑不应复活已删衣物，也不应改写建档时间
-        dao.update(
-            item.toEntity().copy(
+        db.withTransaction {
+            val existing = dao.findById(item.id) ?: return@withTransaction
+            // 保留软删除标记与创建时间：编辑不应复活已删衣物，也不应改写建档时间
+            dao.update(
+                item.toEntity().copy(
+                    code = code,
+                    deletedAt = existing.deletedAt,
+                    createdAt = existing.createdAt,
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+            // 改号后旧号**不回收**：旧号的历史行原样留着（其 holderId 仍是本件），
+            // 新号登记为本件持有。两个号此后都属于这件衣服。
+            recordCodeHistory(code, item.id)
+        }
+    }
+
+    /**
+     * 登记编号占用（review R-03），**首次时间不被后续写入刷新**（review D-01）。
+     *
+     * 两步都在调用方的事务里：不存在才插入（带首次登记时间），存在则只更新持有人。
+     * 编辑一次衣物（哪怕只改备注）也会走到这里，所以绝不能无条件覆写 `recordedAt`。
+     */
+    private suspend fun recordCodeHistory(code: String, holderId: Long) {
+        codeHistoryDao.insertIfAbsent(
+            ClothingCodeHistoryEntity(
                 code = code,
-                deletedAt = existing.deletedAt,
-                createdAt = existing.createdAt,
-                updatedAt = System.currentTimeMillis(),
+                holderId = holderId,
+                recordedAt = System.currentTimeMillis(),
             ),
         )
+        codeHistoryDao.updateHolder(code, holderId)
     }
 
     /**
@@ -198,6 +284,17 @@ class DefaultClothingRepository @Inject constructor(
     private fun normalizeCode(raw: String): String {
         val trimmed = raw.trim()
         require(trimmed.isNotEmpty() && trimmed.all { it.isDigit() }) { "编号必须是纯数字" }
+        return trimmed.trimStart('0').ifEmpty { "0" }
+    }
+
+    /**
+     * 宽松归一（review R-03）：校验入口不能因为「非纯数字」就抛异常——
+     * 用户输到一半的 "1a" 也该得到「已被使用 / 未占用」的确定答复而不是崩溃。
+     * 非数字输入原样返回，它不可能等于任何已存编号，结果自然是可用。
+     */
+    private fun normalizedOrRaw(raw: String): String {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty() || !trimmed.all { it.isDigit() }) return trimmed
         return trimmed.trimStart('0').ifEmpty { "0" }
     }
 
@@ -242,6 +339,15 @@ class DefaultClothingRepository @Inject constructor(
 
     override suspend fun deletePhysically(id: Long) {
         dao.deleteById(id)
+    }
+
+    override suspend fun rollbackFailedCreate(id: Long, code: String) {
+        val normalized = normalizedOrRaw(code)
+        db.withTransaction {
+            outfitDao.deleteCrossRefsByClothingItem(id)
+            dao.deleteById(id)
+            codeHistoryDao.deleteIfHeldBy(normalized, id)
+        }
     }
 
     override fun search(

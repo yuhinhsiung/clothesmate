@@ -77,36 +77,48 @@ class OutfitWaterfallViewModel @Inject constructor(
         .map { categories -> categories.firstOrNull { it.id == categoryId }?.name }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** 可选标签全集：取自**当前数据源**（全部或分类内）穿搭的并集——review B-11：
-     *  此前恒取全部穿搭，分类内页会出现与本分类无关的筛选 chips 且空态误判 */
-    val availableTags: StateFlow<AvailableTags> = sourceOutfits(outfitRepository)
-        .map { outfits ->
-            AvailableTags(
-                styles = outfits.flatMap { it.styleTags }.distinct().sorted(),
-                scenes = outfits.flatMap { it.sceneTags }.distinct().sorted(),
-                seasons = outfits.flatMap { it.seasonTags }.distinct().sorted(),
-            )
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AvailableTags())
-
-    /** 是否分类内入口（空态三分支判定用，B-11） */
+    /** 是否分类内入口（空态分支判定用，B-11） */
     val isCategoryScoped: Boolean
         get() = categoryId != null
 
-    val outfits: StateFlow<List<com.yuhinhsiung.clothesmate.core.model.Outfit>> = combine(
-        sourceOutfits(outfitRepository),
+    /**
+     * **筛选前**的源列表；`null` = 首帧还没到。
+     *
+     * review R-12：原先只有一个「已过滤」的列表，空态拿它去区分「分类里没有穿搭」
+     * 和「筛选没命中」——「本分类有穿搭但筛选组合没命中」同样落进「这个分类还没有穿搭」
+     * 并给出创建按钮。源列表和过滤结果必须分开暴露。
+     */
+    private val sourceOutfits: StateFlow<List<com.yuhinhsiung.clothesmate.core.model.Outfit>?> =
+        sourceFlow(outfitRepository)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val uiState: StateFlow<OutfitWaterfallUiState> = combine(
+        sourceOutfits,
         styleFilter,
         sceneFilter,
         seasonFilter,
-    ) { list, styles, scenes, seasons ->
-        list.filter { outfit ->
-            (styles.isEmpty() || outfit.styleTags.any { it in styles }) &&
-                (scenes.isEmpty() || outfit.sceneTags.any { it in scenes }) &&
-                (seasons.isEmpty() || outfit.seasonTags.any { it in seasons })
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    ) { source, styles, scenes, seasons ->
+        if (source == null) return@combine OutfitWaterfallUiState(loading = true)
+        OutfitWaterfallUiState(
+            loading = false,
+            sourceCount = source.size,
+            outfits = source.filter { outfit ->
+                (styles.isEmpty() || outfit.styleTags.any { it in styles }) &&
+                    (scenes.isEmpty() || outfit.sceneTags.any { it in scenes }) &&
+                    (seasons.isEmpty() || outfit.seasonTags.any { it in seasons })
+            },
+            // 可选标签取自**当前数据源**（全部或分类内）穿搭的并集——review B-11：
+            // 此前恒取全部穿搭，分类内页会出现与本分类无关的筛选 chips
+            availableTags = AvailableTags(
+                styles = source.flatMap { it.styleTags }.distinct().sorted(),
+                scenes = source.flatMap { it.sceneTags }.distinct().sorted(),
+                seasons = source.flatMap { it.seasonTags }.distinct().sorted(),
+            ),
+            hasActiveFilter = styles.isNotEmpty() || scenes.isNotEmpty() || seasons.isNotEmpty(),
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OutfitWaterfallUiState())
 
-    private fun sourceOutfits(repository: OutfitRepository) =
+    private fun sourceFlow(repository: OutfitRepository) =
         if (categoryId == null) {
             repository.observeOutfits()
         } else {
@@ -117,6 +129,13 @@ class OutfitWaterfallViewModel @Inject constructor(
     fun toggleScene(tag: String) = sceneFilter.toggle(tag)
     fun toggleSeason(tag: String) = seasonFilter.toggle(tag)
 
+    /** 一键清空三组筛选（「筛选无结果」空态的主按钮，review R-12） */
+    fun clearFilters() {
+        styleFilter.value = emptySet()
+        sceneFilter.value = emptySet()
+        seasonFilter.value = emptySet()
+    }
+
     fun styleSelection(): StateFlow<Set<String>> = styleFilter.asStateFlow()
     fun sceneSelection(): StateFlow<Set<String>> = sceneFilter.asStateFlow()
     fun seasonSelection(): StateFlow<Set<String>> = seasonFilter.asStateFlow()
@@ -125,6 +144,20 @@ class OutfitWaterfallViewModel @Inject constructor(
         value = if (tag in value) value - tag else value + tag
     }
 }
+
+/**
+ * 瀑布流页状态。
+ *
+ * [sourceCount] 与 [outfits] 的区别是本页空态判定的全部依据（review R-12）：
+ * 源为空才是「这里还没有穿搭」，源非空而过滤结果为空是「筛选没命中」。
+ */
+data class OutfitWaterfallUiState(
+    val loading: Boolean = true,
+    val sourceCount: Int = 0,
+    val outfits: List<com.yuhinhsiung.clothesmate.core.model.Outfit> = emptyList(),
+    val availableTags: AvailableTags = AvailableTags(),
+    val hasActiveFilter: Boolean = false,
+)
 
 /** 瀑布流筛选条可选标签（现有穿搭的并集） */
 data class AvailableTags(

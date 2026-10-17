@@ -71,4 +71,8 @@ interface OutfitCategoryDao {
     /** 某穿搭所属的全部分类 id（穿搭详情 M1-20 / 编辑预填 M1-18） */
     @Query("SELECT categoryId FROM outfit_category_cross_ref WHERE outfitId = :outfitId")
     suspend fun getCategoryIdsForOutfit(outfitId: Long): List<Long>
+
+    /** 同上，响应式版——详情页持续订阅分类关联变化用（review R-11 同类问题） */
+    @Query("SELECT categoryId FROM outfit_category_cross_ref WHERE outfitId = :outfitId")
+    fun observeCategoryIdsForOutfit(outfitId: Long): Flow<List<Long>>
 }

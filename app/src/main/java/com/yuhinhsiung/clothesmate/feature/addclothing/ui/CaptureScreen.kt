@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -60,6 +61,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -295,59 +299,74 @@ fun CaptureScreen(
         }
 
         // 底部操作区：约 120dp 深色半透明（§7.3）
-        Row(
+        // review UI-04：相机是全屏页，根 Scaffold 不再代它消费 insets，
+        // 这里自己避开系统导航栏——外层 Box 承担背景，让蒙层一直铺到屏幕底边
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(Dimens.cameraBottomBarHeight)
-                .background(PhotoScrim),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
+                .background(PhotoScrim)
+                .navigationBarsPadding(),
         ) {
-            // 左：相册（M1 用图标占位——mockup 的「最近一张缩略图」需媒体库查询，随 M4 连拍一起评估）
-            CircleControlButton(
-                icon = AppIcons.Image,
-                contentDescription = stringResource(R.string.capture_album),
-                iconSize = Dimens.Icon.l,
-                onClick = ::pickFromAlbum,
-            )
-
-            // 中：快门（外圈 72dp 白环 + 内 56dp 实心，按压 100ms 缩放）
-            val shutterInteraction = remember { MutableInteractionSource() }
-            val pressed by shutterInteraction.collectIsPressedAsState()
-            val shutterScale by animateFloatAsState(
-                targetValue = if (pressed) 0.9f else 1f,
-                animationSpec = tween(durationMillis = Dimens.Duration.Instant),
-                label = "shutter-scale",
-            )
-            Box(
+            val shutterLabel = stringResource(R.string.capture_shutter)
+            Row(
                 modifier = Modifier
-                    .size(Dimens.shutterOuter)
-                    .scale(if (reducedMotion) 1f else shutterScale)
-                    .border(3.dp, OnPhoto, CircleShape)
-                    .padding(Dimens.Space.s2)
-                    .clip(CircleShape)
-                    .background(OnPhoto)
-                    .clickable(
-                        interactionSource = shutterInteraction,
-                        indication = null,
-                        onClick = ::takePhoto,
-                    ),
-            )
+                    .fillMaxWidth()
+                    .height(Dimens.cameraBottomBarHeight),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // 左：相册（M1 用图标占位——mockup 的「最近一张缩略图」需媒体库查询，随 M4 连拍一起评估）
+                CircleControlButton(
+                    icon = AppIcons.Image,
+                    contentDescription = stringResource(R.string.capture_album),
+                    iconSize = Dimens.Icon.l,
+                    onClick = ::pickFromAlbum,
+                )
 
-            // 右：翻转镜头
-            CircleControlButton(
-                icon = AppIcons.CameraSwitch,
-                contentDescription = stringResource(R.string.capture_flip),
-                iconSize = Dimens.Icon.l,
-                onClick = {
-                    lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
-                        CameraSelector.LENS_FACING_FRONT
-                    } else {
-                        CameraSelector.LENS_FACING_BACK
-                    }
-                },
-            )
+                // 中：快门（外圈 72dp 白环 + 内 56dp 实心，按压 100ms 缩放）
+                val shutterInteraction = remember { MutableInteractionSource() }
+                val pressed by shutterInteraction.collectIsPressedAsState()
+                val shutterScale by animateFloatAsState(
+                    targetValue = if (pressed) 0.9f else 1f,
+                    animationSpec = tween(durationMillis = Dimens.Duration.Instant),
+                    label = "shutter-scale",
+                )
+                Box(
+                    modifier = Modifier
+                        .size(Dimens.shutterOuter)
+                        .scale(if (reducedMotion) 1f else shutterScale)
+                        .border(3.dp, OnPhoto, CircleShape)
+                        .padding(Dimens.Space.s2)
+                        .clip(CircleShape)
+                        .background(OnPhoto)
+                        // review UI-06：快门是无文本 Box，原先既没有可读的操作名称也没有
+                        // 按钮角色，读屏树里这个可点节点是「无名称」的；旁边的相册 / 翻转
+                        // 控件却有名称。这里补 contentDescription + Button 角色 + 点击动作名。
+                        .semantics { contentDescription = shutterLabel }
+                        .clickable(
+                            interactionSource = shutterInteraction,
+                            indication = null,
+                            onClickLabel = shutterLabel,
+                            role = Role.Button,
+                            onClick = ::takePhoto,
+                        ),
+                )
+
+                // 右：翻转镜头
+                CircleControlButton(
+                    icon = AppIcons.CameraSwitch,
+                    contentDescription = stringResource(R.string.capture_flip),
+                    iconSize = Dimens.Icon.l,
+                    onClick = {
+                        lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
+                            CameraSelector.LENS_FACING_FRONT
+                        } else {
+                            CameraSelector.LENS_FACING_BACK
+                        }
+                    },
+                )
+            }
         }
     }
 }

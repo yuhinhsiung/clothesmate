@@ -131,6 +131,7 @@ fun ClothingFormRoute(
             onColorToggle = viewModel::onColorToggle,
             onStyleToggle = viewModel::onStyleToggle,
             onSeasonToggle = viewModel::onSeasonToggle,
+            onNameChange = viewModel::onNameChange,
             onBrandChange = viewModel::onBrandChange,
             onNoteChange = viewModel::onNoteChange,
             onCodeChange = viewModel::onCodeChange,
@@ -194,6 +195,7 @@ private fun ClothingFormContent(
     onColorToggle: (String) -> Unit,
     onStyleToggle: (String) -> Unit,
     onSeasonToggle: (String) -> Unit,
+    onNameChange: (String) -> Unit,
     onBrandChange: (String) -> Unit,
     onNoteChange: (String) -> Unit,
     onCodeChange: (String) -> Unit,
@@ -240,6 +242,22 @@ private fun ClothingFormContent(
         }
 
         Column(modifier = Modifier.padding(horizontal = Dimens.pagePadding)) {
+
+            // ── 名称（review R-08）：**仅编辑模式** ───────────────
+            // M1-12 要求「全字段可改」，name 此前没有入口；创建确认页按 §2.3.3
+            // 不提供名称输入（不强迫用户起名），所以这里用 isEdit 门控。
+            // 清空即回到「主色 · 类别」兜底名。
+            if (state.isEdit) {
+                CmTextField(
+                    value = state.name,
+                    onValueChange = onNameChange,
+                    label = stringResource(R.string.form_field_name),
+                    placeholder = stringResource(R.string.form_field_name_hint),
+                    singleLine = true,
+                    imeAction = ImeAction.Next,
+                    modifier = Modifier.padding(top = Dimens.Space.s5),
+                )
+            }
 
             // ── 类别：两级 chips（§7.3「类别/颜色/风格用 chips 点选」）──
             CategorySelector(

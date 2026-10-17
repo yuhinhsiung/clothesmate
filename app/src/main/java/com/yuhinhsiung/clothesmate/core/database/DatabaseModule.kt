@@ -3,6 +3,7 @@ package com.yuhinhsiung.clothesmate.core.database
 import android.content.Context
 import androidx.room.Room
 import com.yuhinhsiung.clothesmate.core.database.dao.ClothingItemDao
+import com.yuhinhsiung.clothesmate.core.database.dao.CodeHistoryDao
 import com.yuhinhsiung.clothesmate.core.database.dao.OutfitCategoryDao
 import com.yuhinhsiung.clothesmate.core.database.dao.OutfitDao
 import com.yuhinhsiung.clothesmate.core.database.dao.TagDictionaryDao
@@ -30,8 +31,10 @@ object DatabaseModule {
             ClothesMateDatabase::class.java,
             ClothesMateDatabase.DATABASE_NAME,
         )
-            // M1–M3 迭代期：schema 变更直接重建。M4 起必须改为真实 Migration，
-            // 以免用户丢数据（开发计划 M1-01 / §4.4 第 8 条）。
+            // 真迁移优先（§4.4 第 8 条）：v1→v2 无损搬迁编号历史与衣物顺序
+            .addMigrations(*Migrations.ALL)
+            // 未被迁移覆盖的版本跳跃（如将来手工降版本）仍按 M1–M3 迭代期策略重建。
+            // M4 起必须补齐迁移并移除本行，以免用户丢数据（开发计划 M1-01）。
             .fallbackToDestructiveMigration()
             .build()
 
@@ -40,6 +43,9 @@ object DatabaseModule {
 
     @Provides
     fun provideClothingItemDao(db: ClothesMateDatabase): ClothingItemDao = db.clothingItemDao()
+
+    @Provides
+    fun provideCodeHistoryDao(db: ClothesMateDatabase): CodeHistoryDao = db.codeHistoryDao()
 
     @Provides
     fun provideOutfitCategoryDao(db: ClothesMateDatabase): OutfitCategoryDao = db.outfitCategoryDao()

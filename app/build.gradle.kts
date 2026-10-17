@@ -68,6 +68,12 @@ android {
             isReturnDefaultValues = true
         }
     }
+
+    // Room 导出的 schema 同时作为仪器化测试的资产：MigrationTestHelper 要从
+    // assets 里按「数据库全限定名/版本.json」读取期望 schema 来校验迁移结果。
+    sourceSets {
+        getByName("androidTest").assets.srcDir("${rootDir}/app/schemas")
+    }
 }
 
 ksp {
@@ -146,6 +152,8 @@ dependencies {
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.hilt.android.testing)
+    // MigrationTestHelper（真迁移测试，见 MigrationTest）
+    androidTestImplementation(libs.room.testing)
     debugImplementation(libs.compose.ui.test.manifest)
     kspAndroidTest(libs.hilt.compiler)
 }

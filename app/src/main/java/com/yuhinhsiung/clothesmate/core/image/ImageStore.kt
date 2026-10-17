@@ -30,11 +30,27 @@ interface ImageStore {
     /**
      * 把暂存图归位到正式位置（[ImageStorage.clothingOriginalFile] 等）。
      *
+     * ⚠️ 本操作**会消费掉暂存源**（rename 优先，跨卷退化为复制后删源）。
+     * 多张图批量归位时，前面成功的图片源已经没了——中途失败要让草稿仍可重试，
+     * 必须用 [restoreStaged] 把已归位的那几张退回去。
+     *
      * @param staged [stash] 的产物
      * @param destination 目标绝对路径（由 [ImageStorage] 的方法给出）
      * @return 最终文件的**相对路径**，可直接写库
      */
     suspend fun promote(staged: StagedImage, destination: java.io.File): String
+
+    /**
+     * 归位失败后的**补偿**：把已经落到 [destination] 的文件退回暂存位置（review R-14）。
+     *
+     * 为什么必须有：保存流程是「先把一批暂存图 promote 到正式目录 → 再写库」。第 2 张
+     * 归位失败时，第 1 张的暂存源已经被 consume 掉了，而补偿逻辑又会删掉已归位的文件；
+     * 草稿里的 `StagedImage` 于是指向一个**不存在的文件**，用户按提示重试仍然失败，
+     * 只能放弃重录。退回暂存区后，草稿恢复成「什么都没发生」的可重试状态。
+     *
+     * 幂等：源文件还在（说明该张还没归位）或目标不存在时都不做事。
+     */
+    suspend fun restoreStaged(staged: StagedImage, destination: java.io.File)
 
     /** 清掉单个暂存图 */
     suspend fun clearStaged(staged: StagedImage)

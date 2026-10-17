@@ -195,10 +195,13 @@ fun OutfitDetailRoute(
             // ── 照片轮播 ────────────────────────────────────────
             val photos = detail.outfit.photoPaths
             if (photos.isEmpty()) {
+                // 无照片占位：**不再保留整块 4:5 图区**（视觉建议 2）。
+                // 无照片时首屏几乎全是空白 + 衣架，用户要滚动才看得到衣物清单，
+                // 而「按编号找衣服」才是详情页的核心信息。压成一条窄占位即可。
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(4f / 5f)
+                        .aspectRatio(2.5f)
                         .background(MaterialTheme.colorScheme.muted),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -315,7 +318,20 @@ fun OutfitDetailRoute(
                 )
 
                 // ── 衣物清单 · n 件 ─────────────────────────────
-                SectionLabel(stringResource(R.string.outfit_detail_items, detail.items.size))
+                // review R-11：这里的 N 必须是**有效衣物数**（与瀑布卡 chip、分类页同口径），
+                // 已删除占位另算一个数字——原先取 items.size 把占位也算成「衣物」，
+                // 三处口径互相打架。两个数不能都叫「衣物件数」。
+                SectionLabel(
+                    if (detail.deletedItemCount > 0) {
+                        stringResource(
+                            R.string.outfit_detail_items_deleted,
+                            detail.outfit.itemCount,
+                            detail.deletedItemCount,
+                        )
+                    } else {
+                        stringResource(R.string.outfit_detail_items, detail.outfit.itemCount)
+                    },
+                )
                 detail.items.forEach { ref ->
                     OutfitItemRow(
                         ref = ref,

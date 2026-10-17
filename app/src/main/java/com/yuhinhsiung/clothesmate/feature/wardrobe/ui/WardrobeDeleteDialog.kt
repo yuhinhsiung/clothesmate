@@ -69,6 +69,20 @@ fun WardrobeDeleteDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onMuted,
                 )
+                // review R-01：软删除条目不进「内有 N 件」的展示口径，但删衣柜时
+                // 外键要求它们也必须被处理（转移或一并物理删除）。没说清楚的话，
+                // 用户以为只动了 2 件，实际动了 3 件。
+                if (uiState.deletedItemCount > 0) {
+                    Text(
+                        text = stringResource(
+                            R.string.wardrobe_delete_includes_deleted,
+                            uiState.deletedItemCount,
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.padding(top = Dimens.Space.s1),
+                    )
+                }
 
                 // ① 转移到其他衣柜（默认选中；无其他衣柜时禁用）
                 DestinyOption(
@@ -97,11 +111,12 @@ fun WardrobeDeleteDialog(
                     }
                 }
 
-                // ② 一并删除（error 色 + 不可恢复警示）
+                // ② 一并删除（error 色 + 不可恢复警示）。
+                // 件数用 totalItemCount：这才是这个选项真正会删掉的行数（review R-01）
                 DestinyOption(
                     selected = !uiState.transferSelected,
                     enabled = true,
-                    title = stringResource(R.string.wardrobe_delete_all, uiState.itemCount),
+                    title = stringResource(R.string.wardrobe_delete_all, uiState.totalItemCount),
                     titleColor = MaterialTheme.colorScheme.error,
                     onClick = { viewModel.onDestinyChange(false) },
                 ) {

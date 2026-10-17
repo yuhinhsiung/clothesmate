@@ -59,20 +59,51 @@ interface OutfitDao {
     @Query("DELETE FROM outfit_item_cross_ref WHERE clothingItemId = :clothingItemId")
     suspend fun deleteCrossRefsByClothingItem(clothingItemId: Long)
 
-    @Query("SELECT clothingItemId FROM outfit_item_cross_ref WHERE outfitId = :outfitId")
+    /**
+     * 某穿搭关联的衣物 id，**按业务顺序**（review R-06）。
+     *
+     * 原实现无 `ORDER BY`，顺序取决于 SQLite 扫描计划——保存一次就把选择器里
+     * 用户排好的顺序丢掉。现由 `outfit_item_cross_ref.position` 承载。
+     */
+    @Query(
+        """
+        SELECT clothingItemId FROM outfit_item_cross_ref
+        WHERE outfitId = :outfitId
+        ORDER BY position ASC, clothingItemId ASC
+        """,
+    )
     suspend fun getClothingIds(outfitId: Long): List<Long>
 
     /** 全部穿搭的衣物关联（推荐引擎衣物可用性判定 §5.2） */
-    @Query("SELECT outfitId, clothingItemId FROM outfit_item_cross_ref")
+    @Query("SELECT outfitId, clothingItemId, position FROM outfit_item_cross_ref")
     suspend fun getAllItemRefs(): List<OutfitItemCrossRef>
 
     /** 全部衣物关联（响应式版）——瀑布卡件数 chip、穿搭列表联查（M1-19） */
-    @Query("SELECT outfitId, clothingItemId FROM outfit_item_cross_ref")
+    @Query("SELECT outfitId, clothingItemId, position FROM outfit_item_cross_ref")
     fun observeItemRefs(): Flow<List<OutfitItemCrossRef>>
+
+    /**
+     * 某穿搭的衣物关联（响应式）——详情页持续订阅用（review R-11）。
+     *
+     * 带上 `position` 是为了详情仍能按业务顺序重建清单；订阅它则让「加/删衣物关联」
+     * 也能实时反映到打开的详情页上。
+     */
+    @Query(
+        """
+        SELECT outfitId, clothingItemId, position FROM outfit_item_cross_ref
+        WHERE outfitId = :outfitId
+        ORDER BY position ASC, clothingItemId ASC
+        """,
+    )
+    fun observeItemRefsOf(outfitId: Long): Flow<List<OutfitItemCrossRef>>
 
     /** 某衣物出现在哪些穿搭里（一衣多穿 W-10 / M4-03） */
     @Query("SELECT outfitId FROM outfit_item_cross_ref WHERE clothingItemId = :clothingItemId")
     suspend fun getOutfitIdsForItem(clothingItemId: Long): List<Long>
+
+    /** 某衣物被几套穿搭引用（M1-13 删除前警示，review R-10） */
+    @Query("SELECT COUNT(*) FROM outfit_item_cross_ref WHERE clothingItemId = :clothingItemId")
+    suspend fun countOutfitsForItem(clothingItemId: Long): Int
 
     /**
      * 「今天穿这套」联动（T-05）：穿搭 wearCount +1、lastWornAt = 当天。
