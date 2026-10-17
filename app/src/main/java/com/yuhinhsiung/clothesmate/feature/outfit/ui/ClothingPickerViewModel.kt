@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -28,6 +29,7 @@ import javax.inject.Inject
 class ClothingPickerViewModel @Inject constructor(
     clothingDao: ClothingItemDao,
     wardrobeDao: WardrobeDao,
+    private val navResultBus: com.yuhinhsiung.clothesmate.ui.navigation.NavResultBus,
 ) : ViewModel() {
 
     private val query = MutableStateFlow("")
@@ -35,6 +37,27 @@ class ClothingPickerViewModel @Inject constructor(
     private val categoryFilter = MutableStateFlow<String?>(null)
     private val includeStored = MutableStateFlow(false)
     private val selectedIds = MutableStateFlow(emptyList<Long>())
+
+    init {
+        // review B-19：进入即预填当前已选（含顺序）——表单经 NavResultBus 发布种子
+        // （SavedStateHandle 回传失效，见 review/2026-10-17_1015_review.md B-01）。
+        viewModelScope.launch {
+            navResultBus.pickerSeed().collect { seed ->
+                if (seed != null) {
+                    selectedIds.value = seed
+                    navResultBus.consumePickerSeed()
+                }
+            }
+        }
+    }
+
+    /**
+     * 「完成」：经 NavResultBus 发布最终选择（完整列表、含顺序），随后由 Route 收页。
+     * 发布必须先于 pop——表单 VM 在返回栈下始终存活、即时收集。
+     */
+    fun confirmSelection() {
+        navResultBus.publishPickedItemIds(selectedIds.value)
+    }
 
     val uiState: StateFlow<ClothingPickerUiState> = combine(
         clothingDao.observeAll(),
@@ -45,14 +68,9 @@ class ClothingPickerViewModel @Inject constructor(
     ) { items, wardrobes, q, w, (cat, stored, ids) ->
         val domain = items.map { it.toDomain() }
         val tokens = q.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
-        // 「鞋包配饰」合并词命中四个大类（帽子并入配饰侧，见 ClothingPickerScreen 注）
-        val categoryKeys: Set<String>? = cat?.let { key ->
-            if (key == MERGED_KEY) {
-                ClothingCategory.entries.filter { it.topKey in MERGED_TOPS }.map { it.key }.toSet()
-            } else {
-                ClothingCategory.entries.filter { it.topKey == key }.map { it.key }.toSet()
-            }
-        }
+        // review B-28：类别筛选词收敛到 ClothingCategory.filterCategoryKeys 单一词源
+        // （「鞋包配饰」合并词此前在选择器与搜索页各硬编码一份且不一致）
+        val categoryKeys = ClothingCategory.filterCategoryKeys(cat)
         ClothingPickerUiState(
             items = domain.filter { item ->
                 stored || !item.isStored
@@ -100,11 +118,6 @@ class ClothingPickerViewModel @Inject constructor(
         } else {
             selectedIds.value + itemId
         }
-    }
-
-    private companion object {
-        const val MERGED_KEY = "shoes_bag_acc"
-        val MERGED_TOPS = setOf("shoes", "bag", "acc", "hat")
     }
 }
 

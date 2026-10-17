@@ -66,13 +66,16 @@ class SearchViewModel @Inject constructor(
         val tokens = filters.query.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
         val wardrobeNames = wardrobes.associate { it.id to it.name }
 
-        // 风格筛选选项 = 现有衣物风格标签并集
-        val styleOptions = searched.flatMap { it.styleTags }.distinct().sorted()
+        // review B-07/B-28：类别筛选词收敛到 ClothingCategory.filterChips 单一词源
+        // （含「鞋包配饰」合并词）；类别行不再被风格条件误门控（那是 B-07 的复制粘贴错位）
+        val categoryKeys = ClothingCategory.filterCategoryKeys(filters.category)
 
-        // 结构化筛选在内存做（个人量级；类别筛选按大类展开成小类集合）
-        val categoryKeys: Set<String>? = filters.category?.let { topKey ->
-            ClothingCategory.entries.filter { it.topKey == topKey }.map { it.key }.toSet()
-        }
+        // review B-08：风格筛选「幽灵生效」——已选值不在选项集（换关键词后选项收缩）时
+        // 仍保留在选项列表里，用户可以原地取消，而不是被看不见的条件过滤到空结果
+        val allStyleTags = searched.flatMap { it.styleTags }.distinct()
+        val styleOptions = (allStyleTags + listOfNotNull(
+            filters.style?.takeIf { selected -> selected !in allStyleTags },
+        )).sorted()
         val items = searched
             .asSequence()
             .filter { item -> categoryKeys == null || item.categoryKey in categoryKeys }
@@ -105,13 +108,17 @@ class SearchViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState())
 
+    /** review B-33：大小写口径与衣物 LIKE / HighlightedText 对齐（统一不敏感） */
+    private fun String.containsFold(other: String): Boolean =
+        lowercase().contains(other.lowercase())
+
     private fun outfitMatches(outfit: Outfit, token: String): Boolean =
-        (outfit.name?.contains(token) == true) ||
-            fallbackDisplayName(outfit.createdAt).contains(token) ||
-            outfit.styleTags.any { it.contains(token) } ||
-            outfit.sceneTags.any { it.contains(token) } ||
+        (outfit.name?.containsFold(token) == true) ||
+            fallbackDisplayName(outfit.createdAt).containsFold(token) ||
+            outfit.styleTags.any { it.containsFold(token) } ||
+            outfit.sceneTags.any { it.containsFold(token) } ||
             outfit.seasonTags.any { key ->
-                key.contains(token) || Season.fromKey(key)?.displayName?.contains(token) == true
+                key.containsFold(token) || Season.fromKey(key)?.displayName?.containsFold(token) == true
             }
 
     fun onQueryChange(value: String) {
@@ -151,9 +158,9 @@ data class SearchUiState(
     val styleFilter: String? = null,
     val styleOptions: List<String> = emptyList(),
 ) {
-    /** 类别筛选选项（大类词，与衣物选择器同口径） */
-    val categoryOptions: List<Pair<String, String>>
-        get() = listOf("top" to "上衣", "outer" to "外套", "bottom" to "下装", "dress" to "连衣裙")
+    /** 类别筛选选项（review B-28：与衣物选择器同一词源 ClothingCategory.filterChips，含「鞋包配饰」） */
+    val categoryOptions: List<Pair<String?, String>>
+        get() = ClothingCategory.filterChips
 
     val colorOptions: List<ClothingColor>
         get() = ClothingColor.entries.toList()

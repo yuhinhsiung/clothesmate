@@ -137,4 +137,27 @@ object Dimens {
 
     /** 侧面移除 x 图标 */
     val closeButtonSize = 24.dp
+
+    /**
+     * 概览图表（Canvas 自绘）几何 —— review B-14 收口：此前为页面内私有 const。
+     * 环形图直径 / 环宽；颜色分布条高度。
+     */
+    object Chart {
+        val donutSize = 168.dp
+        val ringStroke = 28.dp
+        val barHeight = 20.dp
+    }
+
+    /** 穿搭表单的照片块宽（4:5 横滑列，§7.4）—— review B-14 */
+    val formPhotoWidth = 140.dp
+
+    /** 穿搭表单「包含衣物」缩略块（88×110，§7.4）—— review B-14 */
+    val formThumbWidth = 88.dp
+    val formThumbHeight = 110.dp
+
+    /** 选择器选中态序号圆点直径（§7.4）—— review B-14 */
+    val orderBadgeSize = 24.dp
+
+    /** 拍照页中央引导框高度（§7.3 示意框）—— review B-14 */
+    val captureGuideHeight = 260.dp
 }

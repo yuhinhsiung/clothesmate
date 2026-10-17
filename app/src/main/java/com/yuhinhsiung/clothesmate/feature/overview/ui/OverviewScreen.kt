@@ -2,6 +2,7 @@ package com.yuhinhsiung.clothesmate.feature.overview.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -218,7 +219,7 @@ private fun CategoryDonutCard(uiState: OverviewUiState) {
                 Box(contentAlignment = Alignment.Center) {
                     DonutChart(
                         slices = uiState.categorySlices,
-                        modifier = Modifier.size(DIMEN_DONUT.dp),
+                        modifier = Modifier.size(Dimens.Chart.donutSize),
                     )
                     // 中心总件数（Playfair）
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -260,30 +261,16 @@ private fun DonutChart(
     slices: List<CategorySlice>,
     modifier: Modifier = Modifier,
 ) {
-    val ringColor = MaterialTheme.colorScheme.muted
     val sliceColors = slices.mapIndexed { index, _ ->
         ChartCategoryColors[index % ChartCategoryColors.size]
     }
     val total = slices.sumOf { it.count }.coerceAtLeast(1)
     Canvas(modifier = modifier) {
-        val stroke = DIMEN_RING_STROKE.dp.toPx()
+        val stroke = Dimens.Chart.ringStroke.toPx()
         val diameter = minOf(size.width, size.height) - stroke
         val topLeft = Offset((size.width - diameter) / 2, (size.height - diameter) / 2)
         val arcSize = androidx.compose.ui.geometry.Size(diameter, diameter)
         var startAngle = -90f
-        // 空态兜底：无扇区时画一个 muted 全环
-        if (slices.isEmpty()) {
-            drawArc(
-                color = ringColor,
-                startAngle = 0f,
-                sweepAngle = 360f,
-                useCenter = false,
-                topLeft = topLeft,
-                size = arcSize,
-                style = Stroke(width = stroke, cap = StrokeCap.Butt),
-            )
-            return@Canvas
-        }
         slices.forEachIndexed { index, slice ->
             val sweep = 360f * slice.count / total
             drawArc(
@@ -319,7 +306,7 @@ private fun ColorDistributionCard(colorCounts: List<ColorCount>) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = Dimens.Space.s3)
-                    .height(DIMEN_BAR_HEIGHT.dp)
+                    .height(Dimens.Chart.barHeight)
                     .clip(RoundedCornerShape(Dimens.Radius.s)),
                 horizontalArrangement = Arrangement.Start,
             ) {
@@ -336,7 +323,15 @@ private fun ColorDistributionCard(colorCounts: List<ColorCount>) {
                             modifier = Modifier
                                 .weight(weight)
                                 .fillMaxSize()
-                                .background(ClothingColors.dotColor(segment.color)),
+                                .background(ClothingColors.dotColor(segment.color))
+                                // review B-20：白段在白卡上须有描边才可见（同 ColorDot 口径）
+                                .then(
+                                    if (segment.color == ClothingColor.White) {
+                                        Modifier.border(1.dp, MaterialTheme.colorScheme.outline)
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
                         )
                     }
                 }
@@ -411,7 +406,15 @@ private fun LegendRow(
                 modifier = Modifier
                     .size(Dimens.Icon.s)
                     .clip(CircleShape)
-                    .background(color),
+                    .background(color)
+                    // review B-20：白色图例点加描边，否则浅色模式下不可见
+                    .then(
+                        if (color == ClothingColors.White) {
+                            Modifier.border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                        } else {
+                            Modifier
+                        },
+                    ),
             )
         }
         Text(
@@ -430,6 +433,3 @@ private fun LegendRow(
     }
 }
 
-private const val DIMEN_DONUT = 168
-private const val DIMEN_RING_STROKE = 28
-private const val DIMEN_BAR_HEIGHT = 20

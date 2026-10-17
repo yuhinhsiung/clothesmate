@@ -11,6 +11,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import com.yuhinhsiung.clothesmate.core.image.ImageStorage
 import com.yuhinhsiung.clothesmate.ui.component.LocalImageStorage
+import com.yuhinhsiung.clothesmate.ui.component.LocalNavResultBus
+import com.yuhinhsiung.clothesmate.ui.navigation.NavResultBus
 import com.yuhinhsiung.clothesmate.ui.theme.ClothesMateTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -28,12 +30,22 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var imageStorage: ImageStorage
 
+    /**
+     * 导航结果总线注入 [LocalNavResultBus]（review B-01/B-04：SavedStateHandle
+     * 回传在 type-safe 导航下失效，改为显式总线）。
+     */
+    @Inject
+    lateinit var navResultBus: NavResultBus
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
             ClothesMateTheme {
-                CompositionLocalProvider(LocalImageStorage provides imageStorage) {
+                CompositionLocalProvider(
+                    LocalImageStorage provides imageStorage,
+                    LocalNavResultBus provides navResultBus,
+                ) {
                     Surface(
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background,

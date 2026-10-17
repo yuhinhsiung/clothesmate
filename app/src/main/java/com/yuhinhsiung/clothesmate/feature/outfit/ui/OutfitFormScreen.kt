@@ -62,8 +62,6 @@ import com.yuhinhsiung.clothesmate.ui.component.CmTextField
 import com.yuhinhsiung.clothesmate.ui.component.DiscardChangesDialog
 import com.yuhinhsiung.clothesmate.ui.component.SelectableChip
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
-import com.yuhinhsiung.clothesmate.ui.navigation.OUTFIT_APPEND_URI_KEY
-import com.yuhinhsiung.clothesmate.ui.navigation.PICKED_ITEM_IDS_KEY
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
 import com.yuhinhsiung.clothesmate.ui.theme.muted
 import com.yuhinhsiung.clothesmate.ui.theme.onMuted
@@ -100,23 +98,7 @@ fun OutfitFormRoute(
         ActivityResultContracts.PickMultipleVisualMedia(OutfitFormUiState.MAX_OUTFIT_PHOTOS),
     ) { uris -> viewModel.onPhotosPicked(uris) }
 
-    // 拍照追加回传（Capture OUTFIT_APPEND → SavedStateHandle）
-    val capturedUri by viewModel.capturedUri.collectAsStateWithLifecycle()
-    LaunchedEffect(capturedUri) {
-        if (capturedUri.isNotBlank()) {
-            viewModel.onAppendCaptured(capturedUri)
-            viewModel.consumeCapturedUri()
-        }
-    }
-
-    // 衣物选择器回传
-    val pickedIds by viewModel.pickedItemIds.collectAsStateWithLifecycle()
-    LaunchedEffect(pickedIds) {
-        if (pickedIds.isNotEmpty()) {
-            viewModel.onPickerResult(pickedIds)
-            viewModel.consumePickedIds()
-        }
-    }
+    // 拍照追加回执与选择器回传均由 VM 经 NavResultBus 收集（review B-01），屏幕层不再观察
 
     LaunchedEffect(uiState.notFound) {
         if (uiState.notFound) onBack()
@@ -163,7 +145,11 @@ fun OutfitFormRoute(
             onAddPhotoFromAlbum = { albumLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
             onAddPhotoFromCamera = onOpenCapture,
             onRemovePhoto = viewModel::removePhoto,
-            onOpenPicker = onOpenPicker,
+            onOpenPicker = {
+                // B-19：先发布当前已选种子，选择器进入即预填
+                viewModel.seedPicker()
+                onOpenPicker()
+            },
             onRemoveItem = viewModel::onToggleItem,
             onToggleCategory = viewModel::onToggleCategory,
             onNewCategory = { showNewCategory = true },
@@ -173,6 +159,7 @@ fun OutfitFormRoute(
             onAddCustomStyle = { showCustomStyle = true },
             onAddCustomScene = { showCustomScene = true },
             onNoteChange = viewModel::onNoteChange,
+            onDismissError = viewModel::dismissError,
             onSave = { viewModel.save(onSaved) },
             modifier = Modifier
                 .padding(innerPadding)
@@ -247,6 +234,7 @@ private fun OutfitFormContent(
     onAddCustomStyle: () -> Unit,
     onAddCustomScene: () -> Unit,
     onNoteChange: (String) -> Unit,
+    onDismissError: () -> Unit,
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -380,6 +368,31 @@ private fun OutfitFormContent(
                     .padding(top = Dimens.Space.s5),
             )
         }
+        // ── 保存失败反馈（review B-06：此前 uiState.error 无任何读取点）──
+        state.error?.let { error ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = Dimens.Space.s3)
+                    .clip(RoundedCornerShape(Dimens.Radius.s))
+                    .background(MaterialTheme.colorScheme.error.copy(alpha = 0.08f))
+                    .clickable(onClick = onDismissError)
+                    .padding(horizontal = Dimens.Space.s3, vertical = Dimens.Space.s2),
+            ) {
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = stringResource(R.string.error_dismiss),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
         Button(
             onClick = onSave,
             enabled = state.canSave,
@@ -466,7 +479,7 @@ private fun OutfitPhotoSection(
         itemsIndexed(displayPaths) { index, path ->
             Box(
                 modifier = Modifier
-                    .width(140.dp)
+                    .width(Dimens.formPhotoWidth)
                     .aspectRatio(4f / 5f),
             ) {
                 Box(
@@ -532,7 +545,7 @@ private fun OutfitPhotoSection(
                     AddTile(
                         label = stringResource(R.string.outfit_add_photo),
                         onClick = onAddFromAlbum,
-                        width = 140.dp,
+                        width = Dimens.formPhotoWidth,
                         aspect = 4f / 5f,
                     )
                     TextButton(onClick = onAddFromCamera) {
@@ -555,8 +568,8 @@ private fun SelectedItemThumb(
 ) {
     Box(
         modifier = Modifier
-            .width(88.dp)
-            .height(110.dp),
+            .width(Dimens.formThumbWidth)
+            .height(Dimens.formThumbHeight),
     ) {
         Box(
             modifier = Modifier
@@ -626,7 +639,7 @@ private fun SelectedItemThumb(
 private fun AddTile(
     label: String,
     onClick: () -> Unit,
-    width: androidx.compose.ui.unit.Dp = 88.dp,
+    width: androidx.compose.ui.unit.Dp = Dimens.formThumbWidth,
     aspect: Float = 1.25f,
 ) {
     Column(

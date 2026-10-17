@@ -46,6 +46,9 @@ class WardrobeEditViewModel @Inject constructor(
                     name = wardrobe.name,
                     note = wardrobe.note.orEmpty(),
                     coverPath = wardrobe.coverImagePath,
+                    // review B-32：记录进入编辑时的原始封面，保存时判断是否需要
+                    // 清旧文件（换封面走 rename 覆盖不泄漏；「移除封面」才会留孤儿文件）
+                    originalCoverPath = wardrobe.coverImagePath,
                 )
             }
         }
@@ -120,6 +123,11 @@ class WardrobeEditViewModel @Inject constructor(
                 if (state.editingId != null) {
                     val cover = promoteCover(state.stagedCover, state.coverPath, state.editingId)
                     wardrobeRepository.updateWardrobe(state.editingId, name, note, cover)
+                    // review B-32：编辑中移除了原封面 → 清掉旧文件
+                    // （换封面由 rename 原子覆盖不泄漏；清空才留孤儿）
+                    if (cover == null && state.originalCoverPath != null) {
+                        imageStorage.deleteWardrobeCover(state.editingId)
+                    }
                     state.editingId
                 } else {
                     // 新建：insert 时封面留空，拿到 id 后再归位并补一次 update
@@ -176,6 +184,8 @@ data class WardrobeEditUiState(
     val note: String = "",
     /** 当前封面展示用路径。可能是暂存图绝对路径（选完未保存）或相对路径（编辑预填） */
     val coverPath: String? = null,
+    /** 进入编辑时的原始封面（review B-32：保存时判断是否需要清旧文件） */
+    val originalCoverPath: String? = null,
     val stagedCover: StagedImage? = null,
     val nameTouched: Boolean = false,
     val compressing: Boolean = false,

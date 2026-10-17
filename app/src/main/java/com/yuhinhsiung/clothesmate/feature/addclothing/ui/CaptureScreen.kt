@@ -12,6 +12,8 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -127,9 +129,17 @@ fun CaptureScreen(
     var flashOn by rememberSaveable { mutableStateOf(false) }
     var cameraError by remember { mutableStateOf(false) }
 
-    // 旧会话遗留的拍照缓存一并清掉（正式归位前它们只是中间产物）
+    // 旧会话遗留的拍照缓存清理（review B-16：主线程 IO → IO 线程；且只清「10 分钟前」
+    // 的文件——上一张刚拍完、表单暂存压缩仍在读时快速再进拍照页，删新文件会造成
+    // 「图片处理失败」的窄竞态）
     LaunchedEffect(Unit) {
-        File(context.cacheDir, CAPTURE_DIR).deleteRecursively()
+        withContext(Dispatchers.IO) {
+            val dir = File(context.cacheDir, CAPTURE_DIR)
+            val cutoff = System.currentTimeMillis() - STALE_CAPTURE_MILLIS
+            dir.listFiles()
+                ?.filter { it.lastModified() < cutoff }
+                ?.forEach { it.delete() }
+        }
     }
 
     LaunchedEffect(hasCameraPermission, lensFacing) {
@@ -223,7 +233,7 @@ fun CaptureScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(GUIDE_FRAME_HEIGHT.dp)
+                        .height(Dimens.captureGuideHeight)
                         .drawBehind {
                             val stroke = 1.5.dp.toPx()
                             val dash = 10.dp.toPx()
@@ -343,9 +353,11 @@ fun CaptureScreen(
 }
 
 /** 中央引导框高度（衣物平铺区，约屏高 1/3，§7.3 示意框） */
-private const val GUIDE_FRAME_HEIGHT = 260
 
 private const val CAPTURE_DIR = "captured"
+
+/** 拍照缓存「算陈旧」的阈值（B-16）：刚拍完的文件在会话流中仍被消费，不删 */
+private const val STALE_CAPTURE_MILLIS = 10 * 60 * 1000L
 
 /** 相机页圆形控制按钮（关闭 / 闪光灯 / 相册 / 翻转），触控区 48dp。 */
 @Composable

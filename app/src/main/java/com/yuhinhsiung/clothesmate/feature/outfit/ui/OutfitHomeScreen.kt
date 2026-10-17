@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yuhinhsiung.clothesmate.R
@@ -92,6 +94,22 @@ fun OutfitHomeRoute(
             )
         },
     ) { innerPadding ->
+        // review B-22：首帧数据未到显示骨架（M1-23 三态体系缺口补齐）
+        val loading by viewModel.loading.collectAsStateWithLifecycle()
+        if (loading) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(Dimens.pagePadding),
+                verticalArrangement = Arrangement.spacedBy(Dimens.Space.s3),
+            ) {
+                repeat(3) {
+                    com.yuhinhsiung.clothesmate.ui.component.ShimmerCard(height = 160.dp)
+                }
+            }
+            return@Scaffold
+        }
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()

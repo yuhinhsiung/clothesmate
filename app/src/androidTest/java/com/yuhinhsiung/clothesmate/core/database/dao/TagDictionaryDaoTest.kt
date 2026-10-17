@@ -41,13 +41,13 @@ class TagDictionaryDaoTest {
 
     @Test
     fun insertOrIncrementDoesNotDuplicateSameTypeValue() = runTest {
+        // review B-34：「登记一次使用」语义——首插即计 1，二次使用递增为 2
         dao.insertOrIncrement("style", "极简", isPreset = false)
         dao.insertOrIncrement("style", "极简", isPreset = false)
 
         val rows = dao.getByType("style")
         assertEquals(1, rows.size)
-        // 第二次写入递增使用次数而非新增行
-        assertEquals(1, rows.first().usageCount)
+        assertEquals(2, rows.first().usageCount)
     }
 
     @Test
@@ -61,16 +61,16 @@ class TagDictionaryDaoTest {
 
     @Test
     fun presetSeedIsIdempotentAndDoesNotClobberUsageCount() = runTest {
-        // 用户已用过该词：insertOrIncrement 首次插入 usageCount 从 0 起
+        // 用户已用过该词：insertOrIncrement 首次即计 1（B-34 修正后语义）
         dao.insertOrIncrement("style", "复古", isPreset = false)
-        assertEquals(0, dao.getByType("style").first().usageCount)
+        assertEquals(1, dao.getByType("style").first().usageCount)
         // 启动补种预设：IGNORE 冲突策略下同 type+value 返回 -1（行已存在，不覆盖）
         val seedResult = dao.insert(TagDictionaryEntity(type = "style", value = "复古", isPreset = true))
         assertEquals(-1L, seedResult)
 
         val rows = dao.getByType("style")
         assertEquals(1, rows.size)
-        assertEquals(0, rows.first().usageCount)
+        assertEquals(1, rows.first().usageCount)
         // 首条写入的自定义标记保留（补种不动既有行）
         assertEquals(false, rows.first().isPreset)
     }

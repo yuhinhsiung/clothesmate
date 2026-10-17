@@ -49,6 +49,8 @@
     <string name="discard_subtitle">尚未保存的内容将会丢失</string>
     <string name="discard_confirm">放弃</string>
     <string name="discard_keep">继续编辑</string>
+    <!-- 表单保存失败反馈（review B-06） -->
+    <string name="error_dismiss">知道了</string>
 
     <!-- 衣柜详情 / 衣物（M1-09 起） -->
     <string name="action_back">返回</string>
@@ -206,6 +208,8 @@
     <string name="search_section_outfit">穿搭 · %1$d</string>
     <string name="empty_search_title">没找到「%1$s」相关的衣物</string>
     <string name="empty_search_desc">换个关键词试试，比如编号或颜色</string>
+    <!-- review B-23：纯筛选（无关键词）时空态标题不插空词 -->
+    <string name="empty_search_filter_only_title">没有符合条件的衣物</string>
 
     <!-- 概览（M1-22，UI 文档 §7.5 / mockup-10） -->
     <string name="settings_entry">设置</string>

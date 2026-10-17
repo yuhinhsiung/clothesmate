@@ -13,6 +13,7 @@ import com.yuhinhsiung.clothesmate.core.image.ImageStorage
 import com.yuhinhsiung.clothesmate.core.image.ImageStore
 import com.yuhinhsiung.clothesmate.core.image.StagedImage
 import com.yuhinhsiung.clothesmate.core.model.ClothingItem
+import com.yuhinhsiung.clothesmate.core.model.ClothingCategory
 import com.yuhinhsiung.clothesmate.core.model.ClothingStatus
 import com.yuhinhsiung.clothesmate.core.model.TagType
 import com.yuhinhsiung.clothesmate.core.model.sortTagsByFrequency
@@ -145,6 +146,10 @@ class ClothingFormViewModel @Inject constructor(
                     isEdit = true,
                     imagePath = item.displayImagePath,
                     categoryKey = item.categoryKey,
+                    // 编辑预填：展开既有类别所属大类（B-02 两级上下文完整可见）
+                    expandedTopKey = item.categoryKey?.let { key ->
+                        ClothingCategory.fromKey(key)?.topKey
+                    },
                     colorKeys = item.colorKeys,
                     styleTags = item.styleTags,
                     seasonKeys = item.seasonTags,
@@ -166,7 +171,21 @@ class ClothingFormViewModel @Inject constructor(
 
     // ── 字段变更（全部标记 userModified，M1-15 返回确认依据） ────────
 
-    fun onCategoryChange(key: String?) = updateState { it.copy(categoryKey = key) }
+    /**
+     * 类别两级选择的**大类行为**（review B-02 修复）：点大类 = 展开该大类的小类行
+     * 并保持大类高亮（BD-05 口径）；单小类大类（连衣裙/帽子）直接定值；
+     * 再点同一大类 = 收起小类行（保留已选值）。
+     *
+     * 纯展开/收起**不**标记 userModified（不是用户内容，M1-15 判定只看真实填写）。
+     */
+    fun onTopCategoryChange(topKey: String) {
+        _uiState.update { topCategoryChange(it, topKey) }
+    }
+
+    /** 小类选择：写值并保持大类展开（大类高亮由 expandedTopKey 维持）。 */
+    fun onSubCategoryChange(subKey: String) = updateState { state ->
+        state.copy(categoryKey = if (state.categoryKey == subKey) null else subKey)
+    }
 
     fun onColorToggle(key: String) = updateState { state ->
         val colors = state.colorKeys.toMutableList()
@@ -190,8 +209,9 @@ class ClothingFormViewModel @Inject constructor(
 
     fun onNoteChange(value: String) = updateState { it.copy(note = value) }
 
+    /** review B-15：编号改动同样计入 userModified（此前只改编号返回不弹放弃确认） */
     fun onCodeChange(value: String) {
-        _uiState.update { it.copy(code = value, codeTouched = true) }
+        updateState { it.copy(code = value, codeTouched = true) }
         codeCheckJob?.cancel()
         codeCheckJob = viewModelScope.launch { validateCode(value) }
     }
@@ -283,11 +303,24 @@ class ClothingFormViewModel @Inject constructor(
                 updatedAt = now,
             ),
         )
-        staged?.let { image ->
-            val path = imageStore.promote(image, imageStorage.clothingOriginalFile(id))
-            clothingRepository.getItem(id)?.let { item ->
-                clothingRepository.updateItem(item.copy(originalImagePath = path))
+        // review B-12：照片归位/回写失败时补偿回滚——删掉已建行，避免「孤儿行 + 重试
+        // 重复建档」（编号计数器已按「删除不回收」语义推进，是既定设计而非缺陷）。
+        // 跨 DB/文件两界无法真事务，此为尽力补偿；回滚自身失败则留痕交 M4-05 导出前清理。
+        try {
+            staged?.let { image ->
+                val path = imageStore.promote(image, imageStorage.clothingOriginalFile(id))
+                clothingRepository.getItem(id)?.let { item ->
+                    clothingRepository.updateItem(item.copy(originalImagePath = path))
+                }
             }
+        } catch (failure: Throwable) {
+            runCatching {
+                clothingRepository.deleteCrossRefsForItem(id)
+                clothingRepository.deletePhysically(id)
+            }.onFailure { rollbackFailure ->
+                android.util.Log.e("ClothingForm", "建档回滚失败，残留无图行 id=$id", rollbackFailure)
+            }
+            throw failure
         }
         recordStyleTags(state.styleTags)
         // canSave 已保证非空；带回去供导航层「保存后回到衣柜详情」（M1-14 验收）
@@ -341,6 +374,9 @@ data class ClothingFormUiState(
     val imagePath: String? = null,
     val compressing: Boolean = false,
     val categoryKey: String? = null,
+    /** 已展开的大类（review B-02：与 categoryKey 解耦——此前由 categoryKey 反推，
+     *  多小类大类点开即置空导致二级行永不渲染、6/8 个大类选不中） */
+    val expandedTopKey: String? = null,
     val colorKeys: List<String> = emptyList(),
     val styleTags: List<String> = emptyList(),
     val seasonKeys: List<String> = emptyList(),
@@ -361,4 +397,31 @@ data class ClothingFormUiState(
     val canSave: Boolean
         get() = !compressing && !saving && !notFound &&
             wardrobeId != null && code.isNotBlank() && codeError == null
+}
+
+/**
+ * 类别两级选择的状态迁移 —— **纯函数**（review B-02 修复的直测载体，JVM 可测）。
+ *
+ * 语义（BD-05 口径）：点新大类 = 展开其小类行并保持大类高亮；单小类大类
+ * （连衣裙/帽子）直接定值；点已展开的大类 = 收起小类行（保留已选值）；
+ * 切到别的大类时，原值仅在与新大类同属时才保留（否则清空待选）。
+ */
+internal fun topCategoryChange(
+    state: ClothingFormUiState,
+    topKey: String,
+): ClothingFormUiState {
+    if (state.expandedTopKey == topKey) {
+        return state.copy(expandedTopKey = null)
+    }
+    val subs = ClothingCategory.entries.filter { it.topKey == topKey }
+    return state.copy(
+        expandedTopKey = topKey,
+        categoryKey = if (subs.size == 1) {
+            subs.first().key
+        } else {
+            state.categoryKey.takeIf { key ->
+                key != null && ClothingCategory.fromKey(key)?.topKey == topKey
+            }
+        },
+    )
 }

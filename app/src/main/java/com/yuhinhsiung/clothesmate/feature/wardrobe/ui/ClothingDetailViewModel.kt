@@ -11,7 +11,10 @@ import com.yuhinhsiung.clothesmate.feature.wardrobe.data.ClothingRepository
 import com.yuhinhsiung.clothesmate.feature.wardrobe.data.WardrobeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
+import androidx.navigation.toRoute
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -26,20 +29,33 @@ import javax.inject.Inject
 class ClothingDetailViewModel @Inject constructor(
     private val clothingRepository: ClothingRepository,
     private val wardrobeRepository: WardrobeRepository,
-    private val savedStateHandle: SavedStateHandle,
+    private val navResultBus: com.yuhinhsiung.clothesmate.ui.navigation.NavResultBus,
+    savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
-    private val itemId: Long = savedStateHandle["itemId"] ?: 0L
+    // review B-26：路由参数改走 toRoute（SavedStateHandle 字符串取参与 key 约定漂移）
+    private val itemId: Long = savedStateHandle.toRoute<com.yuhinhsiung.clothesmate.ui.navigation.ClothingDetail>()
+        .itemId
 
     /**
-     * 编辑页（M1-12）保存成功的回执：编辑页写回本条目的 SavedStateHandle 后 pop，
-     * 详情页据此弹「已保存」Snackbar（M1-12 验收「保存成功 Snackbar」）。
+     * 编辑页（M1-12）保存成功的回执：表单保存后经 [NavResultBus] 发布（review B-04：
+     * SavedStateHandle 回传在本工程失效，改显式总线），本 VM 收集后置位、
+     * 详情页据此弹「已保存」Snackbar 并 [consumeSavedSignal]。
      */
-    val savedSignal: StateFlow<Boolean> =
-        savedStateHandle.getStateFlow(KEY_EDIT_SAVED, false)
+    private val _savedSignal = MutableStateFlow(false)
+    val savedSignal: StateFlow<Boolean> = _savedSignal.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            navResultBus.clothingSaved().collect { saved ->
+                if (saved) _savedSignal.value = true
+            }
+        }
+    }
 
     fun consumeSavedSignal() {
-        savedStateHandle[KEY_EDIT_SAVED] = false
+        _savedSignal.value = false
+        navResultBus.consumeClothingSaved()
     }
 
     // 撤销软删除后无需手动触发重查：observeItem 的 Room Flow 会在 restore
@@ -125,6 +141,3 @@ data class ClothingDetailUiState(
     val seasonLabels: List<String>
         get() = item?.seasonTags?.mapNotNull { Season.fromKey(it)?.displayName } ?: emptyList()
 }
-
-/** 编辑页 → 详情页的保存回执 key（ClothingDetailViewModel.savedSignal） */
-private const val KEY_EDIT_SAVED = "clothing_edit_saved"

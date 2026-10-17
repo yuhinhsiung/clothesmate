@@ -9,13 +9,9 @@
     <!-- 天气定位：粗略精度即可，用系统 LocationManager，不引入 GMS -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-    <!-- 相册导入：Android 13+ 走 Photo Picker 免权限；低版本仍需读权限 -->
-    <uses-permission
-        android:name="android.permission.READ_MEDIA_IMAGES"
-        android:minSdkVersion="33" />
-    <uses-permission
-        android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
+    <!-- 相册导入：一律走 Photo Picker（Android 13+ 免权限，低版本由系统 UI 代选），
+         应用从不直读媒体库——review B-24：READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE
+         全工程零请求，按权限最小化移除。M4 若做「最近一张缩略图」再重评。 -->
 
     <!-- 定位为可选能力：无该硬性要求的设备仍可装（手动选城市替代） -->
     <uses-feature

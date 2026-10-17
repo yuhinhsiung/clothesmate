@@ -28,13 +28,21 @@ class OutfitHomeViewModel @Inject constructor(
     private val outfitRepository: OutfitRepository,
 ) : ViewModel() {
 
-    val categories: StateFlow<List<OutfitCategory>> = outfitRepository.observeCategories()
+    private val categoriesFlow = outfitRepository.observeCategories()
+    private val outfitsFlow = outfitRepository.observeOutfits()
+
+    val categories: StateFlow<List<OutfitCategory>> = categoriesFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** 全部穿搭套数（顶部大卡） */
-    val totalCount: StateFlow<Int> = outfitRepository.observeOutfits()
+    val totalCount: StateFlow<Int> = outfitsFlow
         .map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    /** review B-22：以「原始流首个发射」判定加载完成——StateFlow 的 initialValue
+     *  无法区分「加载中」与「真空」，须用 dataIn 前的源流。 */
+    val loading: StateFlow<Boolean> = combine(categoriesFlow, outfitsFlow) { _, _ -> false }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
     fun renameCategory(categoryId: Long, name: String) {
         viewModelScope.launch { outfitRepository.renameCategory(categoryId, name) }
@@ -69,8 +77,9 @@ class OutfitWaterfallViewModel @Inject constructor(
         .map { categories -> categories.firstOrNull { it.id == categoryId }?.name }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** 可选标签全集：取自现有穿搭的并集（空衣柜时为空，筛选条不显示） */
-    val availableTags: StateFlow<AvailableTags> = outfitRepository.observeOutfits()
+    /** 可选标签全集：取自**当前数据源**（全部或分类内）穿搭的并集——review B-11：
+     *  此前恒取全部穿搭，分类内页会出现与本分类无关的筛选 chips 且空态误判 */
+    val availableTags: StateFlow<AvailableTags> = sourceOutfits(outfitRepository)
         .map { outfits ->
             AvailableTags(
                 styles = outfits.flatMap { it.styleTags }.distinct().sorted(),
@@ -79,6 +88,10 @@ class OutfitWaterfallViewModel @Inject constructor(
             )
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AvailableTags())
+
+    /** 是否分类内入口（空态三分支判定用，B-11） */
+    val isCategoryScoped: Boolean
+        get() = categoryId != null
 
     val outfits: StateFlow<List<com.yuhinhsiung.clothesmate.core.model.Outfit>> = combine(
         sourceOutfits(outfitRepository),

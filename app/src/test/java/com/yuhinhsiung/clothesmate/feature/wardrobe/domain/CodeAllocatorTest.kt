@@ -8,6 +8,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -119,9 +120,12 @@ class CodeAllocatorTest {
     fun `场景4b 已删除的编号不会回到发放池`() = runTest {
         allocator.nextCode() // 1
         counter.taken += "1"
-        repeat(10) { allocator.nextCode() }
-        // 发的号里不应再出现 1
-        assertTrue("1" in counter.taken)
+        // review §6.3 弱断言修正：此前返回值弃置、只断言自己刚插入的 taken（恒真）。
+        // 现在捕获发放结果并断言：不含已删的 1，且彼此不重复
+        val issued = mutableListOf<String>()
+        repeat(10) { issued += allocator.nextCode() }
+        assertFalse("已删除的编号 1 不应再发放", "1" in issued)
+        assertEquals("发放序列不重复", 10, issued.toSet().size)
     }
 
     // ── 场景 5：移入其他衣柜，编号不变 ──────────────────────────

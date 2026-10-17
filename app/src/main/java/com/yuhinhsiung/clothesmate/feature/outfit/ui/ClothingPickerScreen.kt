@@ -66,7 +66,8 @@ import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ClothingPickerRoute(
-    onDone: (List<Long>) -> Unit,
+    /** 「完成」后收页（结果已经 VM 经 NavResultBus 发布） */
+    onDone: () -> Unit,
     viewModel: ClothingPickerViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -101,7 +102,10 @@ fun ClothingPickerRoute(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Button(
-                    onClick = { onDone(uiState.selectedIds) },
+                    onClick = {
+                        viewModel.confirmSelection()
+                        onDone()
+                    },
                     enabled = uiState.selectedIds.isNotEmpty(),
                     shape = RoundedCornerShape(Dimens.Radius.m),
                     modifier = Modifier.height(Dimens.buttonHeight),
@@ -170,7 +174,8 @@ fun ClothingPickerRoute(
                         onClick = { viewModel.onCategoryFilter(null) },
                     )
                 }
-                items(PickerCategories, key = { it.first }) { (key, label) ->
+                // 类别行共用 ClothingCategory.filterChips 单一词源（review B-28）
+                items(ClothingCategory.filterChips.filter { it.first != null }, key = { it.first!! }) { (key, label) ->
                     PickerChip(
                         label = label,
                         selected = uiState.categoryFilter == key,
@@ -218,19 +223,6 @@ fun ClothingPickerRoute(
         }
     }
 }
-
-/**
- * 类别行筛选词（UI 文档 §7.4：全部 / 上衣 / 外套 / 下装 / 连衣裙 / 鞋包配饰）。
- * 「鞋包配饰」合并鞋子 / 包包 / 帽子 / 配饰四个大类——帽子按语义并入配饰侧
- * （大类词命中逻辑与 ClothingCategory.searchAliases 的合并词一致）。
- */
-private val PickerCategories: List<Pair<String, String>> = listOf(
-    "top" to "上衣",
-    "outer" to "外套",
-    "bottom" to "下装",
-    "dress" to "连衣裙",
-    ClothingCategory.ShoesOther.topKey to "鞋包配饰",
-)
 
 @Composable
 private fun PickerChip(
@@ -325,7 +317,7 @@ private fun PickerGridCell(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(Dimens.Space.s1)
-                    .size(24.dp)
+                    .size(Dimens.orderBadgeSize)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary),
                 contentAlignment = Alignment.Center,

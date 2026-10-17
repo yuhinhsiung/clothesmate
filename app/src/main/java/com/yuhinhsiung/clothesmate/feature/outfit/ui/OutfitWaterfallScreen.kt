@@ -113,26 +113,36 @@ fun OutfitWaterfallRoute(
                 )
             }
 
-            if (outfits.isEmpty() && availableTags.isEmpty) {
-                // 无穿搭（O-04）或分类内无穿搭（O-03）——两态文案照 §6.9 表格
-                val isAll = viewModel.categoryId == null
-                com.yuhinhsiung.clothesmate.ui.component.EmptyState(
-                    spec = EmptyStateSpec(
-                        icon = if (isAll) AppIcons.Outfit else AppIcons.Tag,
-                        title = stringResource(
-                            if (isAll) R.string.empty_no_outfit_title
-                            else R.string.empty_category_no_outfit_title,
+            when {
+                // review B-11：分类内无穿搭必须是「这个分类还没有穿搭」空态——
+                // 此前以「数据源空 + 筛选条空」判定，而筛选条恒取全部穿搭 → 空分类
+                // 被误判成「筛选无结果」+ 一排无关 chips
+                viewModel.isCategoryScoped && outfits.isEmpty() -> {
+                    com.yuhinhsiung.clothesmate.ui.component.EmptyState(
+                        spec = EmptyStateSpec(
+                            icon = AppIcons.Tag,
+                            title = stringResource(R.string.empty_category_no_outfit_title),
+                            description = stringResource(R.string.empty_category_no_outfit_desc),
+                            actionLabel = stringResource(R.string.outfit_create),
+                            onAction = onCreateOutfit,
                         ),
-                        description = stringResource(
-                            if (isAll) R.string.empty_no_outfit_desc
-                            else R.string.empty_category_no_outfit_desc,
+                    )
+                }
+
+                outfits.isEmpty() && availableTags.isEmpty -> {
+                    // 无穿搭（O-04）：全部穿搭入口在数据源为空时（无任何标签可选）
+                    com.yuhinhsiung.clothesmate.ui.component.EmptyState(
+                        spec = EmptyStateSpec(
+                            icon = AppIcons.Outfit,
+                            title = stringResource(R.string.empty_no_outfit_title),
+                            description = stringResource(R.string.empty_no_outfit_desc),
+                            actionLabel = stringResource(R.string.outfit_create),
+                            onAction = onCreateOutfit,
                         ),
-                        actionLabel = stringResource(R.string.outfit_create),
-                        onAction = onCreateOutfit,
-                    ),
-                )
-            } else if (outfits.isEmpty()) {
-                com.yuhinhsiung.clothesmate.ui.component.EmptyState(
+                    )
+                }
+
+                outfits.isEmpty() -> com.yuhinhsiung.clothesmate.ui.component.EmptyState(
                     spec = EmptyStateSpec(
                         icon = AppIcons.Filter,
                         title = stringResource(R.string.empty_outfit_filter_none_title),
@@ -141,19 +151,21 @@ fun OutfitWaterfallRoute(
                         onAction = null,
                     ),
                 )
-            } else {
-                LazyVerticalStaggeredGrid(
-                    columns = StaggeredGridCells.Fixed(2),
-                    contentPadding = PaddingValues(Dimens.pagePadding),
-                    horizontalArrangement = Arrangement.spacedBy(Dimens.waterfallColumnSpacing),
-                    verticalItemSpacing = Dimens.waterfallColumnSpacing,
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    items(outfits, key = { it.id }) { outfit ->
-                        OutfitWaterfallCard(
-                            outfit = outfit,
-                            onClick = { onOutfitClick(outfit.id) },
-                        )
+
+                else -> {
+                    LazyVerticalStaggeredGrid(
+                        columns = StaggeredGridCells.Fixed(2),
+                        contentPadding = PaddingValues(Dimens.pagePadding),
+                        horizontalArrangement = Arrangement.spacedBy(Dimens.waterfallColumnSpacing),
+                        verticalItemSpacing = Dimens.waterfallColumnSpacing,
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        items(outfits, key = { it.id }) { outfit ->
+                            OutfitWaterfallCard(
+                                outfit = outfit,
+                                onClick = { onOutfitClick(outfit.id) },
+                            )
+                        }
                     }
                 }
             }

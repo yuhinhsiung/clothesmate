@@ -94,13 +94,16 @@ fun WardrobeListScreen(
     onOpenSearch: () -> Unit = {},
     viewModel: WardrobeListViewModel = hiltViewModel(),
 ) {
-    // 拖拽重排时的本地顺序：松手后才经 ViewModel 落库，拖拽中只动 UI
+    // 拖拽重排时的本地顺序：松手后才经 ViewModel 落库，拖拽中只动 UI。
+    // review B-13：重同步条件从「个数变化」改为「内容不一致」——改名/件数增减
+    // （size 不变）时旧实现渲染过期对象，列表卡不随编辑刷新。
+    // ⚠️ 未来接入拖拽手势时须补 dragging 守卫（拖拽中本地顺序有意与 Flow 不一致）
     val reordered = remember { mutableStateListOf<Wardrobe>() }
     val wardrobes = when (val s = uiState) {
         is WardrobeListUiState.Content -> s.wardrobes
         else -> emptyList()
     }
-    if (reordered.size != wardrobes.size) {
+    if (reordered != wardrobes) {
         reordered.clear()
         reordered.addAll(wardrobes)
     }
@@ -154,7 +157,7 @@ fun WardrobeListScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = Dimens.pagePadding, vertical = Dimens.Space.s2)
-                    .height(48.dp)
+                    .height(Dimens.minTouchTarget)
                     .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
                     .background(MaterialTheme.colorScheme.muted)
                     .clickable(onClick = onOpenSearch),

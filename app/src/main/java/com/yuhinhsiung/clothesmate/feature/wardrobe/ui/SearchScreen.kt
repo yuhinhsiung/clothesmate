@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -50,6 +51,8 @@ import com.yuhinhsiung.clothesmate.ui.component.HighlightedText
 import com.yuhinhsiung.clothesmate.ui.component.SelectableChip
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
+import com.yuhinhsiung.clothesmate.ui.theme.OnPhoto
+import com.yuhinhsiung.clothesmate.ui.theme.PhotoScrimLight
 import com.yuhinhsiung.clothesmate.ui.theme.muted
 import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 
@@ -107,14 +110,16 @@ fun SearchRoute(
                 }
             }
 
-            // 筛选 chips（类别 / 颜色 / 风格）
-            if (uiState.styleOptions.isNotEmpty()) {
-                FilterChipRow(
-                    options = uiState.categoryOptions.map { ChipOption(it.first, it.second) },
-                    selectedKey = uiState.categoryFilter,
-                    onSelect = viewModel::onCategoryFilter,
-                )
-            }
+            // 筛选 chips（类别 / 颜色 / 风格）。review B-07：类别行此前被
+            // styleOptions.isNotEmpty() 误门控（复制粘贴错位）——无风格标签的常见
+            // 场景下整行消失；三行各自独立渲染
+            FilterChipRow(
+                options = uiState.categoryOptions
+                    .filter { it.first != null }
+                    .map { ChipOption(it.first!!, it.second) },
+                selectedKey = uiState.categoryFilter,
+                onSelect = viewModel::onCategoryFilter,
+            )
             FilterChipRow(
                 options = uiState.colorOptions.map { color ->
                     ChipOption(
@@ -135,13 +140,20 @@ fun SearchRoute(
             }
 
             when {
-                // 空结果（有词或筛过）：§6.9「搜索无结果」，无主按钮
+                // 空结果（有词或筛过）：§6.9「搜索无结果」，无主按钮。
+                // review B-23：纯筛选（无关键词）时 %1$s 插空会得到「没找到「」相关的衣物」，
+                // 改用与瀑布流一致的「没有符合条件的衣物」文案
                 uiState.items.isEmpty() && uiState.outfits.isEmpty() &&
                     (uiState.query.isNotBlank() || uiState.hasAnyFilter) -> {
+                    val title = if (uiState.query.isNotBlank()) {
+                        stringResource(R.string.empty_search_title, uiState.query)
+                    } else {
+                        stringResource(R.string.empty_search_filter_only_title)
+                    }
                     com.yuhinhsiung.clothesmate.ui.component.EmptyState(
                         spec = EmptyStateSpec(
                             icon = AppIcons.Search,
-                            title = stringResource(R.string.empty_search_title, uiState.query),
+                            title = title,
                             description = stringResource(R.string.empty_search_desc),
                             actionLabel = null,
                             onAction = null,
@@ -305,7 +317,7 @@ private fun ClothingResultRow(
     }
 }
 
-/** 穿搭结果卡：封面 + 名称（高亮），双列（§7.2）。 */
+/** 穿搭结果卡：封面 4:3 + 名称白字叠加底部蒙层（review B-29 对齐 mockup-19 / §6.5 瀑布卡口径）。 */
 @Composable
 private fun OutfitResultCard(
     outfit: Outfit,
@@ -313,34 +325,57 @@ private fun OutfitResultCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.clickable(onClick = onClick)) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(4f / 5f)
-                .clip(RoundedCornerShape(Dimens.Radius.l))
-                .background(MaterialTheme.colorScheme.muted),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (outfit.coverPath != null) {
-                CmAsyncImage(
-                    model = outfit.coverPath,
-                    contentDescription = outfit.displayName,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Icon(
-                    imageVector = AppIcons.Outfit,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onMuted,
-                    modifier = Modifier.size(Dimens.Icon.l),
-                )
-            }
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .aspectRatio(4f / 3f)
+            .clip(RoundedCornerShape(Dimens.Radius.l))
+            .background(MaterialTheme.colorScheme.muted)
+            .clickable(onClick = onClick),
+    ) {
+        if (outfit.coverPath != null) {
+            CmAsyncImage(
+                model = outfit.coverPath,
+                contentDescription = outfit.displayName,
+                modifier = Modifier.fillMaxSize(),
+            )
+            // 底部渐变蒙层（§6.5：白字 + 照片底部黑色渐变保证可读）
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .aspectRatio(3f)
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, PhotoScrimLight),
+                        ),
+                    ),
+            )
+            HighlightedText(
+                text = outfit.displayName,
+                tokens = tokens,
+                style = MaterialTheme.typography.labelLarge,
+                baseColor = OnPhoto,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(Dimens.Space.s2),
+            )
+        } else {
+            Icon(
+                imageVector = AppIcons.Outfit,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onMuted,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(Dimens.Icon.l),
+            )
+            HighlightedText(
+                text = outfit.displayName,
+                tokens = tokens,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(Dimens.Space.s2),
+            )
         }
-        HighlightedText(
-            text = outfit.displayName,
-            tokens = tokens,
-            modifier = Modifier.padding(top = Dimens.Space.s1),
-        )
     }
 }

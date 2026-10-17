@@ -62,13 +62,15 @@ import com.yuhinhsiung.clothesmate.core.model.OutfitDetail
 import com.yuhinhsiung.clothesmate.core.model.Season
 import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
-import com.yuhinhsiung.clothesmate.ui.navigation.OUTFIT_SAVED_KEY
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitDetailArgs
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
 import com.yuhinhsiung.clothesmate.ui.theme.muted
 import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -347,17 +349,28 @@ fun OutfitDetailRoute(
     }
 
     if (showDelete && detail != null) {
+        // review B-10：弹窗 N 用「独属本穿搭才计入」的预计算口径（countClearableDeletedItems），
+        // 而非本穿搭内全部软删件数——软删衣物同属多套穿搭时原文案失实
+        LaunchedEffect(showDelete) { viewModel.loadClearableCount() }
         OutfitDeleteDialog(
             outfitName = detail.outfit.displayName,
-            deletedItemCount = detail.deletedItemCount,
+            deletedItemCount = uiState.clearableCount,
             onDismiss = { showDelete = false },
             onConfirm = {
                 showDelete = false
-                viewModel.delete { cleared ->
-                    // 删除后弹层消失、列表自动刷新（Flow）；被清衣物数仅记录
-                    scope.launch { snackbarHostState.showSnackbar(deletedText.format(detail.outfit.displayName)) }
-                    onBack()
-                }
+                // review B-17：删除失败不再裸崩，落 Snackbar 供重试
+                viewModel.delete(
+                    onDone = { cleared ->
+                        // 删除后弹层消失、列表自动刷新（Flow）；被清衣物数仅记录
+                        scope.launch {
+                            snackbarHostState.showSnackbar(deletedText.format(detail.outfit.displayName))
+                        }
+                        onBack()
+                    },
+                    onError = { message ->
+                        scope.launch { snackbarHostState.showSnackbar(message) }
+                    },
+                )
             },
         )
     }
@@ -523,36 +536,86 @@ private fun OutfitDeleteDialog(
 }
 
 /**
- * 穿搭详情 ViewModel —— M1-20。
+ * 穿搭详情 ViewModel —— M1-20 / review B-03、B-10、B-17 修复落点。
  */
 @HiltViewModel
 class OutfitDetailViewModel @Inject constructor(
     private val outfitRepository: com.yuhinhsiung.clothesmate.feature.outfit.data.OutfitRepository,
+    private val imageStorage: com.yuhinhsiung.clothesmate.core.image.ImageStorage,
+    private val navResultBus: com.yuhinhsiung.clothesmate.ui.navigation.NavResultBus,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val outfitId: Long = savedStateHandle.toRoute<OutfitDetailArgs>().outfitId
-    private val handle: SavedStateHandle = savedStateHandle
 
-    val uiState: StateFlow<OutfitDetailUiState> = outfitRepository.observeOutfitDetail(outfitId)
-        .map { detail ->
-            if (detail == null) OutfitDetailUiState(notFound = true) else OutfitDetailUiState(detail = detail)
+    /** 删除弹窗用的「将同时彻底清除 N 件」预计算值（B-10 口径：独属本穿搭才计入） */
+    private val clearableCount = MutableStateFlow(0)
+
+    val uiState: StateFlow<OutfitDetailUiState> = combine(
+        outfitRepository.observeOutfitDetail(outfitId),
+        clearableCount,
+    ) { detail, count ->
+        when {
+            detail == null -> OutfitDetailUiState(notFound = true)
+            else -> OutfitDetailUiState(detail = detail, clearableCount = count)
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OutfitDetailUiState())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OutfitDetailUiState())
 
-    /** 编辑保存回执（OutfitForm 写回后 pop） */
-    val savedSignal: StateFlow<Boolean> =
-        handle.getStateFlow(OUTFIT_SAVED_KEY, false)
+    /** 编辑保存回执（经 NavResultBus，review B-04 同根因修复） */
+    private val _savedSignal = MutableStateFlow(false)
+    val savedSignal: StateFlow<Boolean> = _savedSignal.asStateFlow()
 
-    fun consumeSavedSignal() {
-        handle[OUTFIT_SAVED_KEY] = false
+    init {
+        viewModelScope.launch {
+            navResultBus.outfitSaved().collect { saved ->
+                if (saved) _savedSignal.value = true
+            }
+        }
     }
 
-    /** 删除（W-13 连带物理清除在 Repository）。@param onCleared (穿搭名, 被清件数) */
-    fun delete(onDone: suspend (Int) -> Unit) {
+    fun consumeSavedSignal() {
+        _savedSignal.value = false
+        navResultBus.consumeOutfitSaved()
+    }
+
+    /**
+     * 删除弹窗展示时预计算「将随本穿搭一并彻底清除」的软删衣物数（review B-10：
+     * 用 `countClearableDeletedItems`（独属本穿搭才计入）而非全部软删件数，
+     * 否则软删衣物同属多套穿搭时文案失实）。
+     */
+    fun loadClearableCount() {
         viewModelScope.launch {
-            val cleared = outfitRepository.deleteOutfit(outfitId)
-            onDone(cleared)
+            clearableCount.value = outfitRepository.countClearableDeletedItems(outfitId)
+        }
+    }
+
+    /**
+     * 删除穿搭（W-13）。**图片清理在本层接线**（review B-03：Repository 只删行与
+     * 关联、经 `onDeleted` 回调通知 UI 层清文件——此前回调从未被传入，照片与被连带
+     * 清除衣物的图片永久留存）。失败经 runCatching 捕获并回传错误（review B-17），
+     * 不让 DB 异常裸崩。
+     *
+     * @param onDone 删除成功回调（参数 = 被连带物理清除的软删衣物件数）
+     * @param onError 删除失败回调（展示可重试的错误反馈）
+     */
+    fun delete(onDone: suspend (Int) -> Unit, onError: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            runCatching {
+                outfitRepository.deleteOutfit(
+                    outfitId,
+                    onDeleted = { deletedOutfitId, clearedItemIds ->
+                        // 穿搭照片目录整删 + 被连带清除衣物的原图/抠图（§3.3 删除口径表）
+                        imageStorage.deleteOutfitImages(deletedOutfitId)
+                        clearedItemIds.forEach { itemId ->
+                            imageStorage.deleteClothingImages(itemId)
+                        }
+                    },
+                )
+            }.onSuccess { cleared ->
+                onDone(cleared)
+            }.onFailure { failure ->
+                onError(failure.message ?: "删除失败，请重试")
+            }
         }
     }
 }
@@ -561,4 +624,6 @@ class OutfitDetailViewModel @Inject constructor(
 data class OutfitDetailUiState(
     val detail: OutfitDetail? = null,
     val notFound: Boolean = false,
+    /** 删除弹窗用的「将同时彻底清除 N 件」预计算值（B-10 口径：独属本穿搭才计入） */
+    val clearableCount: Int = 0,
 )

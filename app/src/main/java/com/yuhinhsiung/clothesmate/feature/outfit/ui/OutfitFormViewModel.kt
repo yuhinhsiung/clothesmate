@@ -18,9 +18,7 @@ import com.yuhinhsiung.clothesmate.core.model.TagType
 import com.yuhinhsiung.clothesmate.core.model.sortTagsByFrequency
 import com.yuhinhsiung.clothesmate.core.model.toDomain
 import com.yuhinhsiung.clothesmate.feature.outfit.data.OutfitRepository
-import com.yuhinhsiung.clothesmate.ui.navigation.OUTFIT_APPEND_URI_KEY
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitForm
-import com.yuhinhsiung.clothesmate.ui.navigation.PICKED_ITEM_IDS_KEY
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -54,34 +52,18 @@ class OutfitFormViewModel @Inject constructor(
     private val imageStorage: ImageStorage,
     private val tagDictionaryDao: TagDictionaryDao,
     private val clothingDao: com.yuhinhsiung.clothesmate.core.database.dao.ClothingItemDao,
+    private val navResultBus: com.yuhinhsiung.clothesmate.ui.navigation.NavResultBus,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val route: OutfitForm = savedStateHandle.toRoute()
     private val editingId: Long? = route.outfitId
-    private val handle: SavedStateHandle = savedStateHandle
 
     private val _uiState = MutableStateFlow(OutfitFormUiState(isEdit = editingId != null))
     val uiState: StateFlow<OutfitFormUiState> = _uiState.asStateFlow()
 
     /** 暂存中的新照片（顺序即列表顺序） */
     private val stagedPhotos = mutableListOf<StagedImage>()
-
-    /** 衣物选择器回传结果（经 SavedStateHandle） */
-    val pickedItemIds: StateFlow<List<Long>> =
-        savedStateHandle.getStateFlow(PICKED_ITEM_IDS_KEY, emptyList())
-
-    /** 拍照追加回传（Capture OUTFIT_APPEND，经 SavedStateHandle） */
-    val capturedUri: StateFlow<String> =
-        savedStateHandle.getStateFlow(OUTFIT_APPEND_URI_KEY, "")
-
-    fun consumePickedIds() {
-        handle[PICKED_ITEM_IDS_KEY] = emptyList<Long>()
-    }
-
-    fun consumeCapturedUri() {
-        handle[OUTFIT_APPEND_URI_KEY] = ""
-    }
 
     /** 已选衣物缩略图联查（确认页横滑列 + 编号 chip） */
     val clothingById: StateFlow<Map<Long, ClothingItem>> = clothingDao.observeAll()
@@ -104,6 +86,35 @@ class OutfitFormViewModel @Inject constructor(
         } else {
             loadInitialPhotos()
         }
+        // review B-01/B-19：选择器回传改走 NavResultBus（SavedStateHandle 回传在本工程
+        // 三实例真机实测全部失效，见 review/2026-10-17_1015_review.md）。VM 在返回栈下
+        // 始终存活，收集不受「表单被选择器盖住」影响；回传 = 完整最终列表（选择器已用
+        // [seedPicker] 预填当前已选），直接替换。
+        viewModelScope.launch {
+            navResultBus.pickedItemIds().collect { picked ->
+                if (picked != null) {
+                    _uiState.update { it.copy(selectedItemIds = picked, userModified = true) }
+                    navResultBus.consumePickedItemIds()
+                }
+            }
+        }
+        // 拍照追加回传（B-01 三实例表的第 3 行，同根因）
+        viewModelScope.launch {
+            navResultBus.appendCapturedUri().collect { uri ->
+                if (!uri.isNullOrBlank()) {
+                    onAppendCaptured(uri)
+                    navResultBus.consumeAppendCaptured()
+                }
+            }
+        }
+    }
+
+    /**
+     * 打开衣物选择器前发布种子：当前已选（含顺序）→ 选择器预填（B-19 修复：
+     * 「编辑已含 3 件的穿搭 → 选择器显示 0 件 → 只勾第 4 件 → 原 3 件被静默丢弃」）。
+     */
+    fun seedPicker() {
+        navResultBus.publishPickerSeed(_uiState.value.selectedItemIds)
     }
 
     /** 创建：入口 FAB 面板带来的首批照片（\n 分隔 Uri），逐张压缩进暂存区 */
@@ -185,8 +196,8 @@ class OutfitFormViewModel @Inject constructor(
         }
     }
 
-    /** 拍照回传（M1-18「拍照可连续追加」）：SavedStateHandle 观察到后走这里 */
-    fun onAppendCaptured(uri: String) {
+    /** 拍照回传由 NavResultBus 收集器直连 [onPhotosPicked]（B-01 修复后不再单独暴露） */
+    private fun onAppendCaptured(uri: String) {
         onPhotosPicked(listOf(uri.toUri()))
     }
 
@@ -232,9 +243,6 @@ class OutfitFormViewModel @Inject constructor(
             },
         )
     }
-
-    /** 衣物选择器回传：整体替换选择（选择顺序即回传顺序） */
-    fun onPickerResult(ids: List<Long>) = update { it.copy(selectedItemIds = ids) }
 
     fun onToggleCategory(categoryId: Long) = update {
         it.copy(
@@ -324,11 +332,26 @@ class OutfitFormViewModel @Inject constructor(
                 categoryIds = state.selectedCategoryIds.toList(),
             ),
         )
-        val promoted = stagedPhotos.mapIndexed { index, staged ->
-            imageStore.promote(staged, imageStorage.outfitPhotoFile(id, index))
-        }
-        if (promoted.isNotEmpty()) {
-            outfitRepository.updatePhotoPaths(id, promoted)
+        // review B-12：归位/回写失败时补偿回滚（删行 + 关联 + 已归位文件），
+        // 避免「孤儿穿搭 + 重试重复建档」。跨 DB/文件两界无法真事务，尽力补偿。
+        val promoted = mutableListOf<String>()
+        try {
+            stagedPhotos.forEachIndexed { index, staged ->
+                promoted += imageStore.promote(staged, imageStorage.outfitPhotoFile(id, index))
+            }
+            if (promoted.isNotEmpty()) {
+                outfitRepository.updatePhotoPaths(id, promoted)
+            }
+        } catch (failure: Throwable) {
+            runCatching {
+                outfitRepository.deleteOutfit(id)
+                promoted.forEach { path ->
+                    imageStorage.deleteOutfitPhoto(id, path.substringAfterLast('/').substringBeforeLast('.').toIntOrNull() ?: return@forEach)
+                }
+            }.onFailure { rollbackFailure ->
+                android.util.Log.e("OutfitForm", "建档回滚失败，残留无图穿搭 id=$id", rollbackFailure)
+            }
+            throw failure
         }
         recordCustomTags(state)
         return id
@@ -390,10 +413,6 @@ class OutfitFormViewModel @Inject constructor(
         viewModelScope.launch {
             staged.forEach { imageStore.clearStaged(it) }
         }
-    }
-
-    private companion object {
-        const val PICKED_KEY = "picked_item_ids"
     }
 }
 

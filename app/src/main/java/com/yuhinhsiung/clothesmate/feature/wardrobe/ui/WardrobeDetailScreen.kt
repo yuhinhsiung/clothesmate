@@ -156,6 +156,21 @@ fun WardrobeDetailRoute(
             }
         },
     ) { innerPadding ->
+        // review B-22：首帧数据未到显示骨架，误显空态是 M1-23 声称覆盖的三态缺口
+        if (uiState.loading) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(Dimens.pagePadding),
+                verticalArrangement = Arrangement.spacedBy(Dimens.Space.s3),
+            ) {
+                repeat(4) {
+                    com.yuhinhsiung.clothesmate.ui.component.ShimmerCard()
+                }
+            }
+            return@Scaffold
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()

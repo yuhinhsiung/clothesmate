@@ -17,6 +17,7 @@ import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -47,7 +48,8 @@ fun WardrobeDeleteDialog(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    remember(wardrobeId) { viewModel.load(wardrobeId); null }
+    // review B-31：副作用从 remember 块迁到 LaunchedEffect（规范做法）
+    LaunchedEffect(wardrobeId) { viewModel.load(wardrobeId) }
 
     val wardrobeName = uiState.wardrobe?.name.orEmpty()
 

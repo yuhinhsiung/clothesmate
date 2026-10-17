@@ -63,20 +63,17 @@ import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobePickerSheet
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.form.ClothingFormRoute
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
+import com.yuhinhsiung.clothesmate.ui.component.LocalNavResultBus
 import com.yuhinhsiung.clothesmate.ui.navigation.Capture
 import com.yuhinhsiung.clothesmate.ui.navigation.CaptureTarget
-import com.yuhinhsiung.clothesmate.ui.navigation.CLOTHING_EDIT_SAVED_KEY
 import com.yuhinhsiung.clothesmate.ui.navigation.ClothingDetail
 import com.yuhinhsiung.clothesmate.ui.navigation.ClothingForm
 import com.yuhinhsiung.clothesmate.ui.navigation.ClothingPicker
-import com.yuhinhsiung.clothesmate.ui.navigation.OUTFIT_APPEND_URI_KEY
-import com.yuhinhsiung.clothesmate.ui.navigation.OUTFIT_SAVED_KEY
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitDetailArgs
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitForm
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitTab
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitWaterfall
 import com.yuhinhsiung.clothesmate.ui.navigation.OverviewTab
-import com.yuhinhsiung.clothesmate.ui.navigation.PICKED_ITEM_IDS_KEY
 import com.yuhinhsiung.clothesmate.ui.navigation.Search
 import com.yuhinhsiung.clothesmate.ui.navigation.TodayTab
 import com.yuhinhsiung.clothesmate.ui.navigation.WardrobeDetail
@@ -147,6 +144,9 @@ fun ClothesMateNavHost(
 
     // M1-18：创建穿搭入口面板（拍照 / 相册多选 / 跳过）
     var showOutfitPanel by rememberSaveable { mutableStateOf(false) }
+
+    // 导航结果总线（review B-01/B-04：SavedStateHandle 回传失效 → 显式总线）
+    val resultBus = LocalNavResultBus.current
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -322,13 +322,13 @@ fun ClothesMateNavHost(
             composable<OutfitForm> {
                 OutfitFormRoute(
                     onBack = { navController.popBackStack() },
-                    // 创建 → 回穿搭分类首页；编辑 → 回详情页（回执触发 Snackbar）
+                    // 创建 → 回穿搭分类首页；编辑 → 回详情页（经结果总线触发「已保存」Snackbar，
+                    // review B-04：SavedStateHandle 回传在本工程失效，改走 NavResultBus）
                     onSaved = {
                         val isEdit = navController.currentBackStackEntry
                             ?.toRouteOrNull<OutfitForm>()?.outfitId != null
                         if (isEdit) {
-                            navController.previousBackStackEntry
-                                ?.savedStateHandle?.set(OUTFIT_SAVED_KEY, true)
+                            resultBus.publishOutfitSaved()
                         }
                         navController.popBackStack()
                     },
@@ -339,13 +339,8 @@ fun ClothesMateNavHost(
                 )
             }
             composable<ClothingPicker> {
-                ClothingPickerRoute(
-                    onDone = { ids ->
-                        navController.previousBackStackEntry
-                            ?.savedStateHandle?.set(PICKED_ITEM_IDS_KEY, ArrayList(ids))
-                        navController.popBackStack()
-                    },
-                )
+                // 结果已由选择器 VM 经 NavResultBus 发布（B-01），这里只负责收页
+                ClothingPickerRoute(onDone = { navController.popBackStack() })
             }
             composable<WardrobeDetail> {
                 // review E-c：衣柜 id 由 ViewModel 从 SavedStateHandle 自取，不再经形参
@@ -398,11 +393,9 @@ fun ClothesMateNavHost(
                                 popUpTo<Capture> { inclusive = true }
                             }
 
-                            // 穿搭确认页内追加：回传上一页后收掉自己（M1-18）
+                            // 穿搭确认页内追加：经结果总线回传后收掉自己（M1-18 / B-01）
                             CaptureTarget.OUTFIT_APPEND -> {
-                                navController.previousBackStackEntry
-                                    ?.savedStateHandle
-                                    ?.set(OUTFIT_APPEND_URI_KEY, imageUri)
+                                resultBus.publishAppendCaptured(imageUri)
                                 navController.popBackStack()
                             }
                         }
@@ -429,11 +422,10 @@ fun ClothesMateNavHost(
                         }
                         navController.navigate(WardrobeDetail(wardrobeId)) { launchSingleTop = true }
                     },
-                    // M1-12：编辑保存 → 回详情页并触发「已保存」Snackbar
+                    // M1-12：编辑保存 → 回详情页并触发「已保存」Snackbar（B-04/B-05：
+                    // 回执走 NavResultBus；放弃路径不复用本回调，见 ClothingFormScreen）
                     onSavedEdit = {
-                        navController.previousBackStackEntry
-                            ?.savedStateHandle
-                            ?.set(CLOTHING_EDIT_SAVED_KEY, true)
+                        resultBus.publishClothingSaved()
                         navController.popBackStack()
                     },
                 )

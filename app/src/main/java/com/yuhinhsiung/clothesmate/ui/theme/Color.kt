@@ -82,16 +82,20 @@ val PhotoScrim = Color(0xB3000000)
 /** 照片上的轻蒙层：瀑布卡底部渐变的落色、件数 chip 的 40% 黑底（UI 文档 §6.5） */
 val PhotoScrimLight = Color(0x66000000)
 
-/** 类别分布环形图：玫瑰 → 粉 → 金 → 中性灰（UI 文档 §7.5） */
+/** 类别分布环形图：玫瑰 → 粉 → 金 → 中性灰（UI 文档 §7.5）。
+ *
+ * review B-20：此前含 4 个色板外裸 hex（#9CA3AF/#D1D5DB/#6B7280/#FBCFE8），
+ * 违反 §11「不另造色」；现全部改为**已有色板常量的引用**——§2.1 语义 token
+ * （玫瑰/粉/金/灰紫/浅粉描边）+ §3.4 衣物 12 色板（中性灰/棕/粉），零新增色值。 */
 val ChartCategoryColors = listOf(
-    Color(0xFFBE185D),
-    Color(0xFFEC4899),
-    Color(0xFFF9A8D4),
-    Color(0xFFD97706),
-    Color(0xFF9CA3AF),
-    Color(0xFFD1D5DB),
-    Color(0xFF6B7280),
-    Color(0xFFFBCFE8),
+    LightPrimary,          // 玫瑰（品牌主色）
+    LightSecondary,        // 粉（次级粉）
+    LightAccent,           // 金（琥珀）
+    ClothingColors.Gray,   // 中性灰（衣物 12 色板）
+    LightOnMuted,          // 灰紫（辅助文字色）
+    LightOutline,          // 浅粉（描边色）
+    ClothingColors.Brown,  // 棕（衣物 12 色板）
+    ClothingColors.Pink,   // 粉（衣物 12 色板）
 )
 
 /** 衣物预设 12 色（开发文档 §3.4），用于颜色分布图与色点展示 */

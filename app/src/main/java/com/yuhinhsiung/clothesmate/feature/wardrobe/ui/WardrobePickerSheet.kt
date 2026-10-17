@@ -17,6 +17,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,12 +47,15 @@ import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 fun WardrobePickerSheet(
     onDismiss: () -> Unit,
     onPicked: (Wardrobe) -> Unit,
+    /** 表单当前已选的衣柜 id（review B-09：§7.2 默认选中第一位，此前从未接通） */
+    currentSelected: Long? = null,
     viewModel: WardrobePickerViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showCreate by remember { mutableStateOf(false) }
 
-    remember(Unit) { viewModel.load(); null }
+    // review B-31：副作用从 remember 块迁到 LaunchedEffect（规范做法）
+    LaunchedEffect(Unit) { viewModel.load(currentSelected) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),

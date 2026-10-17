@@ -71,6 +71,33 @@ enum class ClothingCategory(
         val topLevels: List<Pair<String, String>> =
             entries.map { it.topKey to it.topDisplayName }.distinctBy { it.first }
 
+        /** 筛选行合并词 key（帽子并入配饰侧）——须先于 [filterChips] 声明（companion 初始化序） */
+        val MERGED_FILTER_KEY = "shoes_bag_acc"
+        val SHOES_BAG_ACC_FILTER: Set<String> = setOf("shoes", "bag", "acc", "hat")
+
+        /**
+         * 筛选行专用的类别 chips（UI 文档 §7.4：全部 / 上衣 / 外套 / 下装 / 连衣裙 / 鞋包配饰）。
+         * 「鞋包配饰」合并 [SHOES_BAG_ACC_FILTER] 四个大类（帽子按语义并入配饰侧）。
+         *
+         * review B-28/B-27：此前衣物选择器与搜索页各硬编码一份且不一致（搜索页缺合并词），
+         * 收敛为这一处唯一词源，两处共用。
+         */
+        val filterChips: List<Pair<String?, String>> = listOf(
+            null to "全部",
+            "top" to "上衣",
+            "outer" to "外套",
+            "bottom" to "下装",
+            "dress" to "连衣裙",
+            MERGED_FILTER_KEY to "鞋包配饰",
+        )
+
+        /** 大类筛选 key（含合并词）→ 命中的小类 key 集合；null = 不筛选 */
+        fun filterCategoryKeys(topKey: String?): Set<String>? = when (topKey) {
+            null -> null
+            MERGED_FILTER_KEY -> entries.filter { it.topKey in SHOES_BAG_ACC_FILTER }.map { it.key }.toSet()
+            else -> entries.filter { it.topKey == topKey }.map { it.key }.toSet()
+        }
+
         /** 「鞋包配饰」合并词命中的三个大类（搜索框提示语用词，review D-n） */
         private val SHOES_BAG_ACC = setOf("shoes", "bag", "acc")
 

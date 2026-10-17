@@ -126,13 +126,15 @@ fun ClothingFormRoute(
         ClothingFormContent(
             state = uiState,
             styleSuggestions = styleSuggestions,
-            onCategoryChange = viewModel::onCategoryChange,
+            onTopCategorySelect = viewModel::onTopCategoryChange,
+            onSubCategorySelect = viewModel::onSubCategoryChange,
             onColorToggle = viewModel::onColorToggle,
             onStyleToggle = viewModel::onStyleToggle,
             onSeasonToggle = viewModel::onSeasonToggle,
             onBrandChange = viewModel::onBrandChange,
             onNoteChange = viewModel::onNoteChange,
             onCodeChange = viewModel::onCodeChange,
+            onDismissError = viewModel::dismissError,
             onWardrobeRowClick = { showWardrobePicker = true },
             onAddCustomStyle = { showCustomTag = true },
             onSave = {
@@ -146,9 +148,11 @@ fun ClothingFormRoute(
         )
     }
 
-    // C-01 入口验证：确认页点「所属衣柜」行 → 选择衣柜弹层，带上当前已选
+    // review B-09：选择衣柜弹层带「当前已选」（§7.2 默认选中优先级第一位），
+    // 否则上次使用的衣柜会错误高亮、确认后衣物被静默改挂
     if (showWardrobePicker) {
         com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobePickerSheet(
+            currentSelected = uiState.wardrobeId,
             onDismiss = { showWardrobePicker = false },
             onPicked = { wardrobe ->
                 showWardrobePicker = false
@@ -173,7 +177,9 @@ fun ClothingFormRoute(
             onDiscard = {
                 showDiscard = false
                 viewModel.discard()
-                if (uiState.isEdit) onSavedEdit() else onBack()
+                // review B-05：放弃 = 普通返回，**不得**复用保存回调——
+                // 否则 B-04 修好后「放弃」会弹「已保存」假成功反馈
+                onBack()
             },
         )
     }
@@ -183,13 +189,15 @@ fun ClothingFormRoute(
 private fun ClothingFormContent(
     state: ClothingFormUiState,
     styleSuggestions: List<String>,
-    onCategoryChange: (String?) -> Unit,
+    onTopCategorySelect: (String) -> Unit,
+    onSubCategorySelect: (String) -> Unit,
     onColorToggle: (String) -> Unit,
     onStyleToggle: (String) -> Unit,
     onSeasonToggle: (String) -> Unit,
     onBrandChange: (String) -> Unit,
     onNoteChange: (String) -> Unit,
     onCodeChange: (String) -> Unit,
+    onDismissError: () -> Unit,
     onWardrobeRowClick: () -> Unit,
     onAddCustomStyle: () -> Unit,
     onSave: () -> Unit,
@@ -235,8 +243,10 @@ private fun ClothingFormContent(
 
             // ── 类别：两级 chips（§7.3「类别/颜色/风格用 chips 点选」）──
             CategorySelector(
+                expandedTopKey = state.expandedTopKey,
                 selectedKey = state.categoryKey,
-                onSelect = onCategoryChange,
+                onTopSelect = onTopCategorySelect,
+                onSubSelect = onSubCategorySelect,
             )
 
             // ── 主颜色：12 色点选（多选） ──────────────────────
@@ -340,6 +350,33 @@ private fun ClothingFormContent(
                 modifier = Modifier.padding(top = Dimens.Space.s4),
             )
 
+            // ── 保存失败反馈（review B-06：此前 uiState.error 无任何读取点，
+            // 磁盘满 / 暂存图被清 / 编号竞态时界面毫无变化，用户会反复点击）──
+            state.error?.let { error ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = Dimens.Space.s4)
+                        .clip(RoundedCornerShape(Dimens.Radius.s))
+                        .background(MaterialTheme.colorScheme.error.copy(alpha = 0.08f))
+                        .clickable(onClick = onDismissError)
+                        .padding(horizontal = Dimens.Space.s3, vertical = Dimens.Space.s2),
+                ) {
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = stringResource(R.string.error_dismiss),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+
             // ── 主按钮 ────────────────────────────────────────
             Button(
                 onClick = onSave,
@@ -379,17 +416,19 @@ private fun FormSectionLabel(text: String) {
 }
 
 /**
- * 类别两级选择：第一行 = 8 个大类；选中含小类的大类时出现第二行小类。
- * 连衣裙 / 帽子不再细分，选中大类即完成（DB 存大类 key，开发文档 §3.4）。
+ * 类别两级选择（review B-02 修复版）：
+ * 第一行 = 8 个大类，点选 = 展开该大类的小类行并保持大类高亮（单小类大类
+ * 「连衣裙/帽子」直接定值；再点同一大类收起小类行）；第二行 = 小类，点选定值。
+ * 「已展开大类」是独立状态（UI state 的 expandedTopKey），不再由选中值反推——
+ * 旧实现多小类大类点开即把值置空，二级行永不渲染、8 个大类里 6 个选不中。
  */
 @Composable
-private fun CategorySelector(
+internal fun CategorySelector(
+    expandedTopKey: String?,
     selectedKey: String?,
-    onSelect: (String?) -> Unit,
+    onTopSelect: (String) -> Unit,
+    onSubSelect: (String) -> Unit,
 ) {
-    val selectedTop = selectedKey?.let { key ->
-        ClothingCategory.fromKey(key)?.topKey
-    }
     FormSectionLabel(stringResource(R.string.form_section_category))
     // 第一行：大类（横滑，360dp 小屏不挤压——review U-e 同款处理）
     androidx.compose.foundation.lazy.LazyRow(
@@ -398,20 +437,12 @@ private fun CategorySelector(
         items(ClothingCategory.topLevels) { (topKey, topName) ->
             SelectableChip(
                 option = ChipOption(key = topKey, label = topName),
-                selected = selectedTop == topKey,
-                onClick = {
-                    if (selectedTop == topKey) {
-                        onSelect(null)
-                    } else {
-                        // 连衣裙 / 帽子：大类即小类，直接定值；其余仅展开小类行
-                        val subs = ClothingCategory.entries.filter { it.topKey == topKey }
-                        onSelect(if (subs.size == 1) subs.first().key else null)
-                    }
-                },
+                selected = expandedTopKey == topKey,
+                onClick = { onTopSelect(topKey) },
             )
         }
     }
-    val subs = selectedTop
+    val subs = expandedTopKey
         ?.let { top -> ClothingCategory.entries.filter { it.topKey == top } }
         .orEmpty()
     if (subs.size > 1) {
@@ -423,9 +454,7 @@ private fun CategorySelector(
                 SelectableChip(
                     option = ChipOption(key = sub.key, label = sub.displayName),
                     selected = selectedKey == sub.key,
-                    onClick = {
-                        onSelect(if (selectedKey == sub.key) null else sub.key)
-                    },
+                    onClick = { onSubSelect(sub.key) },
                 )
             }
         }

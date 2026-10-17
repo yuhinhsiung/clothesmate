@@ -41,6 +41,7 @@ class WardrobeDetailViewModel @Inject constructor(
     ) { wardrobes, items, filter ->
         val wardrobe = wardrobes.firstOrNull { it.id == wardrobeId }
         WardrobeDetailUiState(
+            loading = false,
             wardrobeId = wardrobeId,
             wardrobeName = wardrobe?.name.orEmpty(),
             wardrobeNote = wardrobe?.note,
@@ -78,6 +79,8 @@ class WardrobeDetailViewModel @Inject constructor(
 
 /** 衣柜详情页 UI 状态 */
 data class WardrobeDetailUiState(
+    /** review B-22：首帧数据未到前不误显「这个衣柜还是空的」（M1-23 骨架体系） */
+    val loading: Boolean = true,
     val wardrobeId: Long = 0L,
     val wardrobeName: String = "",
     val wardrobeNote: String? = null,

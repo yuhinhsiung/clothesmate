@@ -60,11 +60,6 @@ class DefaultImageStore @Inject constructor(
             ?: throw ImageProcessException("归位后的文件不在 images 根目录内：${destination.path}")
     }
 
-    override suspend fun clearStash() = withContext(ioDispatcher) {
-        stashDir.deleteRecursively()
-        Unit
-    }
-
     override suspend fun clearStaged(staged: StagedImage) = withContext(ioDispatcher) {
         staged.file.delete()
         Unit

@@ -36,9 +36,6 @@ interface ImageStore {
      */
     suspend fun promote(staged: StagedImage, destination: java.io.File): String
 
-    /** 清掉所有暂存图（放弃录入时调用，M1-15） */
-    suspend fun clearStash()
-
     /** 清掉单个暂存图 */
     suspend fun clearStaged(staged: StagedImage)
 }

@@ -93,7 +93,8 @@ class ClothingItemDaoTest {
 
         // 全表唯一口径：即使已软删，102 仍不可用（编号不回收）
         assertEquals(1, dao.countByCode("102"))
-        assertFalse(dao.countByCode("102", excludeId = 999L) == 0)
+        // review §6.3 弱断言修正：双重否定改直陈
+        assertEquals("排除他人 id 也不放行软删号", 1, dao.countByCode("102", excludeId = 999L))
     }
 
     @Test

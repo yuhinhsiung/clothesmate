@@ -35,6 +35,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -83,9 +84,9 @@ fun WardrobeEditSheet(
         uri?.let(viewModel::onCoverPicked)
     }
 
-    remember(wardrobeId) {
+    // review B-31：副作用从 remember 块迁到 LaunchedEffect（规范做法）
+    LaunchedEffect(wardrobeId) {
         if (wardrobeId != null) viewModel.loadForEdit(wardrobeId)
-        null
     }
 
     ModalBottomSheet(

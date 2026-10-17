@@ -22,6 +22,8 @@ fun HighlightedText(
     tokens: List<String>,
     modifier: Modifier = Modifier,
     style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyLarge,
+    /** 基色覆盖（照片蒙层上用 OnPhoto 白字）；默认跟随 style / 主题 */
+    baseColor: Color = Color.Unspecified,
     maxLines: Int = 1,
 ) {
     val highlightColor = MaterialTheme.colorScheme.primary
@@ -30,7 +32,7 @@ fun HighlightedText(
     }
     Text(
         text = annotated,
-        style = style,
+        style = if (baseColor == Color.Unspecified) style else style.copy(color = baseColor),
         modifier = modifier,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,

@@ -25,11 +25,15 @@ interface TagDictionaryDao {
     /**
      * 写入或递增使用计数：已存在则 usageCount +1，不存在则插入。
      * 用 IGNORE + 手动判断实现 upsert 语义，避免依赖 Room 2.7 才稳定的 @Upsert。
+     *
+     * review B-34：首插计数从 0 改 1——「登记一次使用」语义下首次使用就该计 1，
+     * 否则自定义标签同频排序系统性落后预设一次，「与预设同权」有偏差
+     * （预设由 Seeder 直接 insert、不经过本方法，恒从 0 起不受影响）。
      */
     @Query(
         """
         INSERT INTO tag_dictionary (type, value, isPreset, usageCount)
-        VALUES (:type, :value, :isPreset, 0)
+        VALUES (:type, :value, :isPreset, 1)
         ON CONFLICT(type, value) DO UPDATE SET usageCount = usageCount + 1
         """,
     )

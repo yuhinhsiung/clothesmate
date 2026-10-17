@@ -172,9 +172,12 @@ class DataStoreCodeCounterStoreTest {
                 }
             }
         }
+        // review §6.3 弱断言修正：size 由恒真的「!= 0」改为精确 100；
+        // 并断言顺延确实发生（有编号被推到 ≥50 区段），而非全部落在无冲突区间
+        assertEquals(100, issued.size)
         assertEquals(100, issued.distinct().size)
-        assertNotEquals(0, issued.size)
         assertTrue("发放的编号必须 >= 1", issued.all { it >= 1L })
+        assertTrue("顺延路径应被触发（存在 >= 50 的发放）", issued.any { it >= 50L })
     }
 
     /** 与 JUnit4 的 assertThrows 不同名：签名是 assertThrows(Class, ThrowingRunnable)，

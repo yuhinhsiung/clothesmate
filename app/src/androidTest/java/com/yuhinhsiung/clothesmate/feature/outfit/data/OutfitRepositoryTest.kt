@@ -30,6 +30,12 @@ import org.junit.runner.RunWith
  * - 删除分类只解除关联，穿搭行保留（O-05）；无关联穿搭归「未分类」
  * - 创建 / 编辑 roundtrip（衣物与分类关联重建）
  * - 分类封面取最新一套有照片穿搭（O-02）
+ *
+ * ⚠️ 口径边界（review §6.3）：M1-20 验收原文为「行 + cross ref + **图片**」。
+ * 本测试锁定 DB 两半；**图片半截由 UI 层经 `onDeleted` 回调接线**（review B-03 修复，
+ * 见 OutfitDetailViewModel.delete），文件层的路径与删除语义由 core/image 的
+ * ImageStorageTest 锁定；「删除穿搭 → 文件消失」的端到端为真机走查取证
+ * （`run-as … find files/images`），不在 JVM/Room 单测射程内。
  */
 @RunWith(AndroidJUnit4::class)
 class OutfitRepositoryTest {

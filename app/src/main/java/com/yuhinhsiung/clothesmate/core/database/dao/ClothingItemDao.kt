@@ -101,10 +101,6 @@ interface ClothingItemDao {
     )
     fun observeAll(): Flow<List<ClothingItemEntity>>
 
-    /** 衣物总数（不含软删除，概览页 M1-22 数字卡） */
-    @Query("SELECT COUNT(*) FROM clothing_item WHERE deletedAt IS NULL")
-    fun observeCount(): Flow<Int>
-
     /**
      * 编号唯一性校验（W-06 实时校验 + §2.1.3 计数器冲突顺延）。
      * 传 excludeId 以支持编辑时排除自身。
