@@ -7,6 +7,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -59,6 +60,8 @@ fun CmTextField(
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     /** 传入时挂在输入框上，供搜索页自动聚焦等场景 */
     focusRequester: androidx.compose.ui.focus.FocusRequester? = null,
+    /** 右侧附加控件（M2-05 密码框的显示/隐藏按钮）；不传则无 */
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     val focused by interactionSource.collectIsFocusedAsState()
     val shape = RoundedCornerShape(Dimens.Radius.s)
@@ -129,15 +132,21 @@ fun CmTextField(
                         if (isError && errorMessage != null) error(errorMessage)
                     },
                 decorationBox = { innerTextField ->
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        if (value.isEmpty() && placeholder != null) {
-                            Text(
-                                text = placeholder,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onMuted,
-                            )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (value.isEmpty() && placeholder != null) {
+                                Text(
+                                    text = placeholder,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onMuted,
+                                )
+                            }
+                            innerTextField()
                         }
-                        innerTextField()
+                        trailingContent?.invoke()
                     }
                 },
             )

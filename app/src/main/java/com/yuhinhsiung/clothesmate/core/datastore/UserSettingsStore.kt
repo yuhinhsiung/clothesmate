@@ -1,0 +1,282 @@
+package com.yuhinhsiung.clothesmate.core.datastore
+
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import dagger.Binds
+import dagger.Module
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
+import java.net.URI
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/**
+ * 用户设置（M2-05）—— 外观 / AI 配置 / 天气 / 隐私授权。
+ *
+ * 全部落 DataStore（开发文档 §2.2.3 的「AI 配置」与 M2-05 验收「Key 存 DataStore」）。
+ *
+ * ## 为什么不加密 API Key
+ *
+ * 开发文档与 M2-05 只要求「存 DataStore、不明文进日志」，没有要求加密存储；
+ * 本工程也不引入文档未列的加密库（CLAUDE.md 技术栈冻结）。API Key 属于用户自己的
+ * 第三方凭据，落在 App 私有 DataStore 内（无需存储权限、不上传任何自有服务器）。
+ * 该口径已作为 M2 阶段的文档待确认项上报。
+ */
+enum class ThemeMode(val key: String) {
+    System("system"),
+    Light("light"),
+    Dark("dark"),
+    ;
+
+    companion object {
+        fun fromKey(key: String?): ThemeMode = entries.firstOrNull { it.key == key } ?: System
+    }
+}
+
+/** AI 隐私授权状态（开发文档 §7、M2-06）。 */
+enum class AiConsent {
+    /** 还没问过；首次真正要发识别请求前必须弹一次性告知 */
+    Unasked,
+
+    /** 用户点了「同意并继续」 */
+    Granted,
+
+    /** 用户点了「暂不使用」——本次配置下不再弹，可随时回设置页开启 */
+    Declined,
+}
+
+/** AI 配置状态点（UI 文档 §7.6：绿=可用 / 灰=未配置 / 红=失败）。 */
+enum class AiStatus {
+    NotConfigured,
+    Unverified,
+    Verified,
+    Failed,
+}
+
+/** AI 端点配置（开发文档 §2.2.3：Base URL / API Key / 模型名）。 */
+data class AiConfig(
+    val baseUrl: String = "",
+    val apiKey: String = "",
+    val model: String = "",
+) {
+    /** 三项齐全才可能发起识别（缺一项即整体降级，§2.2.3） */
+    val isConfigured: Boolean
+        get() = baseUrl.isNotBlank() && apiKey.isNotBlank() && model.isNotBlank()
+
+    /** 隐私告知弹窗里展示的「当前端点」（只显示主机名，不展示路径与 Key） */
+    val host: String?
+        get() {
+            val raw = baseUrl.trim()
+            if (raw.isEmpty()) return null
+            val withScheme = if (raw.startsWith("http://") || raw.startsWith("https://")) {
+                raw
+            } else {
+                "https://$raw"
+            }
+            return runCatching { URI(withScheme).host }.getOrNull()?.takeIf { it.isNotBlank() }
+        }
+}
+
+/** 用户设置快照（UI 一次订阅，Flow 唯一事实来源）。 */
+data class UserSettings(
+    val themeMode: ThemeMode = ThemeMode.System,
+    val aiConfig: AiConfig = AiConfig(),
+    val aiConsent: AiConsent = AiConsent.Unasked,
+    val aiStatus: AiStatus = AiStatus.NotConfigured,
+    /** 最近一次测试连接的结果说明（失败原因，不含 Key） */
+    val aiStatusDetail: String? = null,
+    /** 默认城市（M3 天气使用，M2-05 先落配置） */
+    val weatherCity: String = "",
+    /** 和风天气 Key（M3 天气使用，M2-05 先落配置） */
+    val weatherApiKey: String = "",
+) {
+    /** 状态点口径：未配置优先于历史验证结果 */
+    val effectiveAiStatus: AiStatus
+        get() = if (aiConfig.isConfigured) aiStatus else AiStatus.NotConfigured
+}
+
+interface UserSettingsStore {
+    val settings: Flow<UserSettings>
+
+    suspend fun setThemeMode(mode: ThemeMode)
+
+    /**
+     * 保存 AI 配置。
+     *
+     * **隐私边界**：Base URL 或 API Key 变化 = 照片会被发往另一个端点/另一份凭据，
+     * 因此授权回到 [AiConsent.Unasked]（下一次识别前重新弹一次性告知，M2-06）。
+     * 只改模型名不影响端点归属，保留授权，但验证状态回到未验证。
+     */
+    suspend fun saveAiConfig(config: AiConfig)
+
+    suspend fun setAiConsent(consent: AiConsent)
+
+    /** 记录「测试连接」结果；未配置时不写入 */
+    suspend fun setAiStatus(status: AiStatus, detail: String? = null)
+
+    suspend fun setWeatherCity(city: String)
+
+    suspend fun setWeatherApiKey(key: String)
+}
+
+@Singleton
+class DataStoreUserSettingsStore @Inject constructor(
+    private val dataStore: DataStore<Preferences>,
+) : UserSettingsStore {
+
+    override val settings: Flow<UserSettings> = dataStore.data.map { prefs ->
+        val config = AiConfig(
+            baseUrl = prefs[KEY_AI_BASE_URL].orEmpty(),
+            apiKey = prefs[KEY_AI_KEY].orEmpty(),
+            model = prefs[KEY_AI_MODEL].orEmpty(),
+        )
+        val storedStatus = prefs[KEY_AI_STATUS]?.let { key ->
+            AiStatus.entries.firstOrNull { it.name == key }
+        }
+        UserSettings(
+            themeMode = ThemeMode.fromKey(prefs[KEY_THEME_MODE]),
+            aiConfig = config,
+            aiConsent = prefs[KEY_AI_CONSENT]?.let { key ->
+                AiConsent.entries.firstOrNull { it.name == key }
+            } ?: AiConsent.Unasked,
+            aiStatus = if (config.isConfigured) storedStatus ?: AiStatus.Unverified else AiStatus.NotConfigured,
+            aiStatusDetail = prefs[KEY_AI_STATUS_DETAIL],
+            weatherCity = prefs[KEY_WEATHER_CITY].orEmpty(),
+            weatherApiKey = prefs[KEY_WEATHER_KEY].orEmpty(),
+        )
+    }
+
+    override suspend fun setThemeMode(mode: ThemeMode) {
+        dataStore.edit { it[KEY_THEME_MODE] = mode.key }
+    }
+
+    override suspend fun saveAiConfig(config: AiConfig) {
+        val next = config.copy(
+            baseUrl = config.baseUrl.trim(),
+            apiKey = config.apiKey.trim(),
+            model = config.model.trim(),
+        )
+        dataStore.edit { prefs ->
+            val previous = AiConfig(
+                baseUrl = prefs[KEY_AI_BASE_URL].orEmpty(),
+                apiKey = prefs[KEY_AI_KEY].orEmpty(),
+                model = prefs[KEY_AI_MODEL].orEmpty(),
+            )
+            prefs[KEY_AI_BASE_URL] = next.baseUrl
+            prefs[KEY_AI_KEY] = next.apiKey
+            prefs[KEY_AI_MODEL] = next.model
+            // 端点或凭据变化 → 隐私授权重新询问（M2-06 验收：清空 Key 后再次弹窗）
+            if (previous.baseUrl != next.baseUrl || previous.apiKey != next.apiKey) {
+                prefs[KEY_AI_CONSENT] = AiConsent.Unasked.name
+            }
+            if (previous != next) {
+                prefs[KEY_AI_STATUS] = if (next.isConfigured) {
+                    AiStatus.Unverified.name
+                } else {
+                    AiStatus.NotConfigured.name
+                }
+                prefs.remove(KEY_AI_STATUS_DETAIL)
+            }
+        }
+    }
+
+    override suspend fun setAiConsent(consent: AiConsent) {
+        dataStore.edit { it[KEY_AI_CONSENT] = consent.name }
+    }
+
+    override suspend fun setAiStatus(status: AiStatus, detail: String?) {
+        dataStore.edit { prefs ->
+            val configured = !prefs[KEY_AI_BASE_URL].isNullOrBlank() &&
+                !prefs[KEY_AI_KEY].isNullOrBlank() &&
+                !prefs[KEY_AI_MODEL].isNullOrBlank()
+            if (!configured) {
+                prefs[KEY_AI_STATUS] = AiStatus.NotConfigured.name
+                prefs.remove(KEY_AI_STATUS_DETAIL)
+                return@edit
+            }
+            prefs[KEY_AI_STATUS] = status.name
+            if (detail.isNullOrBlank()) {
+                prefs.remove(KEY_AI_STATUS_DETAIL)
+            } else {
+                prefs[KEY_AI_STATUS_DETAIL] = detail
+            }
+        }
+    }
+
+    override suspend fun setWeatherCity(city: String) {
+        dataStore.edit { it[KEY_WEATHER_CITY] = city.trim() }
+    }
+
+    override suspend fun setWeatherApiKey(key: String) {
+        dataStore.edit { it[KEY_WEATHER_KEY] = key.trim() }
+    }
+
+    private companion object {
+        val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
+        val KEY_AI_BASE_URL = stringPreferencesKey("ai_base_url")
+        val KEY_AI_KEY = stringPreferencesKey("ai_api_key")
+        val KEY_AI_MODEL = stringPreferencesKey("ai_model")
+        val KEY_AI_CONSENT = stringPreferencesKey("ai_consent")
+        val KEY_AI_STATUS = stringPreferencesKey("ai_status")
+        val KEY_AI_STATUS_DETAIL = stringPreferencesKey("ai_status_detail")
+        val KEY_WEATHER_CITY = stringPreferencesKey("weather_city")
+        val KEY_WEATHER_KEY = stringPreferencesKey("weather_api_key")
+
+    }
+}
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class UserSettingsModule {
+    @Binds
+    @Singleton
+    abstract fun bindUserSettingsStore(impl: DataStoreUserSettingsStore): UserSettingsStore
+}
+
+/**
+ * 主题模式 → 是否深色。
+ *
+ * 单独抽成纯函数：设置页三段切换（M2-05）与 MainActivity 的根主题读同一个口径，
+ * 避免「设置页显示深色、实际还是跟随系统」这类分叉。
+ */
+fun ThemeMode.isDark(systemInDark: Boolean): Boolean = when (this) {
+    ThemeMode.System -> systemInDark
+    ThemeMode.Light -> false
+    ThemeMode.Dark -> true
+}
+
+/** 给测试/预览用的空实现入口（不参与 Hilt 绑定）。 */
+@Suppress("unused")
+class InMemoryUserSettingsStore(initial: UserSettings = UserSettings()) : UserSettingsStore {
+    private val state = kotlinx.coroutines.flow.MutableStateFlow(initial)
+    override val settings: Flow<UserSettings> = state
+
+    override suspend fun setThemeMode(mode: ThemeMode) {
+        state.value = state.value.copy(themeMode = mode)
+    }
+
+    override suspend fun saveAiConfig(config: AiConfig) {
+        state.value = state.value.copy(aiConfig = config)
+    }
+
+    override suspend fun setAiConsent(consent: AiConsent) {
+        state.value = state.value.copy(aiConsent = consent)
+    }
+
+    override suspend fun setAiStatus(status: AiStatus, detail: String?) {
+        state.value = state.value.copy(aiStatus = status, aiStatusDetail = detail)
+    }
+
+    override suspend fun setWeatherCity(city: String) {
+        state.value = state.value.copy(weatherCity = city)
+    }
+
+    override suspend fun setWeatherApiKey(key: String) {
+        state.value = state.value.copy(weatherApiKey = key)
+    }
+}

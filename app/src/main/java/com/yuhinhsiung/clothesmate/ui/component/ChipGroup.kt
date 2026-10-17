@@ -1,5 +1,6 @@
 package com.yuhinhsiung.clothesmate.ui.component
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +36,8 @@ fun ChipGroup(
     selectedKeys: Set<String>,
     onToggle: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /** M2-04：AI 预填的选中 chip 描边变金色（UI 文档 §6.6）；用户改动后传入空集 */
+    accentSelectedKeys: Set<String> = emptySet(),
 ) {
     FlowRow(
         modifier = modifier,
@@ -45,6 +48,7 @@ fun ChipGroup(
             SelectableChip(
                 option = option,
                 selected = option.key in selectedKeys,
+                accentBorder = option.key in accentSelectedKeys,
                 onClick = { onToggle(option.key) },
             )
         }
@@ -57,6 +61,8 @@ fun SelectableChip(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** AI 预填的选中态：金色 2dp 描边（§6.6） */
+    accentBorder: Boolean = false,
 ) {
     FilterChip(
         selected = selected,
@@ -81,15 +87,19 @@ fun SelectableChip(
             selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
             selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
-        border = FilterChipDefaults.filterChipBorder(
-            enabled = true,
-            selected = selected,
-            borderColor = if (selected) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.outline
-            },
-        ),
+        border = if (selected && accentBorder) {
+            BorderStroke(2.dp, MaterialTheme.colorScheme.tertiary)
+        } else {
+            FilterChipDefaults.filterChipBorder(
+                enabled = true,
+                selected = selected,
+                borderColor = if (selected) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.outline
+                },
+            )
+        },
         modifier = modifier,
     )
 }

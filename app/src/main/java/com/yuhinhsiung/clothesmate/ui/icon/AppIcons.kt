@@ -25,6 +25,8 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Umbrella
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.WbCloudy
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -71,6 +73,10 @@ object AppIcons {
     val Close: ImageVector = Icons.Rounded.Close
     val Flash: ImageVector = Icons.Rounded.FlashOn
     val CameraSwitch: ImageVector = Icons.Rounded.Cameraswitch
+
+    // 设置页密码框显示/隐藏（M2-05）；UI 文档 §5.1 未列，按 Material Symbols Rounded 同风格补齐
+    val Visibility: ImageVector = Icons.Rounded.Visibility
+    val VisibilityOff: ImageVector = Icons.Rounded.VisibilityOff
 
     // 天气（卡片与日历共用）
     val WeatherSunny: ImageVector = Icons.Rounded.WbSunny

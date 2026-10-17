@@ -53,9 +53,11 @@ import com.yuhinhsiung.clothesmate.core.model.ClothingColor
 import com.yuhinhsiung.clothesmate.core.model.Season
 import com.yuhinhsiung.clothesmate.ui.component.ChipGroup
 import com.yuhinhsiung.clothesmate.ui.component.ChipOption
+import com.yuhinhsiung.clothesmate.ui.component.AiPrivacyDialog
 import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
 import com.yuhinhsiung.clothesmate.ui.component.CmTextField
 import com.yuhinhsiung.clothesmate.ui.component.DiscardChangesDialog
+import com.yuhinhsiung.clothesmate.ui.component.ShimmerCard
 import com.yuhinhsiung.clothesmate.ui.component.SelectableChip
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
@@ -77,6 +79,8 @@ fun ClothingFormRoute(
     onBack: () -> Unit,
     onSavedCreate: (wardrobeId: Long) -> Unit,
     onSavedEdit: () -> Unit,
+    /** M2-04 降级引导「去配置」→ 设置页 */
+    onOpenSettings: () -> Unit = {},
     viewModel: ClothingFormViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -117,6 +121,17 @@ fun ClothingFormRoute(
                             .padding(Dimens.Space.s3),
                     )
                 },
+                actions = {
+                    // M2-04「全部采纳」：AI 结果返回后出现在顶栏（mockup-06）
+                    if (uiState.aiSuggestions != null) {
+                        TextButton(onClick = viewModel::acceptAll) {
+                            Text(
+                                text = stringResource(R.string.ai_accept_all),
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
@@ -138,6 +153,8 @@ fun ClothingFormRoute(
             onDismissError = viewModel::dismissError,
             onWardrobeRowClick = { showWardrobePicker = true },
             onAddCustomStyle = { showCustomTag = true },
+            onCancelAi = viewModel::cancelRecognition,
+            onOpenSettings = onOpenSettings,
             onSave = {
                 viewModel.save { wardrobeId, isEdit ->
                     if (isEdit) onSavedEdit() else onSavedCreate(wardrobeId)
@@ -146,6 +163,15 @@ fun ClothingFormRoute(
             modifier = Modifier
                 .padding(innerPadding)
                 .imePadding(),
+        )
+    }
+
+    // M2-06：首次触发 AI 识别前的一次性隐私告知，同意后才发起请求
+    if (uiState.showPrivacyDialog) {
+        AiPrivacyDialog(
+            endpointHost = uiState.privacyEndpointHost,
+            onAccept = viewModel::acceptPrivacy,
+            onDecline = viewModel::declinePrivacy,
         )
     }
 
@@ -202,6 +228,8 @@ private fun ClothingFormContent(
     onDismissError: () -> Unit,
     onWardrobeRowClick: () -> Unit,
     onAddCustomStyle: () -> Unit,
+    onCancelAi: () -> Unit,
+    onOpenSettings: () -> Unit,
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -223,7 +251,12 @@ private fun ClothingFormContent(
                 CmAsyncImage(
                     model = state.imagePath,
                     contentDescription = null,
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    // 抠图 PNG 是透明底，Crop 会裁掉主体边缘；原图仍用 Crop 填满
+                    contentScale = if (state.imageIsCutout) {
+                        androidx.compose.ui.layout.ContentScale.Fit
+                    } else {
+                        androidx.compose.ui.layout.ContentScale.Crop
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
             } else if (state.compressing) {
@@ -242,6 +275,13 @@ private fun ClothingFormContent(
         }
 
         Column(modifier = Modifier.padding(horizontal = Dimens.pagePadding)) {
+
+            // ── M2-04 AI 三态区（识别中 / 已预填 / 降级） ─────────
+            AiStatusBanner(
+                state = state,
+                onCancel = onCancelAi,
+                onOpenSettings = onOpenSettings,
+            )
 
             // ── 名称（review R-08）：**仅编辑模式** ───────────────
             // M1-12 要求「全字段可改」，name 此前没有入口；创建确认页按 §2.3.3
@@ -263,12 +303,16 @@ private fun ClothingFormContent(
             CategorySelector(
                 expandedTopKey = state.expandedTopKey,
                 selectedKey = state.categoryKey,
+                aiFilled = state.categoryAiFilled,
                 onTopSelect = onTopCategorySelect,
                 onSubSelect = onSubCategorySelect,
             )
 
             // ── 主颜色：12 色点选（多选） ──────────────────────
-            FormSectionLabel(stringResource(R.string.form_section_color))
+            FormSectionLabel(
+                text = stringResource(R.string.form_section_color),
+                aiBadge = if (state.colorsAutoFilled) stringResource(R.string.ai_color_badge) else null,
+            )
             ChipGroup(
                 options = ClothingColor.entries.map { color ->
                     ChipOption(
@@ -279,25 +323,34 @@ private fun ClothingFormContent(
                 },
                 selectedKeys = state.colorKeys.toSet(),
                 onToggle = onColorToggle,
+                accentSelectedKeys = if (state.colorsAutoFilled) state.colorKeys.toSet() else emptySet(),
             )
 
             // ── 风格：联想 chips + 自定义 ──────────────────────
-            FormSectionLabel(stringResource(R.string.form_section_style))
+            FormSectionLabel(
+                text = stringResource(R.string.form_section_style),
+                aiBadge = if (state.styleAiFilled) stringResource(R.string.ai_badge) else null,
+            )
             FlowRowLikeStyleTags(
                 suggestions = styleSuggestions,
                 selected = state.styleTags,
+                accentSelected = state.styleAiFilled,
                 onToggle = onStyleToggle,
                 onAddCustom = onAddCustomStyle,
             )
 
             // ── 适合季节 ──────────────────────────────────────
-            FormSectionLabel(stringResource(R.string.form_section_season))
+            FormSectionLabel(
+                text = stringResource(R.string.form_section_season),
+                aiBadge = if (state.seasonAiFilled) stringResource(R.string.ai_badge) else null,
+            )
             ChipGroup(
                 options = Season.entries.map { season ->
                     ChipOption(key = season.key, label = season.displayName)
                 },
                 selectedKeys = state.seasonKeys.toSet(),
                 onToggle = onSeasonToggle,
+                accentSelectedKeys = if (state.seasonAiFilled) state.seasonKeys.toSet() else emptySet(),
             )
 
             // ── 品牌 / 备注 ───────────────────────────────────
@@ -422,15 +475,49 @@ private fun ClothingFormContent(
     }
 }
 
-/** 表单分组标签（§6.7「标签常驻上方」） */
+/** 表单分组标签（§6.7「标签常驻上方」）；M2-04 可带 ✨ AI 角标。 */
 @Composable
-private fun FormSectionLabel(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onMuted,
+private fun FormSectionLabel(text: String, aiBadge: String? = null) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(top = Dimens.Space.s5, bottom = Dimens.Space.s2),
-    )
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onMuted,
+        )
+        if (aiBadge != null) {
+            AiBadge(label = aiBadge, modifier = Modifier.padding(start = Dimens.Space.s1))
+        }
+    }
+}
+
+/**
+ * ✨ AI 角标（UI 文档 §6.6）：琥珀金图标 + 文字。
+ *
+ * 整个「AI 预填字段区」共用金色，按 UI 文档 §2.1 属于**一处** AI 标识区；
+ * 不会与「待完善」等稀有高亮叠加（本页没有后者）。
+ */
+@Composable
+private fun AiBadge(label: String, modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier,
+    ) {
+        Icon(
+            imageVector = AppIcons.Ai,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier.size(Dimens.Icon.s),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier.padding(start = Dimens.Space.s1),
+        )
+    }
 }
 
 /**
@@ -446,8 +533,12 @@ internal fun CategorySelector(
     selectedKey: String?,
     onTopSelect: (String) -> Unit,
     onSubSelect: (String) -> Unit,
+    aiFilled: Boolean = false,
 ) {
-    FormSectionLabel(stringResource(R.string.form_section_category))
+    FormSectionLabel(
+        text = stringResource(R.string.form_section_category),
+        aiBadge = if (aiFilled) stringResource(R.string.ai_badge) else null,
+    )
     // 第一行：大类（横滑，360dp 小屏不挤压——review U-e 同款处理）
     androidx.compose.foundation.lazy.LazyRow(
         horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s2),
@@ -472,6 +563,7 @@ internal fun CategorySelector(
                 SelectableChip(
                     option = ChipOption(key = sub.key, label = sub.displayName),
                     selected = selectedKey == sub.key,
+                    accentBorder = aiFilled && selectedKey == sub.key,
                     onClick = { onSubSelect(sub.key) },
                 )
             }
@@ -485,6 +577,7 @@ internal fun CategorySelector(
 private fun FlowRowLikeStyleTags(
     suggestions: List<String>,
     selected: List<String>,
+    accentSelected: Boolean,
     onToggle: (String) -> Unit,
     onAddCustom: () -> Unit,
 ) {
@@ -497,6 +590,7 @@ private fun FlowRowLikeStyleTags(
             SelectableChip(
                 option = ChipOption(key = tag, label = tag),
                 selected = tag in selected,
+                accentBorder = accentSelected && tag in selected,
                 onClick = { onToggle(tag) },
             )
         }
@@ -554,4 +648,171 @@ private fun CustomTagDialog(
         },
         containerColor = MaterialTheme.colorScheme.surface,
     )
+}
+
+
+// ── M2-04 / M2-06 组件 ─────────────────────────────────────────
+
+/**
+ * 字段区上方的 AI 三态区（UI 文档 §7.3）。
+ *
+ * 识别中 = shimmer + 「AI 识别中…」+ [取消识别]；
+ * 已预填 = 一行提示（字段各自的 ✨ 角标在字段标题上）；
+ * 降级 = 未配置/拒绝显示引导入口，失败/取消只给一句「可直接填写」，不弹错误。
+ */
+@Composable
+private fun AiStatusBanner(
+    state: ClothingFormUiState,
+    onCancel: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    when (state.aiPhase) {
+        AiPhase.Running -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = Dimens.Space.s3),
+            ) {
+                ShimmerCard(height = 48.dp, modifier = Modifier.fillMaxWidth())
+                Row(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .padding(horizontal = Dimens.Space.s3),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.ai_running),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onCancel) {
+                        Text(
+                            text = stringResource(R.string.ai_cancel),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
+            }
+        }
+
+        AiPhase.Prefilled -> AiHintRow(
+            text = stringResource(R.string.ai_prefilled_hint),
+            modifier = Modifier.padding(top = Dimens.Space.s3),
+        )
+
+        AiPhase.Degraded -> when (state.aiDegrade) {
+            AiDegradeReason.NotConfigured -> AiGuideCard(
+                title = stringResource(R.string.ai_not_configured_title),
+                description = stringResource(R.string.ai_not_configured_desc),
+                actionLabel = stringResource(R.string.ai_go_settings),
+                onAction = onOpenSettings,
+                modifier = Modifier.padding(top = Dimens.Space.s3),
+            )
+
+            AiDegradeReason.Declined -> AiHintRow(
+                text = stringResource(R.string.ai_consent_declined_hint),
+                actionLabel = stringResource(R.string.ai_go_settings),
+                onAction = onOpenSettings,
+                modifier = Modifier.padding(top = Dimens.Space.s3),
+            )
+
+            AiDegradeReason.Failed,
+            AiDegradeReason.Cancelled,
+            null,
+            -> AiHintRow(
+                text = stringResource(R.string.ai_failed_hint),
+                modifier = Modifier.padding(top = Dimens.Space.s3),
+            )
+        }
+
+        else -> Unit
+    }
+}
+
+@Composable
+private fun AiHintRow(
+    text: String,
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Dimens.Radius.s))
+            .background(MaterialTheme.colorScheme.muted)
+            .padding(horizontal = Dimens.Space.s3, vertical = Dimens.Space.s2),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = AppIcons.Ai,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier.size(Dimens.Icon.s),
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onMuted,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = Dimens.Space.s2),
+        )
+        if (actionLabel != null && onAction != null) {
+            TextButton(onClick = onAction) {
+                Text(
+                    text = actionLabel,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiGuideCard(
+    title: String,
+    description: String,
+    actionLabel: String,
+    onAction: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Dimens.Radius.m))
+            .background(MaterialTheme.colorScheme.muted)
+            .padding(Dimens.Space.s3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = AppIcons.Ai,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier.size(Dimens.Icon.s),
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = Dimens.Space.s2),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onMuted,
+            )
+        }
+        TextButton(onClick = onAction) {
+            Text(
+                text = actionLabel,
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+    }
 }

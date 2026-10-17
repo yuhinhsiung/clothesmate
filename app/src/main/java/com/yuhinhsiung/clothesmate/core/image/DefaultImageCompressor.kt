@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Matrix
 import android.graphics.Paint
 import android.media.ExifInterface
 import androidx.core.graphics.createBitmap
@@ -36,7 +35,7 @@ import javax.inject.Singleton
  * ## EXIF 方向
  *
  * 相机竖拍时文件里的像素是横的，靠 EXIF orientation 标记告知显示端旋转。不处理这个标记，
- * 列表里的衣物照片就会躺着——故解码后必须按标记用 [Matrix] 归正。
+ * 列表里的衣物照片就会躺着——故解码后必须按标记用 Matrix 归正。
  *
  * 读 EXIF 用**框架** `android.media.ExifInterface`（API 24 起在 android.jar 内），lint 会提示
  * 「改用 androidx.exifinterface」（[ExifInterface] 警告，已论证后保留）：
@@ -159,7 +158,7 @@ class DefaultImageCompressor @Inject constructor(
         val needsOrientation = orientation != ExifInterface.ORIENTATION_NORMAL &&
             orientation != ExifInterface.ORIENTATION_UNDEFINED
 
-        val matrix = orientationMatrix(orientation).apply {
+        val matrix = ExifOrientation.matrix(orientation).apply {
             // 等比缩放与旋转/镜像可交换（各向同性），放最后一步不影响结果
             if (scale != 1f) postScale(scale, scale)
         }
@@ -172,52 +171,6 @@ class DefaultImageCompressor @Inject constructor(
         }
         // 转 JPEG 前必须去掉 alpha：JPEG 只有 RGB，透明区会被编成黑块
         return if (result.hasAlpha()) flattenToWhite(result) else result
-    }
-
-    /**
-     * EXIF 方向 → 矩阵，**8 种取值逐一显式映射**（review R-15）。
-     *
-     * 表与 AOSP / Glide 的 `Downsampler` 同源，逐条都能用四角色块样图反推：
-     *
-     * | 取值 | 含义 | 矩阵 |
-     * |---|---|---|
-     * | 1 / UNDEFINED | 正常 | 恒等 |
-     * | 2 FLIP_HORIZONTAL | 水平镜像 | `scale(-1, 1)` |
-     * | 3 ROTATE_180 | 旋转 180° | `rotate(180)` |
-     * | 4 FLIP_VERTICAL | 垂直镜像 | `scale(1, -1)` |
-     * | 5 TRANSPOSE | 沿主对角线翻转 | `rotate(90)` + `scale(-1, 1)` |
-     * | 6 ROTATE_90 | 顺时针 90° | `rotate(90)` |
-     * | 7 TRANSVERSE | 沿副对角线翻转 | `rotate(-90)` + `scale(-1, 1)` |
-     * | 8 ROTATE_270 | 顺时针 270° | `rotate(-90)` |
-     *
-     * 旧实现只映射了 3/6/8 的旋转与 2/7 的「水平镜像」，于是 **4、5 完全没有变换、
-     * 7 只做了一半**（少了轴交换），部分导入照片会倒置或宽高方向错误。
-     * 5 / 7 / 6 / 8 会让宽高互换——`Bitmap.createBitmap(...matrix...)` 自动给出新尺寸，
-     * 与 EXIF 语义一致。
-     *
-     * ⚠️ 顺序敏感：`setRotate(x)` **先** `postScale(-1,1)`（先缩放后旋转）才是正确组合，
-     * 两者对调会得到镜像轴相反的图像。改动此表必须重跑 `ExifOrientationTest` 的像素断言。
-     */
-    private fun orientationMatrix(orientation: Int): Matrix = Matrix().apply {
-        when (orientation) {
-            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> setScale(-1f, 1f)
-            ExifInterface.ORIENTATION_ROTATE_180 -> setRotate(180f)
-            ExifInterface.ORIENTATION_FLIP_VERTICAL -> setScale(1f, -1f)
-            ExifInterface.ORIENTATION_TRANSPOSE -> {
-                setRotate(90f)
-                postScale(-1f, 1f)
-            }
-
-            ExifInterface.ORIENTATION_ROTATE_90 -> setRotate(90f)
-            ExifInterface.ORIENTATION_TRANSVERSE -> {
-                setRotate(-90f)
-                postScale(-1f, 1f)
-            }
-
-            ExifInterface.ORIENTATION_ROTATE_270 -> setRotate(-90f)
-            // ORIENTATION_NORMAL / ORIENTATION_UNDEFINED 及未知取值：恒等
-            else -> Unit
-        }
     }
 
     /**

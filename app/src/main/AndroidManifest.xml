@@ -13,6 +13,10 @@
          应用从不直读媒体库——review B-24：READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE
          全工程零请求，按权限最小化移除。M4 若做「最近一张缩略图」再重评。 -->
 
+    <!-- AI 端点允许 http://：开发文档 §2.2.3 明确支持本地 Ollama / vLLM
+         （http://127.0.0.1 / 局域网地址），Android 9+ 默认禁明文，不放开就跑不通。
+         代价：用户若把远程端点写成 http://，Key 会明文过网——设置页文案提示优先 https；
+         该取舍已登记为 M2 文档待确认项。 -->
     <!-- 定位为可选能力：无该硬性要求的设备仍可装（手动选城市替代） -->
     <uses-feature
         android:name="android.hardware.location"
@@ -31,6 +35,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.ClothesMate"
+        android:usesCleartextTraffic="true"
         tools:targetApi="31">
 
         <activity

@@ -1,5 +1,6 @@
 package com.yuhinhsiung.clothesmate.feature.wardrobe.ui.form
 
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -95,6 +96,9 @@ class ClothingFormRetryTest {
             override suspend fun clearStaged(staged: StagedImage) {
                 staged.file.delete()
             }
+
+            override suspend fun stageCutout(bitmap: Bitmap) =
+                StagedImage(stagedFile, stagedFile.length())
         }
         val vm = ClothingFormViewModel(
             clothingRepo,
@@ -104,6 +108,39 @@ class ClothingFormRetryTest {
             storage,
             db.tagDictionaryDao(),
             prefs,
+            com.yuhinhsiung.clothesmate.core.datastore.InMemoryUserSettingsStore(),
+            object : com.yuhinhsiung.clothesmate.core.ai.ClothingRecognizer {
+                override suspend fun recognize(
+                    endpoint: com.yuhinhsiung.clothesmate.core.ai.RecognitionEndpoint,
+                    imageJpeg: ByteArray,
+                ) = com.yuhinhsiung.clothesmate.core.ai.AiRecognition()
+
+                override suspend fun testConnection(
+                    endpoint: com.yuhinhsiung.clothesmate.core.ai.RecognitionEndpoint,
+                ) = com.yuhinhsiung.clothesmate.core.ai.ConnectionTestResult(false)
+            },
+            object : com.yuhinhsiung.clothesmate.core.image.LocalColorExtractorService {
+                override suspend fun extractKeys(uri: Uri): List<String> = emptyList()
+            },
+            object : com.yuhinhsiung.clothesmate.core.image.BitmapLoader {
+                override suspend fun decode(uri: Uri, maxEdge: Int) =
+                    error("本用例不触发 AI 取图")
+
+                override suspend fun decode(file: File, maxEdge: Int) =
+                    error("本用例不触发 AI 取图")
+
+                override suspend fun jpegBytes(
+                    uri: Uri,
+                    maxEdge: Int,
+                    quality: Int,
+                ): ByteArray = error("本用例不触发 AI 取图")
+
+                override suspend fun jpegBytes(
+                    file: File,
+                    maxEdge: Int,
+                    quality: Int,
+                ): ByteArray = error("本用例不触发 AI 取图")
+            },
             SavedStateHandle(
                 mapOf("itemId" to null, "imageUri" to "file:///retry.jpg", "wardrobeId" to wid),
             ),

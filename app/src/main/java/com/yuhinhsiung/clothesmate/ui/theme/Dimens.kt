@@ -160,4 +160,16 @@ object Dimens {
 
     /** 拍照页中央引导框高度（§7.3 示意框）—— review B-14 */
     val captureGuideHeight = 260.dp
+
+    /** 设置页 AI 配置状态点直径（UI 文档 §7.6 绿/灰/红三态） */
+    val statusDotSize = 8.dp
+
+    /** 设置页「测试连接」次按钮高度（mockup-12 为 38dp，落在 4/8 网格上取 40dp） */
+    val settingsTestButtonHeight = 40.dp
+
+    /** 设置页深色模式三段控件高度（与表单控件同量级） */
+    val settingsSegmentHeight = 40.dp
+
+    /** 抠图预览页棋盘格单元边长（表达透明背景，§7.3） */
+    val checkerCell = 16.dp
 }

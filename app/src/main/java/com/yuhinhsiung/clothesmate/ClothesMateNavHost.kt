@@ -49,12 +49,14 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.yuhinhsiung.clothesmate.feature.addclothing.ui.CaptureScreen
+import com.yuhinhsiung.clothesmate.feature.addclothing.ui.CutoutPreviewRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.ClothingPickerRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitDetailRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitFormRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitHomeRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitWaterfallRoute
 import com.yuhinhsiung.clothesmate.feature.overview.ui.OverviewRoute
+import com.yuhinhsiung.clothesmate.feature.settings.ui.SettingsRoute
 import com.yuhinhsiung.clothesmate.feature.today.ui.TodayRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.ClothingDetailRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.DeleteResult
@@ -69,6 +71,7 @@ import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.component.LocalNavResultBus
 import com.yuhinhsiung.clothesmate.ui.navigation.Capture
 import com.yuhinhsiung.clothesmate.ui.navigation.CaptureTarget
+import com.yuhinhsiung.clothesmate.ui.navigation.CutoutPreview
 import com.yuhinhsiung.clothesmate.ui.navigation.ClothingDetail
 import com.yuhinhsiung.clothesmate.ui.navigation.ClothingForm
 import com.yuhinhsiung.clothesmate.ui.navigation.ClothingPicker
@@ -78,6 +81,7 @@ import com.yuhinhsiung.clothesmate.ui.navigation.OutfitTab
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitWaterfall
 import com.yuhinhsiung.clothesmate.ui.navigation.OverviewTab
 import com.yuhinhsiung.clothesmate.ui.navigation.Search
+import com.yuhinhsiung.clothesmate.ui.navigation.Settings
 import com.yuhinhsiung.clothesmate.ui.navigation.TodayTab
 import com.yuhinhsiung.clothesmate.ui.navigation.WardrobeDetail
 import com.yuhinhsiung.clothesmate.ui.navigation.WardrobeTab
@@ -175,7 +179,6 @@ fun ClothesMateNavHost(
     // lint（LocalContextGetResourceValueCall）：在 lambda 里经 context.getString
     // 读资源不感知配置变更（切语言/字号后拿到旧值）
     val addedTpl = stringResource(R.string.wardrobe_added)
-    val settingsComingSoon = stringResource(R.string.settings_coming_soon)
     fun showSnack(message: String) {
         scope.launch { snackbarHostState.showSnackbar(message) }
     }
@@ -194,7 +197,7 @@ fun ClothesMateNavHost(
     ) { uri ->
         uri?.let {
             navController.navigate(
-                ClothingForm(imageUri = it.toString(), wardrobeId = clothingPreselectWardrobeId),
+                CutoutPreview(imageUri = it.toString(), wardrobeId = clothingPreselectWardrobeId),
             )
         }
     }
@@ -327,8 +330,8 @@ fun ClothesMateNavHost(
             }
             composable<OverviewTab> {
                 OverviewRoute(
-                    // 设置页唯一入口（§6.2）；页面随 M2-05 交付，先给明确反馈
-                    onOpenSettings = { showSnack(settingsComingSoon) },
+                    // 设置页唯一入口（§6.2 / M2-05）
+                    onOpenSettings = { navController.navigate(Settings) },
                     onAddClothing = {
                         navController.navigate(Capture(target = CaptureTarget.CLOTHING_NEW))
                     },
@@ -407,7 +410,7 @@ fun ClothesMateNavHost(
                     onCaptured = { imageUri ->
                         when (route.target) {
                             CaptureTarget.CLOTHING_NEW -> navController.navigate(
-                                ClothingForm(imageUri = imageUri, wardrobeId = route.wardrobeId),
+                                CutoutPreview(imageUri = imageUri, wardrobeId = route.wardrobeId),
                             ) {
                                 // 拍照页使命完成，弹掉自己：确认页返回 → 放弃确认 → 直接回 Tab
                                 popUpTo<Capture> { inclusive = true }
@@ -428,6 +431,41 @@ fun ClothesMateNavHost(
                     },
                 )
             }
+            composable<CutoutPreview> { entry ->
+                val route = entry.toRoute<CutoutPreview>()
+                CutoutPreviewRoute(
+                    onBack = { navController.popBackStack() },
+                    onConfirm = { cutoutPath ->
+                        navController.navigate(
+                            ClothingForm(
+                                imageUri = route.imageUri,
+                                wardrobeId = route.wardrobeId,
+                                cutoutPath = cutoutPath,
+                            ),
+                        ) {
+                            // 预览页使命完成：确认页返回直接回 Tab（同拍照页）
+                            popUpTo<CutoutPreview> { inclusive = true }
+                        }
+                    },
+                    onUseOriginal = {
+                        navController.navigate(
+                            ClothingForm(imageUri = route.imageUri, wardrobeId = route.wardrobeId),
+                        ) {
+                            popUpTo<CutoutPreview> { inclusive = true }
+                        }
+                    },
+                    onRetake = {
+                        navController.navigate(
+                            Capture(target = CaptureTarget.CLOTHING_NEW, wardrobeId = route.wardrobeId),
+                        ) {
+                            popUpTo<CutoutPreview> { inclusive = true }
+                        }
+                    },
+                )
+            }
+            composable<Settings> {
+                SettingsRoute(onBack = { navController.popBackStack() })
+            }
             composable<Search> {
                 SearchRoute(
                     onBack = { navController.popBackStack() },
@@ -438,6 +476,8 @@ fun ClothesMateNavHost(
             composable<ClothingForm> {
                 ClothingFormRoute(
                     onBack = { navController.popBackStack() },
+                    // M2-04 降级引导「去配置」→ 设置页
+                    onOpenSettings = { navController.navigate(Settings) },
                     // M1-14 验收：保存后分配编号并回到衣柜详情
                     onSavedCreate = { wardrobeId ->
                         navController.navigate(WardrobeTab) {

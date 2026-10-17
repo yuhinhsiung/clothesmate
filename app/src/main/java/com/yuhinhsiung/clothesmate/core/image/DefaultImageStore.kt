@@ -1,12 +1,14 @@
 package com.yuhinhsiung.clothesmate.core.image
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import com.yuhinhsiung.clothesmate.core.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -26,6 +28,9 @@ class DefaultImageStore @Inject constructor(
 
     /** 暂存序号：单调递增，保证一次会话内多个暂存图不互相覆盖 */
     private val stashSeq = AtomicLong(0)
+
+    /** 抠图暂存序号（与选图暂存分开计数，文件后缀也不同） */
+    private val cutoutSeq = AtomicLong(0)
 
     private val stashDir: File
         get() = File(context.cacheDir, STASH_DIR)
@@ -120,8 +125,41 @@ class DefaultImageStore @Inject constructor(
         Unit
     }
 
+    /**
+     * 抠图 PNG 暂存（M2-01）：`cacheDir/tmp_cutouts/cutout_{n}.png`。
+     *
+     * 与选图暂存分开目录：原图暂存被「用原图」分支清掉时，抠图还要留给确认页展示。
+     * 写盘沿用「先 `.tmp` + fsync + rename」——预览页可能立刻读这张图，
+     * 半截 PNG 会让 Coil 显示成占位色。
+     */
+    override suspend fun stageCutout(bitmap: Bitmap): StagedImage = withContext(ioDispatcher) {
+        val dir = File(context.cacheDir, CUTOUT_DIR)
+        if (!dir.exists() && !dir.mkdirs() && !dir.exists()) {
+            throw ImageProcessException("无法创建抠图暂存目录：${dir.path}")
+        }
+        val target = File(dir, "cutout_${cutoutSeq.incrementAndGet()}.png")
+        val tmp = File(dir, target.name + TEMP_SUFFIX)
+        try {
+            FileOutputStream(tmp).use { output ->
+                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                    throw ImageProcessException("PNG 编码失败")
+                }
+                output.flush()
+                output.fd.sync()
+            }
+            if (!tmp.renameTo(target)) {
+                tmp.copyTo(target, overwrite = true)
+                tmp.delete()
+            }
+        } finally {
+            if (tmp.exists()) tmp.delete()
+        }
+        StagedImage(file = target, byteSize = target.length())
+    }
+
     private companion object {
         const val STASH_DIR = "tmp_images"
+        const val CUTOUT_DIR = "tmp_cutouts"
 
         /** 落盘临时后缀；与 `DefaultImageCompressor.writeJpeg` 的 `.tmp` 同款约定 */
         const val TEMP_SUFFIX = ".tmp"

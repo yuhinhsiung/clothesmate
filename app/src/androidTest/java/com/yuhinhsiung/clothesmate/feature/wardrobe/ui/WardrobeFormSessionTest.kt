@@ -1,5 +1,6 @@
 package com.yuhinhsiung.clothesmate.feature.wardrobe.ui
 
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -76,6 +77,7 @@ class WardrobeFormSessionTest {
 
         override suspend fun restoreStaged(stagedImage: StagedImage, destination: File) = Unit
         override suspend fun clearStaged(stagedImage: StagedImage) = Unit
+        override suspend fun stageCutout(bitmap: Bitmap) = StagedImage(staged, staged.length())
     }
 
     // ── A-01：配置重建不能当作用户重开 ──────────────────────────

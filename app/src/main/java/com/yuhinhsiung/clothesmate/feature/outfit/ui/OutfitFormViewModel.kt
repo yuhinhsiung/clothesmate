@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 import javax.inject.Inject
 
 /**
@@ -53,7 +54,7 @@ class OutfitFormViewModel @Inject constructor(
     private val tagDictionaryDao: TagDictionaryDao,
     private val clothingDao: com.yuhinhsiung.clothesmate.core.database.dao.ClothingItemDao,
     private val navResultBus: com.yuhinhsiung.clothesmate.ui.navigation.NavResultBus,
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val route: OutfitForm = savedStateHandle.toRoute()
@@ -64,6 +65,12 @@ class OutfitFormViewModel @Inject constructor(
 
     /** 暂存中的新照片（顺序即列表顺序） */
     private val stagedPhotos = mutableListOf<StagedImage>()
+
+    /** 草稿已清（保存/放弃）；此后不再写回 SavedStateHandle */
+    private var draftCleared = false
+
+    /** 初始数据（编辑预填 / 首批照片）就绪前不写草稿，避免「空表单」假草稿 */
+    private var draftReady = false
 
     /** 已选衣物缩略图联查（确认页横滑列 + 编号 chip） */
     val clothingById: StateFlow<Map<Long, ClothingItem>> = clothingDao.observeAll()
@@ -81,10 +88,24 @@ class OutfitFormViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
-        if (editingId != null) {
+        // M2-08 / B-18：优先恢复被系统回收前的草稿
+        val restored = OutfitFormDraft.decode(savedStateHandle[OutfitFormDraft.KEY])
+        if (restored != null) {
+            restoreDraft(restored)
+        } else if (editingId != null) {
             loadForEdit(editingId)
         } else {
             loadInitialPhotos()
+        }
+        viewModelScope.launch {
+            uiState.collect { state ->
+                if (draftReady && !draftCleared) {
+                    savedStateHandle[OutfitFormDraft.KEY] = OutfitFormDraft.encode(
+                        state = state,
+                        stagedPhotoPaths = stagedPhotos.map { it.file.path },
+                    )
+                }
+            }
         }
         // review B-01/B-19：选择器回传改走 NavResultBus（SavedStateHandle 回传在本工程
         // 三实例真机实测全部失效，见 review/2026-10-17_1015_review.md）。VM 在返回栈下
@@ -111,6 +132,22 @@ class OutfitFormViewModel @Inject constructor(
         }
     }
 
+    /** 恢复草稿：暂存照片按路径校验，缺失的只丢那一张，其余字段照常。 */
+    private fun restoreDraft(draft: OutfitFormDraft) {
+        stagedPhotos.clear()
+        draft.stagedPhotoPaths.forEach { path ->
+            val file = java.io.File(path)
+            if (file.exists() && file.length() > 0) {
+                stagedPhotos += StagedImage(file = file, byteSize = file.length())
+            }
+        }
+        _uiState.value = draft.toUiState(
+            base = OutfitFormUiState(isEdit = editingId != null),
+            stagedPaths = stagedPhotos.map { it.file.path },
+        )
+        draftReady = true
+    }
+
     /**
      * 打开衣物选择器前发布种子：当前已选（含顺序）→ 选择器预填（B-19 修复：
      * 「编辑已含 3 件的穿搭 → 选择器显示 0 件 → 只勾第 4 件 → 原 3 件被静默丢弃」）。
@@ -122,7 +159,10 @@ class OutfitFormViewModel @Inject constructor(
     /** 创建：入口 FAB 面板带来的首批照片（\n 分隔 Uri），逐张压缩进暂存区 */
     private fun loadInitialPhotos() {
         val uris = route.photoUris?.split("\n")?.filter { it.isNotBlank() }.orEmpty()
-        if (uris.isEmpty()) return
+        if (uris.isEmpty()) {
+            draftReady = true
+            return
+        }
         _uiState.update { it.copy(addingPhoto = true) }
         viewModelScope.launch {
             runCatching {
@@ -135,6 +175,7 @@ class OutfitFormViewModel @Inject constructor(
                         stagedDisplayPaths = stagedPhotos.map { s -> s.file.path },
                     )
                 }
+                draftReady = true
             }.onFailure { failure ->
                 _uiState.update {
                     it.copy(
@@ -142,6 +183,7 @@ class OutfitFormViewModel @Inject constructor(
                         error = failure.message ?: "图片处理失败，请重试",
                     )
                 }
+                draftReady = true
             }
         }
     }
@@ -166,6 +208,7 @@ class OutfitFormViewModel @Inject constructor(
                 // 预填完成即固定 baseline：预填本身不算「用户改过」（review R-05）
                 filled.copy(baseline = filled.snapshot())
             }
+            draftReady = true
         }
     }
 
@@ -324,6 +367,7 @@ class OutfitFormViewModel @Inject constructor(
                 }
             }
                 .onSuccess {
+                    clearDraft()
                     _uiState.update { it.copy(saving = false) }
                     onSaved()
                 }
@@ -465,11 +509,18 @@ class OutfitFormViewModel @Inject constructor(
      * 会把暂存图留在 `cache/tmp_images/` 里等系统回收。
      */
     fun discard() {
+        clearDraft()
         val staged = stagedPhotos.toList()
         stagedPhotos.clear()
         viewModelScope.launch {
             staged.forEach { imageStore.clearStaged(it) }
         }
+    }
+
+    /** 保存/放弃后清草稿 */
+    private fun clearDraft() {
+        draftCleared = true
+        savedStateHandle.remove<String>(OutfitFormDraft.KEY)
     }
 
     private companion object {
@@ -552,6 +603,7 @@ data class OutfitFormUiState(
 }
 
 /** 表单初始快照（review R-05 的脏判定基准）。字段与 [OutfitFormUiState] 中「用户可改」的部分一一对应。 */
+@Serializable
 data class OutfitFormBaseline(
     val existingPaths: List<String> = emptyList(),
     val selectedItemIds: List<Long> = emptyList(),

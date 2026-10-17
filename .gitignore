@@ -31,6 +31,9 @@ keystore.properties
 desktop.ini
 nul
 
+# ── 工程私有工具链（M2 模型转换用的临时 Python venv，不属代码）──────
+/.toolchain/
+
 # ── OS ──────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db

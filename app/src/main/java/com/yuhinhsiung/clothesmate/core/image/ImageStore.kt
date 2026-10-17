@@ -54,6 +54,18 @@ interface ImageStore {
 
     /** 清掉单个暂存图 */
     suspend fun clearStaged(staged: StagedImage)
+
+    /**
+     * 把抠图结果（透明背景 Bitmap）写进**暂存区**，返回暂存 PNG。
+     *
+     * 为什么需要它：M2-01 的抠图发生在「确认页之前」——此时衣物 id 还没分配，
+     * 无法直接写 `clothing/cutout/{id}.png`（§3.3）。这里复用录入流程的「暂存 → 归位」
+     * 时序：预览页先落缓存 PNG 给确认页展示，保存拿到 id 后再用 [promote] 归位。
+     *
+     * 暂存目录与选图暂存区分开（`cacheDir/tmp_cutouts/`）：两者生命周期不同——
+     * 原图暂存被「用原图」分支消费掉时，抠图可能还要留着。
+     */
+    suspend fun stageCutout(bitmap: android.graphics.Bitmap): StagedImage
 }
 
 /**

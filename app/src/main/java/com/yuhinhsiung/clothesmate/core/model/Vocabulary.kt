@@ -135,20 +135,25 @@ enum class ClothingCategory(
 
 /**
  * 12 色枚举（开发文档 §3.4）。DB 存 key，UI 取 [displayName]，色点取 [ClothingColors]。
+ *
+ * @property rgb 该色的 sRGB 值（0xRRGGBB，**不含 alpha**）。这是全工程唯一的色值来源：
+ *   UI 侧 `ui/theme/Color.kt` 由它构造 Compose Color，M2-02 本地颜色提取的 Lab 锚点
+ *   也由它换算，避免「色板」与「提取映射表」各写一份色值。
  */
-enum class ClothingColor(val key: String, val displayName: String) {
-    Black("black", "黑"),
-    White("white", "白"),
-    Gray("gray", "灰"),
-    Red("red", "红"),
-    Orange("orange", "橙"),
-    Yellow("yellow", "黄"),
-    Green("green", "绿"),
-    Blue("blue", "蓝"),
-    Purple("purple", "紫"),
-    Brown("brown", "棕"),
-    Pink("pink", "粉"),
-    Multi("multi", "花色"),
+enum class ClothingColor(val key: String, val displayName: String, val rgb: Int) {
+    Black("black", "黑", 0x1F1A1D),
+    White("white", "白", 0xFFFFFF),
+    Gray("gray", "灰", 0x9CA3AF),
+    Red("red", "红", 0xDC2626),
+    Orange("orange", "橙", 0xEA580C),
+    Yellow("yellow", "黄", 0xFACC15),
+    Green("green", "绿", 0x16A34A),
+    Blue("blue", "蓝", 0x2563EB),
+    Purple("purple", "紫", 0x9333EA),
+    Brown("brown", "棕", 0x92400E),
+    Pink("pink", "粉", 0xEC4899),
+    /** 花色不参与最近色映射；rgb 仅用于单色点近似（UI 文档 §6.5 说明） */
+    Multi("multi", "花色", 0xDB2777),
     ;
 
     companion object {

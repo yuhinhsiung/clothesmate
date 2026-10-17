@@ -50,7 +50,27 @@ data class ClothingForm(
     val itemId: Long? = null,
     val imageUri: String? = null,
     val wardrobeId: Long? = null,
+    /**
+     * M2-01：抠图预览页确认后带来的**暂存 PNG 绝对路径**（cache/tmp_cutouts/…）。
+     * 只在本进程/本次录入内有效，保存时归位到 `clothing/cutout/{id}.png` 后丢弃。
+     */
+    val cutoutPath: String? = null,
 )
+
+/**
+ * 抠图预览页（M2-01）—— 拍照/相册之后、确认页之前。
+ *
+ * `imageUri` 是上游拍到的原图 Uri；`wardrobeId` 透传给确认页做衣柜预选。
+ */
+@Serializable
+data class CutoutPreview(
+    val imageUri: String,
+    val wardrobeId: Long? = null,
+)
+
+/** 设置页（M2-05）。全 App 唯一入口在概览 Tab 顶栏（UI 文档 §6.2）。 */
+@Serializable
+data object Settings
 
 /** 全局搜索结果页（M1-16，二级页无底部导航） */
 @Serializable

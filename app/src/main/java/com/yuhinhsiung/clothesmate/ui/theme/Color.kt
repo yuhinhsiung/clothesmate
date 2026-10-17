@@ -98,21 +98,27 @@ val ChartCategoryColors = listOf(
     ClothingColors.Pink,   // 粉（衣物 12 色板）
 )
 
-/** 衣物预设 12 色（开发文档 §3.4），用于颜色分布图与色点展示 */
+/** 衣物预设 12 色（开发文档 §3.4），用于颜色分布图与色点展示。
+ *
+ * M2-02 起色值的**唯一来源**是 `core.model.ClothingColor.rgb`（本地颜色提取的 Lab 锚点
+ * 与 UI 色点必须是同一组值，否则「提取出红、显示成粉」这类分叉无从发现）。
+ */
 object ClothingColors {
-    val Black = Color(0xFF1F1A1D)
-    val White = Color(0xFFFFFFFF)
-    val Gray = Color(0xFF9CA3AF)
-    val Red = Color(0xFFDC2626)
-    val Orange = Color(0xFFEA580C)
-    val Yellow = Color(0xFFFACC15)
-    val Green = Color(0xFF16A34A)
-    val Blue = Color(0xFF2563EB)
-    val Purple = Color(0xFF9333EA)
-    val Brown = Color(0xFF92400E)
-    val Pink = Color(0xFFEC4899)
+    private fun argb(rgb: Int): Color = Color(0xFF000000L or rgb.toLong())
+
+    val Black = argb(com.yuhinhsiung.clothesmate.core.model.ClothingColor.Black.rgb)
+    val White = argb(com.yuhinhsiung.clothesmate.core.model.ClothingColor.White.rgb)
+    val Gray = argb(com.yuhinhsiung.clothesmate.core.model.ClothingColor.Gray.rgb)
+    val Red = argb(com.yuhinhsiung.clothesmate.core.model.ClothingColor.Red.rgb)
+    val Orange = argb(com.yuhinhsiung.clothesmate.core.model.ClothingColor.Orange.rgb)
+    val Yellow = argb(com.yuhinhsiung.clothesmate.core.model.ClothingColor.Yellow.rgb)
+    val Green = argb(com.yuhinhsiung.clothesmate.core.model.ClothingColor.Green.rgb)
+    val Blue = argb(com.yuhinhsiung.clothesmate.core.model.ClothingColor.Blue.rgb)
+    val Purple = argb(com.yuhinhsiung.clothesmate.core.model.ClothingColor.Purple.rgb)
+    val Brown = argb(com.yuhinhsiung.clothesmate.core.model.ClothingColor.Brown.rgb)
+    val Pink = argb(com.yuhinhsiung.clothesmate.core.model.ClothingColor.Pink.rgb)
     /** 花色：以多色斜纹段表达，见 UI 文档 §7.5 */
-    val Multi = Color(0xFFDB2777)
+    val Multi = argb(com.yuhinhsiung.clothesmate.core.model.ClothingColor.Multi.rgb)
 
     /**
      * 颜色枚举 → Compose.Color。用于衣物详情/选择的色点、概览颜色分布条。
@@ -121,18 +127,13 @@ object ClothingColors {
      * 那是图表侧的做法；单色点场景用这个洋红近似即可。
      */
     fun dotColor(color: com.yuhinhsiung.clothesmate.core.model.ClothingColor): Color =
-        when (color) {
-            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Black -> Black
-            com.yuhinhsiung.clothesmate.core.model.ClothingColor.White -> White
-            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Gray -> Gray
-            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Red -> Red
-            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Orange -> Orange
-            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Yellow -> Yellow
-            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Green -> Green
-            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Blue -> Blue
-            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Purple -> Purple
-            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Brown -> Brown
-            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Pink -> Pink
-            com.yuhinhsiung.clothesmate.core.model.ClothingColor.Multi -> Multi
-        }
+        argb(color.rgb)
 }
+
+/**
+ * 状态色（设置页 AI 配置状态点，UI 文档 §7.6「绿=可用 / 灰=未配置 / 红=失败」）。
+ *
+ * 色板里没有单独定义「成功绿」——直接引用 §3.4 衣物 12 色板的绿，避免另造色值；
+ * 灰用 `onMuted`、红用 `error`（语义插槽）。
+ */
+val StatusOk = ClothingColors.Green

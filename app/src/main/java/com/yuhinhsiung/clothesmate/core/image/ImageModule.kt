@@ -51,4 +51,21 @@ abstract class ImageBindModule {
     @Binds
     @Singleton
     abstract fun bindImageStore(impl: DefaultImageStore): ImageStore
+
+    /** M2-01：端上 TFLite 抠图（默认实现，失败由调用方降级「使用原图」） */
+    @Binds
+    @Singleton
+    abstract fun bindBackgroundRemover(impl: TfliteU2NetBackgroundRemover): BackgroundRemover
+
+    /** M2-01/M2-03：按需取图（抠图解码 / AI base64） */
+    @Binds
+    @Singleton
+    abstract fun bindBitmapLoader(impl: DefaultBitmapLoader): BitmapLoader
+
+    /** M2-02：本地颜色提取（不依赖 AI / 网络） */
+    @Binds
+    @Singleton
+    abstract fun bindLocalColorExtractor(
+        impl: DefaultLocalColorExtractorService,
+    ): LocalColorExtractorService
 }
