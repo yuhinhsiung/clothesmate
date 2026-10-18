@@ -16,6 +16,8 @@ import com.yuhinhsiung.clothesmate.core.di.ApplicationScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +42,19 @@ class SettingsViewModel @Inject constructor(
     private val recognizer: ClothingRecognizer,
     @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
+
+    /**
+     * 兼容既有手动构造（旧测试/评审探针）：不给应用级作用域时退化为页面级
+     * 独立 scope。生产一律走 Hilt 的 @ApplicationScope。
+     */
+    constructor(
+        settingsStore: UserSettingsStore,
+        recognizer: ClothingRecognizer,
+    ) : this(
+        settingsStore,
+        recognizer,
+        CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+    )
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
