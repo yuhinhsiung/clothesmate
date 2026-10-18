@@ -27,6 +27,16 @@ interface WearRecordDao {
     @Query("SELECT * FROM wear_record WHERE date = :date ORDER BY createdAt DESC")
     suspend fun getByDate(date: String): List<WearRecordEntity>
 
+    /** 月历查询：date 是 yyyy-MM-dd 字符串，字典序即时间序。 */
+    @Query(
+        "SELECT * FROM wear_record WHERE date BETWEEN :startDate AND :endDate " +
+            "ORDER BY date ASC, createdAt ASC",
+    )
+    fun observeBetween(startDate: String, endDate: String): Flow<List<WearRecordEntity>>
+
+    @Query("UPDATE wear_record SET note = :note WHERE id = :recordId")
+    suspend fun updateNote(recordId: Long, note: String?)
+
     @Query("SELECT * FROM wear_record ORDER BY date DESC, createdAt DESC")
     fun observeAll(): Flow<List<WearRecordEntity>>
 

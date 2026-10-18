@@ -76,6 +76,10 @@ data object Settings
 @Serializable
 data object Search
 
+/** 穿着日历（M3-07）。二级页，无底部导航。 */
+@Serializable
+data object WearCalendar
+
 // ── 拍照页（M1-14 / M1-18 共用）────────────────────────────────
 
 /** 拍照页拍完去哪。@Keep 防止 R8 混淆枚举序列化器（type-safe nav 的已知混淆面）。 */
@@ -123,6 +127,8 @@ data class OutfitDetailArgs(val outfitId: Long)
 data class OutfitForm(
     val outfitId: Long? = null,
     val photoUris: String? = null,
+    /** 兜底组合「存为穿搭」带入的衣物 id，英文逗号分隔（M3-04）。 */
+    val preselectedItemIds: String? = null,
 )
 
 /** 衣物选择器（M1-18，全屏二级页；结果经 SavedStateHandle 回传） */

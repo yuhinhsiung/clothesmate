@@ -212,6 +212,7 @@
     <string name="outfit_detail_items_deleted">衣物清单 · %1$d 件 · %2$d 件已删除</string>
     <string name="outfit_item_deleted">已删除</string>
     <string name="outfit_wear_today">今天穿这套</string>
+    <string name="outfit_wearing">正在记录…</string>
     <string name="outfit_delete_title">删除「%1$s」？</string>
     <string name="outfit_delete_body">照片与衣物关联将一并删除，此操作不可恢复</string>
     <string name="outfit_delete_cleared_hint">将同时彻底清除 %1$d 件已删除衣物</string>
@@ -276,7 +277,7 @@
     <string name="settings_weather_key">和风天气 Key</string>
     <string name="settings_weather_configured">已配置</string>
     <string name="settings_weather_unconfigured">未配置</string>
-    <string name="settings_weather_note">天气功能随 M3 交付；这里先保存配置。</string>
+    <string name="settings_weather_note">和风天气 Key 加密存储在本机；未配置时今日页会显示配置引导。</string>
     <string name="settings_backup_export">导出备份</string>
     <string name="settings_backup_export_desc">图片 + JSON · 随 M4 交付</string>
     <string name="settings_backup_import">导入恢复</string>
@@ -324,4 +325,102 @@
     <string name="ai_privacy_point_prefill">识别结果仅作预填 ✨，随时可改，不作任何决定</string>
     <string name="ai_privacy_decline">暂不使用</string>
     <string name="ai_privacy_accept">同意并继续</string>
+
+    <!-- 今日 / 天气 / 行程 / 推荐（M3-01～M3-06，UI 文档 §7.1） -->
+    <string name="today_title">今日</string>
+    <string name="today_calendar">穿着日历</string>
+    <string name="today_greeting_morning">早上好</string>
+    <string name="today_greeting_noon">中午好</string>
+    <string name="today_greeting_afternoon">下午好</string>
+    <string name="today_greeting_evening">晚上好</string>
+    <string name="today_date_format">%1$d月%2$d日</string>
+    <string name="today_weekday_format">周%1$s</string>
+
+    <string name="weather_city_choose">选择城市</string>
+    <string name="weather_no_key_title">配置天气 Key 后查看天气</string>
+    <string name="weather_no_key_desc">在设置页填入和风天气 Key，即可自动获取本地天气</string>
+    <string name="weather_go_settings">去配置</string>
+    <string name="weather_need_city_title">先选一个城市</string>
+    <string name="weather_need_city_desc">允许定位，或手动选择城市查看天气</string>
+    <string name="weather_need_location_desc">定位不可用，手动选择城市也能看天气</string>
+    <string name="weather_allow_location">允许定位</string>
+    <string name="weather_choose_city">手动选择</string>
+    <string name="weather_refresh_failed">刷新失败</string>
+    <string name="weather_retry">重试</string>
+    <string name="weather_feels_like">体感 %1$d°</string>
+    <string name="weather_range">%1$d° / %2$d°</string>
+    <string name="weather_loading">正在获取天气…</string>
+    <string name="weather_auth">Key 无效，请检查设置</string>
+    <string name="weather_network">网络不可用</string>
+    <string name="weather_city_not_found">未找到这个城市</string>
+    <string name="weather_timeout">天气请求超时</string>
+    <string name="weather_service">天气服务暂不可用</string>
+    <string name="weather_city_sheet_title">选择城市</string>
+    <string name="weather_city_input">输入城市名，如：杭州</string>
+    <string name="weather_city_confirm">确定</string>
+    <string name="weather_city_cancel">取消</string>
+    <string name="weather_use_location">使用当前位置</string>
+
+    <string name="schedule_title">今天去哪</string>
+    <string name="schedule_custom">自定义</string>
+    <string name="schedule_custom_title">添加行程</string>
+    <string name="schedule_custom_hint">如：看展、遛狗</string>
+    <string name="schedule_save">保存</string>
+    <string name="schedule_cancel">取消</string>
+    <string name="schedule_empty_hint">选一个行程，推荐会更懂你</string>
+
+    <string name="recommend_title">为你推荐 · %1$d 套</string>
+    <string name="recommend_shuffle">换一批</string>
+    <string name="recommend_all_seen">已看完全部合适穿搭</string>
+    <string name="recommend_wear">今天穿这套</string>
+    <string name="wear_celebrated">已记录，出门吧</string>
+    <string name="recommend_items">%1$d 件</string>
+    <string name="reason_temperature">适合 %1$d~%2$d°C %3$s 的%4$s日</string>
+    <string name="reason_temperature_simple">适合 %1$d~%2$d°C，今天去%3$s</string>
+    <string name="reason_schedule">为「%1$s」存的一套</string>
+    <string name="reason_style">你偏爱的「%1$s」风格</string>
+    <string name="reason_daily">日常</string>
+    <string name="reason_never">还没穿过的新搭配，试试？</string>
+    <string name="reason_days">%1$d 天没穿了，今天正好</string>
+    <string name="reason_rain">有雨，记得带伞</string>
+    <string name="reason_generic">今天穿它刚刚好</string>
+
+    <string name="fallback_title">今天的天气有点难倒我了</string>
+    <string name="fallback_desc">试试随机单品组合，或去创建新穿搭</string>
+    <string name="fallback_badge">还未建档</string>
+    <string name="fallback_shuffle">换一组</string>
+    <string name="fallback_save">存为穿搭</string>
+    <string name="fallback_create">去创建穿搭</string>
+
+    <string name="completion_title">今日已记录 %1$d 套</string>
+    <string name="completion_taken">已取出 %1$d/%2$d</string>
+    <string name="completion_note">添加备注</string>
+    <string name="completion_worn_badge">今日穿搭 ✓</string>
+    <string name="completion_note_edit">编辑备注</string>
+    <string name="completion_note_hint">今天的心情或场合…</string>
+    <string name="completion_note_save">保存</string>
+    <string name="completion_note_cancel">取消</string>
+    <string name="completion_wear_error">记录失败，请重试</string>
+    <string name="completion_outfit_deleted">穿搭已删除</string>
+
+    <string name="today_empty_title">今天还没有可推荐的穿搭</string>
+    <string name="today_empty_desc">先录入衣物、创建一套穿搭，再回来看看</string>
+    <string name="today_empty_action">去录入衣物</string>
+
+    <!-- 穿着日历（M3-07，UI 文档 §7.7） -->
+    <string name="calendar_title">穿着日历</string>
+    <string name="calendar_prev">上个月</string>
+    <string name="calendar_next">下个月</string>
+    <string name="calendar_empty_title">还没有穿着记录</string>
+    <string name="calendar_empty_desc">每天点「今天穿这套」，这里就会开花</string>
+    <string name="calendar_backfill">补记这一天</string>
+    <string name="calendar_view_outfit">查看穿搭</string>
+    <string name="calendar_no_outfit">穿搭已删除</string>
+    <string name="calendar_pick_outfit">选择一套穿搭</string>
+    <string name="calendar_pick_outfit_desc">补记会同时更新穿搭和衣物的穿着次数</string>
+    <string name="calendar_future">未来日期不能补记</string>
+    <string name="calendar_close">关闭</string>
+    <string name="calendar_backfilled">已补记</string>
+    <string name="calendar_month_format">%1$d年%2$d月</string>
+    <string name="calendar_day_format">%1$d月%2$d日</string>
 </resources>

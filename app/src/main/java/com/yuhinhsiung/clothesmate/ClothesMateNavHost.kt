@@ -66,6 +66,7 @@ import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitWaterfallRoute
 import com.yuhinhsiung.clothesmate.feature.overview.ui.OverviewRoute
 import com.yuhinhsiung.clothesmate.feature.settings.ui.SettingsRoute
 import com.yuhinhsiung.clothesmate.feature.today.ui.TodayRoute
+import com.yuhinhsiung.clothesmate.feature.today.ui.calendar.WearCalendarRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.ClothingDetailRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.DeleteResult
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.SearchRoute
@@ -86,6 +87,7 @@ import com.yuhinhsiung.clothesmate.ui.navigation.ClothingForm
 import com.yuhinhsiung.clothesmate.ui.navigation.ClothingPicker
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitDetailArgs
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitForm
+import com.yuhinhsiung.clothesmate.ui.navigation.WearCalendar
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitTab
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitWaterfall
 import com.yuhinhsiung.clothesmate.ui.navigation.OverviewTab
@@ -334,7 +336,19 @@ fun ClothesMateNavHost(
             startDestination = TodayTab,
             modifier = Modifier.padding(innerPadding),
         ) {
-            composable<TodayTab> { TodayRoute() }
+            composable<TodayTab> {
+                TodayRoute(
+                    onOpenCalendar = { navController.navigate(WearCalendar) },
+                    onOpenOutfit = { outfitId -> navController.navigate(OutfitDetailArgs(outfitId)) },
+                    onCreateOutfit = { itemIds ->
+                        navController.navigate(
+                            OutfitForm(preselectedItemIds = itemIds.joinToString(",")),
+                        )
+                    },
+                    onAddClothing = { showClothingPanel = true },
+                    onOpenSettings = { navController.navigate(Settings) },
+                )
+            }
             composable<WardrobeTab> {
                 WardrobeRoute(
                     onWardrobeClick = { id -> navController.navigate(WardrobeDetail(id)) },
@@ -378,6 +392,12 @@ fun ClothesMateNavHost(
                     onBack = { navController.popBackStack() },
                     onEdit = { outfitId -> navController.navigate(OutfitForm(outfitId = outfitId)) },
                     onItemDetailClick = { itemId -> navController.navigate(ClothingDetail(itemId)) },
+                    onWorn = {
+                        navController.popBackStack(
+                            navController.graph.findStartDestination().id,
+                            inclusive = false,
+                        )
+                    },
                 )
             }
             composable<OutfitForm> {
@@ -494,6 +514,13 @@ fun ClothesMateNavHost(
             }
             composable<Settings> {
                 SettingsRoute(onBack = { navController.popBackStack() })
+            }
+
+            composable<WearCalendar> {
+                WearCalendarRoute(
+                    onBack = { navController.popBackStack() },
+                    onOpenOutfit = { outfitId -> navController.navigate(OutfitDetailArgs(outfitId)) },
+                )
             }
             composable<Search> {
                 SearchRoute(

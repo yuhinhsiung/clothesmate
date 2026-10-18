@@ -112,6 +112,26 @@ interface OutfitDao {
     @Query("UPDATE outfit SET wearCount = wearCount + 1, lastWornAt = :today, updatedAt = :today WHERE id = :id")
     suspend fun incrementWearCount(id: Long, today: Long)
 
+    /**
+     * 穿着确认（M3-06，含补记历史日期）。
+     *
+     * `lastWornAt` 不能被补记的旧日期回拨：只有更晚的穿着才覆盖。今天穿时等价于
+     * [incrementWearCount]；补记上周不会让「最近穿过」变成更早。
+     */
+    @Query(
+        """
+        UPDATE outfit SET
+            wearCount = wearCount + 1,
+            lastWornAt = CASE
+                WHEN lastWornAt IS NULL OR lastWornAt < :wornAt THEN :wornAt
+                ELSE lastWornAt
+            END,
+            updatedAt = CASE WHEN updatedAt < :wornAt THEN :wornAt ELSE updatedAt END
+        WHERE id = :id
+        """,
+    )
+    suspend fun recordWear(id: Long, wornAt: Long)
+
     /** 确认穿着后写封面之外的路径维护：编辑照片列表。List<String> 经 TypeConverter 自动序列化 */
     @Query("UPDATE outfit SET photoPaths = :photoPaths, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updatePhotoPaths(id: Long, photoPaths: List<String>, updatedAt: Long)

@@ -6,6 +6,10 @@ import androidx.compose.material.icons.rounded.AcUnit
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Cameraswitch
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Checkroom
@@ -16,6 +20,7 @@ import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.LocationOff
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Monitor
 import androidx.compose.material.icons.rounded.MoreVert
@@ -59,6 +64,11 @@ object AppIcons {
     val Image: ImageVector = Icons.Rounded.Image
     val Calendar: ImageVector = Icons.Rounded.CalendarMonth
     val Location: ImageVector = Icons.Rounded.LocationOn
+    val LocationOff: ImageVector = Icons.Rounded.LocationOff
+    val ChevronLeft: ImageVector = Icons.Rounded.ChevronLeft
+    val ChevronRight: ImageVector = Icons.Rounded.ChevronRight
+    val ExpandMore: ImageVector = Icons.Rounded.ExpandMore
+    val Check: ImageVector = Icons.Rounded.Check
     val Back: ImageVector = Icons.AutoMirrored.Rounded.ArrowBack
     val More: ImageVector = Icons.Rounded.MoreVert
     val Edit: ImageVector = Icons.Rounded.Edit

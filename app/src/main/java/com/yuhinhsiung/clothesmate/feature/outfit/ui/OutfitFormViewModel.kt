@@ -96,6 +96,7 @@ class OutfitFormViewModel @Inject constructor(
             loadForEdit(editingId)
         } else {
             loadInitialPhotos()
+            applyPreselectedItems()
         }
         viewModelScope.launch {
             uiState.collect { state ->
@@ -129,6 +130,23 @@ class OutfitFormViewModel @Inject constructor(
                     navResultBus.consumeAppendCaptured()
                 }
             }
+        }
+    }
+
+    /**
+     * M3-04 兜底「存为穿搭」：带入推荐组合中的衣物，并同步 baseline，
+     * 使其不被误判为「用户已修改」（review R-05 的脏判定口径）。
+     */
+    private fun applyPreselectedItems() {
+        val ids = route.preselectedItemIds
+            ?.split(',')
+            ?.mapNotNull { it.trim().toLongOrNull() }
+            ?.distinct()
+            .orEmpty()
+        if (ids.isEmpty()) return
+        _uiState.update { state ->
+            val filled = state.copy(selectedItemIds = ids)
+            filled.copy(baseline = filled.snapshot())
         }
     }
 

@@ -14,10 +14,12 @@ import com.yuhinhsiung.clothesmate.core.model.OutfitCategory
 import com.yuhinhsiung.clothesmate.core.model.OutfitDetail
 import com.yuhinhsiung.clothesmate.core.model.OutfitDraft
 import com.yuhinhsiung.clothesmate.core.model.OutfitItemRef
+import com.yuhinhsiung.clothesmate.core.model.OutfitWithItems
 import com.yuhinhsiung.clothesmate.core.model.fallbackDisplayName
 import com.yuhinhsiung.clothesmate.core.model.toDomain
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -39,6 +41,16 @@ interface OutfitRepository {
 
     /** 全部穿搭（创建时间降序），带衣物件数（瀑布卡「4 件」chip） */
     fun observeOutfits(): Flow<List<Outfit>>
+
+    /**
+     * 全部穿搭 + 当前有效衣物（M3 推荐引擎输入）。
+     *
+     * 一次性快照，不订阅；`referencedItemCount` 含软删行，用于引擎整排除不完整穿搭。
+     */
+    suspend fun getAllWithItems(): List<OutfitWithItems>
+
+    /** 同 [getAllWithItems]，但订阅穿搭/关联/衣物变化（今日推荐随数据实时刷新）。 */
+    fun observeAllWithItems(): Flow<List<OutfitWithItems>>
 
     fun observeOutfitDetail(outfitId: Long): Flow<OutfitDetail?>
 
@@ -116,6 +128,28 @@ class DefaultOutfitRepository @Inject constructor(
     override fun observeOutfits(): Flow<List<Outfit>> =
         combine(outfitDao.observeAll(), outfitItemCounts()) { outfits, counts ->
             outfits.map { it.toDomain(itemCount = counts[it.id] ?: 0) }
+        }
+
+    override suspend fun getAllWithItems(): List<OutfitWithItems> =
+        observeAllWithItems().first()
+
+    override fun observeAllWithItems(): Flow<List<OutfitWithItems>> =
+        combine(
+            outfitDao.observeAll(),
+            outfitDao.observeItemRefs(),
+            clothingDao.observeAll(),
+        ) { outfits, refs, clothing ->
+            val clothingById = clothing.associateBy { it.id }
+            val refsByOutfit = refs.groupBy { it.outfitId }
+            outfits.map { outfit ->
+                val rows = refsByOutfit[outfit.id].orEmpty()
+                val liveItems = rows.mapNotNull { clothingById[it.clothingItemId]?.toDomain() }
+                OutfitWithItems(
+                    outfit = outfit.toDomain(itemCount = liveItems.size),
+                    items = liveItems,
+                    referencedItemCount = rows.size,
+                )
+            }
         }
 
     override fun observeOutfitDetail(outfitId: Long): Flow<OutfitDetail?> =

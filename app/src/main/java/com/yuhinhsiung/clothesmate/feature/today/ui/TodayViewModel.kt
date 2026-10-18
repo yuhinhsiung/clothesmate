@@ -1,0 +1,436 @@
+package com.yuhinhsiung.clothesmate.feature.today.ui
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.yuhinhsiung.clothesmate.core.database.dao.ClothingItemDao
+import com.yuhinhsiung.clothesmate.core.datastore.UserSettingsStore
+import com.yuhinhsiung.clothesmate.core.model.ClothingStatus
+import com.yuhinhsiung.clothesmate.core.model.WearException
+import com.yuhinhsiung.clothesmate.core.model.WearFailure
+import com.yuhinhsiung.clothesmate.core.model.WearRecord
+import com.yuhinhsiung.clothesmate.core.model.toDomain
+import com.yuhinhsiung.clothesmate.core.recommendation.FallbackCombination
+import com.yuhinhsiung.clothesmate.core.recommendation.RecommendationEngine
+import com.yuhinhsiung.clothesmate.core.recommendation.RecommendationInput
+import com.yuhinhsiung.clothesmate.core.recommendation.RecommendedOutfit
+import com.yuhinhsiung.clothesmate.core.recommendation.WeatherFacts
+import com.yuhinhsiung.clothesmate.core.recommendation.buildFallbackCombination
+import com.yuhinhsiung.clothesmate.core.weather.LocationProvider
+import com.yuhinhsiung.clothesmate.core.weather.WeatherCacheStore
+import com.yuhinhsiung.clothesmate.core.weather.WeatherException
+import com.yuhinhsiung.clothesmate.core.weather.WeatherFailure
+import com.yuhinhsiung.clothesmate.core.weather.WeatherRepository
+import com.yuhinhsiung.clothesmate.core.weather.WeatherSnapshot
+import com.yuhinhsiung.clothesmate.feature.outfit.data.OutfitRepository
+import com.yuhinhsiung.clothesmate.feature.today.data.ScheduleSelectionStore
+import com.yuhinhsiung.clothesmate.feature.today.data.ScheduleTagRepository
+import com.yuhinhsiung.clothesmate.feature.today.data.WearRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import java.time.LocalDate
+import javax.inject.Inject
+
+/** 天气卡在今日页的展示状态（M3-01 三态 + 缓存/刷新）。 */
+sealed interface WeatherUiState {
+    data object Loading : WeatherUiState
+    data object NoKey : WeatherUiState
+    data class NeedCity(val locationDenied: Boolean) : WeatherUiState
+    data class Ready(
+        val snapshot: WeatherSnapshot,
+        val refreshing: Boolean = false,
+    ) : WeatherUiState
+
+    data class Failed(
+        val cached: WeatherSnapshot?,
+        val failure: WeatherFailure,
+    ) : WeatherUiState
+}
+
+/**
+ * 今日页状态（M3-05）。
+ *
+ * 天气是网络资源，行程/推荐/穿着记录都来自本地；UI 只消费不可变快照，
+ * 失败与权限状态显式建模，避免“空数据”把用户困在空白页里。
+ */
+data class TodayUiState(
+    val today: LocalDate = LocalDate.now(),
+    val weather: WeatherUiState = WeatherUiState.Loading,
+    val weatherCity: String = "",
+    val hasWeatherKey: Boolean = false,
+    val scheduleOptions: List<String> = emptyList(),
+    val selectedSchedule: Set<String> = emptySet(),
+    val candidates: List<RecommendedOutfit> = emptyList(),
+    val visibleRecommendations: List<RecommendedOutfit> = emptyList(),
+    val pageIndex: Int = 0,
+    val fallback: FallbackCombination? = null,
+    val records: List<WearRecord> = emptyList(),
+    val confirmingOutfitId: Long? = null,
+) {
+    val pageCount: Int
+        get() = if (candidates.isEmpty()) 0 else (candidates.size + PAGE_SIZE - 1) / PAGE_SIZE
+
+    /** 城市优先显示用户配置值；定位模式下回落到快照里的城市名。 */
+    val cityLabel: String
+        get() = weatherCity.ifBlank {
+            when (val current = weather) {
+                is WeatherUiState.Ready -> current.snapshot.city
+                is WeatherUiState.Failed -> current.cached?.city.orEmpty()
+                else -> ""
+            }
+        }
+
+    val weatherSnapshotOrNull: WeatherSnapshot?
+        get() = when (val current = weather) {
+            is WeatherUiState.Ready -> current.snapshot
+            is WeatherUiState.Failed -> current.cached
+            else -> null
+        }
+
+    companion object {
+        const val PAGE_SIZE = 3
+    }
+}
+
+/** 一次性 UI 事件：穿好后的庆祝、换批提示、失败原因。 */
+sealed interface TodayEvent {
+    data class WearConfirmed(val repeated: Boolean) : TodayEvent
+    data object AllRecommendationsSeen : TodayEvent
+    data class WearFailed(val failure: WearFailure?) : TodayEvent
+}
+
+@HiltViewModel
+class TodayViewModel @Inject constructor(
+    private val outfitRepository: OutfitRepository,
+    private val clothingItemDao: ClothingItemDao,
+    private val wearRepository: WearRepository,
+    private val settingsStore: UserSettingsStore,
+    private val weatherRepository: WeatherRepository,
+    private val weatherCacheStore: WeatherCacheStore,
+    private val locationProvider: LocationProvider,
+    private val scheduleSelectionStore: ScheduleSelectionStore,
+    private val scheduleTagRepository: ScheduleTagRepository,
+    private val json: Json,
+) : ViewModel() {
+
+    private val today: LocalDate = LocalDate.now()
+
+    private val _uiState = MutableStateFlow(TodayUiState(today = today))
+    val uiState: StateFlow<TodayUiState> = _uiState.asStateFlow()
+
+    private val _events = MutableSharedFlow<TodayEvent>(extraBufferCapacity = 4)
+    val events: SharedFlow<TodayEvent> = _events.asSharedFlow()
+
+    private val selectedSchedule = MutableStateFlow<Set<String>>(emptySet())
+    private val fallbackSeed = MutableStateFlow(System.nanoTime())
+
+    /** 设置里的天气 Key；不进入 UI 状态，避免误显示/泄露。 */
+    private var weatherApiKey: String = ""
+    private var weatherJob: Job? = null
+
+    init {
+        observeSettings()
+        observeSchedule()
+        observeRecords()
+        observeRecommendations()
+    }
+
+    private fun observeSettings() {
+        viewModelScope.launch {
+            settingsStore.settings
+                .map { UserWeatherSettings(city = it.weatherCity.trim(), key = it.weatherApiKey) }
+                .distinctUntilChanged()
+                .collect { settings ->
+                    weatherApiKey = settings.key
+                    _uiState.update {
+                        it.copy(
+                            weatherCity = settings.city,
+                            hasWeatherKey = settings.key.isNotBlank(),
+                        )
+                    }
+                    reloadWeather()
+                }
+        }
+    }
+
+    private fun observeSchedule() {
+        viewModelScope.launch {
+            scheduleSelectionStore.observe().collect { selection ->
+                val tags = if (selection.date == today) selection.tags else emptySet()
+                selectedSchedule.value = tags
+                _uiState.update { it.copy(selectedSchedule = tags) }
+            }
+        }
+        viewModelScope.launch {
+            scheduleTagRepository.observeTags().collect { options ->
+                _uiState.update { it.copy(scheduleOptions = options) }
+            }
+        }
+    }
+
+    private fun observeRecords() {
+        viewModelScope.launch {
+            wearRepository.observeRecords(today).collect { records ->
+                _uiState.update { it.copy(records = records) }
+            }
+        }
+    }
+
+    private fun observeRecommendations() {
+        viewModelScope.launch {
+            combine(
+                outfitRepository.observeAllWithItems(),
+                clothingItemDao.observeAll(),
+                selectedSchedule,
+                _uiState.map { it.weather }.distinctUntilChanged(),
+                fallbackSeed,
+            ) { outfits, clothing, schedule, weather, seed ->
+                val input = RecommendationInput(
+                    outfits = outfits,
+                    weather = weather.recommendationWeather(),
+                    scheduleTags = schedule,
+                    today = today,
+                    allClothing = clothing.map { it.toDomain() }
+                        .filter { it.status == ClothingStatus.NORMAL },
+                )
+                val candidates = RecommendationEngine.recommend(input)
+                val fallback = if (candidates.isEmpty()) {
+                    buildFallbackCombination(input, seed)
+                } else {
+                    null
+                }
+                RecommendationUiSnapshot(
+                    candidates = candidates,
+                    visible = candidates.take(TodayUiState.PAGE_SIZE),
+                    fallback = fallback,
+                )
+            }.collect { recommendations ->
+                _uiState.update {
+                    it.copy(
+                        candidates = recommendations.candidates,
+                        visibleRecommendations = recommendations.visible,
+                        pageIndex = 0,
+                        fallback = recommendations.fallback,
+                    )
+                }
+            }
+        }
+    }
+
+    /** 首次进入或用户点重试时拉取；缓存按城市匹配，避免把杭州天气显示在上海卡片上。 */
+    fun reloadWeather() {
+        weatherJob?.cancel()
+        val city = _uiState.value.weatherCity
+        val key = weatherApiKey
+        if (key.isBlank()) {
+            updateWeather(WeatherUiState.NoKey)
+            return
+        }
+        weatherJob = viewModelScope.launch {
+            if (city.isBlank()) {
+                if (!locationProvider.hasCoarsePermission()) {
+                    updateWeather(WeatherUiState.NeedCity(locationDenied = true))
+                    return@launch
+                }
+                updateWeather(WeatherUiState.Loading)
+                val coordinates = runCatching { locationProvider.getCoarseCoordinates() }.getOrNull()
+                if (coordinates == null) {
+                    updateWeather(WeatherUiState.NeedCity(locationDenied = true))
+                    return@launch
+                }
+                fetchWeather(coordinates.toQueryValue(), key, cached = null)
+            } else {
+                val cached = weatherCacheStore.snapshot.first()
+                    ?.takeIf { it.matchesCity(city) }
+                updateWeather(
+                    if (cached != null) {
+                        WeatherUiState.Ready(cached, refreshing = true)
+                    } else {
+                        WeatherUiState.Loading
+                    },
+                )
+                fetchWeather(city, key, cached)
+            }
+        }
+    }
+
+    private suspend fun fetchWeather(query: String, key: String, cached: WeatherSnapshot?) {
+        try {
+            val snapshot = weatherRepository.fetch(query, key)
+            updateWeather(WeatherUiState.Ready(snapshot))
+        } catch (error: WeatherException) {
+            if (error.failure == WeatherFailure.NO_LOCATION) {
+                updateWeather(WeatherUiState.NeedCity(locationDenied = true))
+            } else {
+                updateWeather(WeatherUiState.Failed(cached = cached, failure = error.failure))
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            updateWeather(
+                WeatherUiState.Failed(cached = cached, failure = WeatherFailure.UNKNOWN),
+            )
+        }
+    }
+
+    /** 系统定位授权回来：有 Key 才重新取位；没有 Key 仍停在配置引导。 */
+    fun onLocationPermissionResult(granted: Boolean) {
+        if (!granted) {
+            updateWeather(WeatherUiState.NeedCity(locationDenied = true))
+            return
+        }
+        if (_uiState.value.hasWeatherKey) reloadWeather()
+    }
+
+    fun selectCity(city: String) {
+        val cleaned = city.trim()
+        if (cleaned.isEmpty()) return
+        viewModelScope.launch {
+            settingsStore.setWeatherCity(cleaned)
+            // 同一城市重复选择不会触发 settings 的 distinct 流，这里主动刷新一次。
+            reloadWeather()
+        }
+    }
+
+    fun useCurrentLocation() {
+        viewModelScope.launch {
+            settingsStore.setWeatherCity("")
+            reloadWeather()
+        }
+    }
+
+    fun toggleSchedule(tag: String) {
+        val next = _uiState.value.selectedSchedule.toMutableSet().apply {
+            if (!add(tag)) remove(tag)
+        }
+        applySchedule(next)
+    }
+
+    fun addCustomSchedule(raw: String) {
+        val cleaned = raw.trim()
+        if (cleaned.isEmpty()) return
+        viewModelScope.launch {
+            val value = scheduleTagRepository.addCustom(cleaned) ?: return@launch
+            applySchedule(_uiState.value.selectedSchedule + value)
+        }
+    }
+
+    private fun applySchedule(tags: Set<String>) {
+        selectedSchedule.value = tags
+        _uiState.update { it.copy(selectedSchedule = tags) }
+        viewModelScope.launch { scheduleSelectionStore.save(today, tags) }
+    }
+
+    fun shuffleRecommendations() {
+        val state = _uiState.value
+        if (state.candidates.isEmpty()) {
+            fallbackSeed.value = System.nanoTime()
+            return
+        }
+        val pages = state.candidates.chunked(TodayUiState.PAGE_SIZE)
+        if (pages.size <= 1) {
+            _events.tryEmit(TodayEvent.AllRecommendationsSeen)
+            return
+        }
+        val next = (state.pageIndex + 1) % pages.size
+        _uiState.update {
+            it.copy(pageIndex = next, visibleRecommendations = pages[next])
+        }
+        if (next == 0) _events.tryEmit(TodayEvent.AllRecommendationsSeen)
+    }
+
+    fun shuffleFallback() {
+        fallbackSeed.value = System.nanoTime()
+    }
+
+    fun confirmWear(outfitId: Long) {
+        if (_uiState.value.confirmingOutfitId != null) return
+        _uiState.update { it.copy(confirmingOutfitId = outfitId) }
+        viewModelScope.launch {
+            val snapshot = (_uiState.value.weather as? WeatherUiState.Ready)?.snapshot
+            val weatherJson = snapshot?.let {
+                json.encodeToString(WeatherSnapshot.serializer(), it)
+            }
+            try {
+                val repeated = _uiState.value.records.isNotEmpty()
+                wearRepository.confirmWear(
+                    outfitId = outfitId,
+                    date = today,
+                    scheduleTags = _uiState.value.selectedSchedule.sorted(),
+                    weatherJson = weatherJson,
+                    note = null,
+                )
+                _events.emit(TodayEvent.WearConfirmed(repeated = repeated))
+            } catch (error: WearException) {
+                _events.emit(TodayEvent.WearFailed(error.failure))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                _events.emit(TodayEvent.WearFailed(null))
+            } finally {
+                _uiState.update { it.copy(confirmingOutfitId = null) }
+            }
+        }
+    }
+
+    fun updateRecordNote(recordId: Long, note: String) {
+        viewModelScope.launch {
+            wearRepository.updateNote(recordId, note)
+        }
+    }
+
+    /** 回到今日页时若天气已超过 30 分钟，静默刷新；不打断已有卡片。 */
+    fun refreshWeatherIfStale() {
+        val snapshot = _uiState.value.weatherSnapshotOrNull ?: return
+        val age = System.currentTimeMillis() - snapshot.fetchedAt
+        if (age > WEATHER_STALE_MS) reloadWeather()
+    }
+
+    private fun updateWeather(weather: WeatherUiState) {
+        _uiState.update { it.copy(weather = weather) }
+    }
+
+    private data class RecommendationUiSnapshot(
+        val candidates: List<RecommendedOutfit>,
+        val visible: List<RecommendedOutfit>,
+        val fallback: FallbackCombination?,
+    )
+
+    private data class UserWeatherSettings(val city: String, val key: String)
+
+    private companion object {
+        const val WEATHER_STALE_MS = 30 * 60 * 1000L
+    }
+}
+
+private fun WeatherUiState.recommendationWeather(): WeatherFacts? {
+    val snapshot = when (this) {
+        is WeatherUiState.Ready -> snapshot
+        is WeatherUiState.Failed -> cached
+        else -> null
+    } ?: return null
+    return WeatherFacts(
+        minTemp = snapshot.minTemp,
+        maxTemp = snapshot.maxTemp,
+        phenomenon = snapshot.text,
+    )
+}
+
+private fun WeatherSnapshot.matchesCity(city: String): Boolean {
+    val target = city.trim()
+    return target.isNotEmpty() &&
+        (this.city == target || this.city.contains(target) || target.contains(this.city))
+}

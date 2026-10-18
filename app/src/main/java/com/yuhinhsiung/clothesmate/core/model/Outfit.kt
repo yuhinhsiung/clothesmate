@@ -76,6 +76,23 @@ data class OutfitDetail(
         get() = items.count { it.deleted }
 }
 
+/**
+ * 推荐引擎输入：穿搭 + 当前仍有效的衣物。
+ *
+ * [referencedItemCount] 是关联表里的总行数（含已软删），[items] 只含未删除行；
+ * 两者不等即说明穿搭含已删除衣物——§5.2 要求整排除（用计数判定，避免为了判定
+ * 再把软删行拉进推荐候选）。
+ */
+data class OutfitWithItems(
+    val outfit: Outfit,
+    val items: List<ClothingItem>,
+    val referencedItemCount: Int = items.size,
+) {
+    /** 所有关联衣物都有效、且至少一件 */
+    val isComplete: Boolean
+        get() = items.isNotEmpty() && items.size == referencedItemCount
+}
+
 /** 创建 / 编辑穿搭的入库载荷（M1-18）。照片路径已由表单层归位为相对路径。 */
 data class OutfitDraft(
     val name: String? = null,

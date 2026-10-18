@@ -91,6 +91,7 @@ fun OutfitDetailRoute(
     onBack: () -> Unit,
     onEdit: (Long) -> Unit,
     onItemDetailClick: (Long) -> Unit,
+    onWorn: () -> Unit,
     viewModel: OutfitDetailViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -104,10 +105,24 @@ fun OutfitDetailRoute(
     // 编辑保存回执 → Snackbar（与衣物编辑同模式）
     val savedSignal by viewModel.savedSignal.collectAsStateWithLifecycle()
     val savedText = stringResource(R.string.clothing_saved)
+    val wornSignal by viewModel.wornSignal.collectAsStateWithLifecycle()
+    val wearError by viewModel.wearError.collectAsStateWithLifecycle()
     LaunchedEffect(savedSignal) {
         if (savedSignal) {
             snackbarHostState.showSnackbar(savedText)
             viewModel.consumeSavedSignal()
+        }
+    }
+    LaunchedEffect(wornSignal) {
+        if (wornSignal) {
+            viewModel.consumeWornSignal()
+            onWorn()
+        }
+    }
+    LaunchedEffect(wearError) {
+        wearError?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.consumeWearError()
         }
     }
 
@@ -339,10 +354,10 @@ fun OutfitDetailRoute(
                     )
                 }
 
-                // ── 「今天穿这套」（M1 置灰，M3-06 实装） ──────────
+                // ── 「今天穿这套」（M3-06 实装） ──────────────────
                 Button(
-                    onClick = { },
-                    enabled = false,
+                    onClick = viewModel::wearToday,
+                    enabled = detail.outfit.itemCount > 0 && !uiState.wearing,
                     shape = RoundedCornerShape(Dimens.Radius.m),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -356,7 +371,9 @@ fun OutfitDetailRoute(
                     ),
                 ) {
                     Text(
-                        text = stringResource(R.string.outfit_wear_today),
+                        text = stringResource(
+                            if (uiState.wearing) R.string.outfit_wearing else R.string.outfit_wear_today,
+                        ),
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
@@ -559,6 +576,7 @@ class OutfitDetailViewModel @Inject constructor(
     private val outfitRepository: com.yuhinhsiung.clothesmate.feature.outfit.data.OutfitRepository,
     private val imageStorage: com.yuhinhsiung.clothesmate.core.image.ImageStorage,
     private val navResultBus: com.yuhinhsiung.clothesmate.ui.navigation.NavResultBus,
+    private val wearService: com.yuhinhsiung.clothesmate.feature.today.data.WearService,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -567,19 +585,28 @@ class OutfitDetailViewModel @Inject constructor(
     /** 删除弹窗用的「将同时彻底清除 N 件」预计算值（B-10 口径：独属本穿搭才计入） */
     private val clearableCount = MutableStateFlow(0)
 
+    private val _wearing = MutableStateFlow(false)
+
     val uiState: StateFlow<OutfitDetailUiState> = combine(
         outfitRepository.observeOutfitDetail(outfitId),
         clearableCount,
-    ) { detail, count ->
+        _wearing,
+    ) { detail, count, wearing ->
         when {
-            detail == null -> OutfitDetailUiState(notFound = true)
-            else -> OutfitDetailUiState(detail = detail, clearableCount = count)
+            detail == null -> OutfitDetailUiState(notFound = true, wearing = wearing)
+            else -> OutfitDetailUiState(detail = detail, clearableCount = count, wearing = wearing)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OutfitDetailUiState())
 
     /** 编辑保存回执（经 NavResultBus，review B-04 同根因修复） */
     private val _savedSignal = MutableStateFlow(false)
     val savedSignal: StateFlow<Boolean> = _savedSignal.asStateFlow()
+
+    private val _wornSignal = MutableStateFlow(false)
+    val wornSignal: StateFlow<Boolean> = _wornSignal.asStateFlow()
+
+    private val _wearError = MutableStateFlow<String?>(null)
+    val wearError: StateFlow<String?> = _wearError.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -592,6 +619,25 @@ class OutfitDetailViewModel @Inject constructor(
     fun consumeSavedSignal() {
         _savedSignal.value = false
         navResultBus.consumeOutfitSaved()
+    }
+
+    fun wearToday() {
+        if (_wearing.value) return
+        _wearing.value = true
+        viewModelScope.launch {
+            runCatching { wearService.confirmToday(outfitId) }
+                .onSuccess { _wornSignal.value = true }
+                .onFailure { _wearError.value = it.message ?: "记录失败，请重试" }
+            _wearing.value = false
+        }
+    }
+
+    fun consumeWornSignal() {
+        _wornSignal.value = false
+    }
+
+    fun consumeWearError() {
+        _wearError.value = null
     }
 
     /**
@@ -642,4 +688,5 @@ data class OutfitDetailUiState(
     val notFound: Boolean = false,
     /** 删除弹窗用的「将同时彻底清除 N 件」预计算值（B-10 口径：独属本穿搭才计入） */
     val clearableCount: Int = 0,
+    val wearing: Boolean = false,
 )

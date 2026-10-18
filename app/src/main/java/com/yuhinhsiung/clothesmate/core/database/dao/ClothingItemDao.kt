@@ -49,6 +49,21 @@ interface ClothingItemDao {
     @Query("UPDATE clothing_item SET wearCount = wearCount + 1, lastWornAt = :today, updatedAt = :today WHERE id = :id")
     suspend fun incrementWearCount(id: Long, today: Long)
 
+    /** 穿着确认（M3-06）：lastWornAt 只前进不回拨，补记旧日期不影响“最近穿过”。 */
+    @Query(
+        """
+        UPDATE clothing_item SET
+            wearCount = wearCount + 1,
+            lastWornAt = CASE
+                WHEN lastWornAt IS NULL OR lastWornAt < :wornAt THEN :wornAt
+                ELSE lastWornAt
+            END,
+            updatedAt = CASE WHEN updatedAt < :wornAt THEN :wornAt ELSE updatedAt END
+        WHERE id = :id
+        """,
+    )
+    suspend fun recordWear(id: Long, wornAt: Long)
+
     /** 撤销软删除：清除 deletedAt 标记（W-13 Snackbar 撤销） */
     @Query("UPDATE clothing_item SET deletedAt = NULL, updatedAt = :updatedAt WHERE id = :id")
     suspend fun restore(id: Long, updatedAt: Long)

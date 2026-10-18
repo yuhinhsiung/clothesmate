@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -209,7 +210,9 @@ class DataStoreUserSettingsStore @Inject constructor(
             aiStatus = if (config.isConfigured) storedStatus ?: AiStatus.Unverified else AiStatus.NotConfigured,
             aiStatusDetail = prefs[KEY_AI_STATUS_DETAIL],
             weatherCity = prefs[KEY_WEATHER_CITY].orEmpty(),
-            weatherApiKey = prefs[KEY_WEATHER_KEY].orEmpty(),
+            weatherApiKey = prefs[KEY_WEATHER_KEY].orEmpty().let { cipherText ->
+                if (cipherText.isEmpty()) "" else secretCipher.decrypt(cipherText).orEmpty()
+            },
         )
     }
 
@@ -252,9 +255,9 @@ class DataStoreUserSettingsStore @Inject constructor(
                 val applyModel = patch.model != null && accepts(AiConfigField.MODEL)
                 accepted = acceptedHere
                 val next = previous.copy(
-                    baseUrl = if (applyBase) patch.baseUrl!!.trim() else previous.baseUrl,
-                    apiKey = if (applyKey) patch.apiKey!!.trim() else previous.apiKey,
-                    model = if (applyModel) patch.model!!.trim() else previous.model,
+                    baseUrl = if (applyBase) patch.baseUrl?.trim().orEmpty() else previous.baseUrl,
+                    apiKey = if (applyKey) patch.apiKey?.trim().orEmpty() else previous.apiKey,
+                    model = if (applyModel) patch.model?.trim().orEmpty() else previous.model,
                 )
                 if (next == previous) return@edit
                 prefs[KEY_AI_BASE_URL] = next.baseUrl
@@ -319,7 +322,17 @@ class DataStoreUserSettingsStore @Inject constructor(
     }
 
     override suspend fun setWeatherApiKey(key: String) {
-        dataStore.edit { it[KEY_WEATHER_KEY] = key.trim() }
+        val trimmed = key.trim()
+        dataStore.edit { prefs ->
+            prefs[KEY_WEATHER_KEY] = if (trimmed.isEmpty()) {
+                ""
+            } else {
+                runCatching { secretCipher.encrypt(trimmed) }.getOrElse { failure ->
+                    android.util.Log.e("UserSettings", "天气 Key 加密失败，未落盘明文", failure)
+                    ""
+                }
+            }
+        }
     }
 
     /** 从 Preferences 还原完整 AI 配置（含解密）；读写两侧共用，避免口径漂移 */
