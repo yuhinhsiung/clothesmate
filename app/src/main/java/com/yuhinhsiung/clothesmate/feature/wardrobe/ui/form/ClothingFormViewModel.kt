@@ -536,7 +536,7 @@ class ClothingFormViewModel @Inject constructor(
                 throw cancelled
             } catch (failure: Throwable) {
                 // 静默降级（§2.2.3）：不弹错、不阻断保存
-                android.util.Log.w(LOG_TAG, "AI 识别降级：${failure.javaClass.simpleName}")
+                android.util.Log.w(LOG_TAG, "AI 识别降级：${failure.javaClass.simpleName}: ${failure.message}")
                 _uiState.update {
                     it.copy(aiPhase = AiPhase.Degraded, aiDegrade = AiDegradeReason.Failed)
                 }

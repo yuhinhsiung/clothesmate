@@ -127,12 +127,16 @@ interface UserSettingsStore {
 @Singleton
 class DataStoreUserSettingsStore @Inject constructor(
     private val dataStore: DataStore<Preferences>,
+    private val secretCipher: SecretCipher,
 ) : UserSettingsStore {
 
     override val settings: Flow<UserSettings> = dataStore.data.map { prefs ->
         val config = AiConfig(
             baseUrl = prefs[KEY_AI_BASE_URL].orEmpty(),
-            apiKey = prefs[KEY_AI_KEY].orEmpty(),
+            // 只对外暴露明文；落盘的是 Keystore 加密后的 Base64（见 saveAiConfig）
+            apiKey = prefs[KEY_AI_KEY].orEmpty().let { cipherText ->
+                if (cipherText.isEmpty()) "" else secretCipher.decrypt(cipherText).orEmpty()
+            },
             model = prefs[KEY_AI_MODEL].orEmpty(),
         )
         val storedStatus = prefs[KEY_AI_STATUS]?.let { key ->
@@ -164,11 +168,23 @@ class DataStoreUserSettingsStore @Inject constructor(
         dataStore.edit { prefs ->
             val previous = AiConfig(
                 baseUrl = prefs[KEY_AI_BASE_URL].orEmpty(),
-                apiKey = prefs[KEY_AI_KEY].orEmpty(),
+                // 只对外暴露明文；落盘的是 Keystore 加密后的 Base64（见下方写入）
+                apiKey = prefs[KEY_AI_KEY].orEmpty().let { cipherText ->
+                    if (cipherText.isEmpty()) "" else secretCipher.decrypt(cipherText).orEmpty()
+                },
                 model = prefs[KEY_AI_MODEL].orEmpty(),
             )
             prefs[KEY_AI_BASE_URL] = next.baseUrl
-            prefs[KEY_AI_KEY] = next.apiKey
+            // 绝不回退明文：加密失败就写空，让用户重新填写（并在设置页表现为未配置）。
+            // 旧版本遗留的明文 Key 在读取时解密失败 → 视为空，同样需要重填。
+            prefs[KEY_AI_KEY] = if (next.apiKey.isEmpty()) {
+                ""
+            } else {
+                runCatching { secretCipher.encrypt(next.apiKey) }.getOrElse { failure ->
+                    android.util.Log.e("UserSettings", "API Key 加密失败，未落盘明文", failure)
+                    ""
+                }
+            }
             prefs[KEY_AI_MODEL] = next.model
             // 端点或凭据变化 → 隐私授权重新询问（M2-06 验收：清空 Key 后再次弹窗）
             if (previous.baseUrl != next.baseUrl || previous.apiKey != next.apiKey) {
@@ -191,8 +207,10 @@ class DataStoreUserSettingsStore @Inject constructor(
 
     override suspend fun setAiStatus(status: AiStatus, detail: String?) {
         dataStore.edit { prefs ->
+            val apiKey = prefs[KEY_AI_KEY].orEmpty()
             val configured = !prefs[KEY_AI_BASE_URL].isNullOrBlank() &&
-                !prefs[KEY_AI_KEY].isNullOrBlank() &&
+                apiKey.isNotEmpty() &&
+                secretCipher.decrypt(apiKey) != null &&
                 !prefs[KEY_AI_MODEL].isNullOrBlank()
             if (!configured) {
                 prefs[KEY_AI_STATUS] = AiStatus.NotConfigured.name
@@ -236,6 +254,11 @@ abstract class UserSettingsModule {
     @Binds
     @Singleton
     abstract fun bindUserSettingsStore(impl: DataStoreUserSettingsStore): UserSettingsStore
+
+    /** API Key 静态加密（Android Keystore AES-GCM；不引入第三方库） */
+    @Binds
+    @Singleton
+    abstract fun bindSecretCipher(impl: AndroidKeystoreSecretCipher): SecretCipher
 }
 
 /**

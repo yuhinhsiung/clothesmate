@@ -255,7 +255,7 @@
     <string name="settings_ai_model_hint">如 gpt-4o-mini / qwen-vl-max</string>
     <string name="settings_ai_test">测试连接</string>
     <string name="settings_ai_testing">正在测试…</string>
-    <string name="settings_ai_note">仅上传单件衣物照片到你自己配置的端点，App 不经过任何服务器。远程端点建议使用 https。</string>
+    <string name="settings_ai_note">API Key 加密存储在本机；仅上传单件衣物照片到你自己配置的端点，App 不经过任何服务器。远程端点建议使用 https。</string>
     <string name="settings_ai_status_not_configured">未配置</string>
     <string name="settings_ai_status_unverified">未验证</string>
     <string name="settings_ai_status_verified">已验证 · 可用</string>
@@ -303,7 +303,7 @@
 
     <!-- 确认页 AI 预填（M2-04，UI 文档 §7.3 / mockup-06） -->
     <string name="ai_badge">AI</string>
-    <string name="ai_color_badge">本地提取</string>
+    <string name="color_local_badge">本地提取</string>
     <string name="ai_running">AI 识别中…</string>
     <string name="ai_cancel">取消识别</string>
     <string name="ai_prefilled_hint">带 ✨ 的字段由 AI 预填，可逐项修改</string>

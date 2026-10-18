@@ -311,7 +311,12 @@ private fun ClothingFormContent(
             // ── 主颜色：12 色点选（多选） ──────────────────────
             FormSectionLabel(
                 text = stringResource(R.string.form_section_color),
-                aiBadge = if (state.colorsAutoFilled) stringResource(R.string.ai_color_badge) else null,
+                // 本地取色**不是 AI**：中性文字标识，不用 ✨ 琥珀金（用户 2026-10-18 拍板）
+                localBadge = if (state.colorsAutoFilled) {
+                    stringResource(R.string.color_local_badge)
+                } else {
+                    null
+                },
             )
             ChipGroup(
                 options = ClothingColor.entries.map { color ->
@@ -323,7 +328,8 @@ private fun ClothingFormContent(
                 },
                 selectedKeys = state.colorKeys.toSet(),
                 onToggle = onColorToggle,
-                accentSelectedKeys = if (state.colorsAutoFilled) state.colorKeys.toSet() else emptySet(),
+                // 本地取色的选中态用普通 primaryContainer，不加 AI 金色描边
+                accentSelectedKeys = emptySet(),
             )
 
             // ── 风格：联想 chips + 自定义 ──────────────────────
@@ -475,9 +481,13 @@ private fun ClothingFormContent(
     }
 }
 
-/** 表单分组标签（§6.7「标签常驻上方」）；M2-04 可带 ✨ AI 角标。 */
+/** 表单分组标签（§6.7「标签常驻上方」）；可带 ✨ AI 角标或中性「本地提取」文字。 */
 @Composable
-private fun FormSectionLabel(text: String, aiBadge: String? = null) {
+private fun FormSectionLabel(
+    text: String,
+    aiBadge: String? = null,
+    localBadge: String? = null,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(top = Dimens.Space.s5, bottom = Dimens.Space.s2),
@@ -489,6 +499,13 @@ private fun FormSectionLabel(text: String, aiBadge: String? = null) {
         )
         if (aiBadge != null) {
             AiBadge(label = aiBadge, modifier = Modifier.padding(start = Dimens.Space.s1))
+        } else if (localBadge != null) {
+            Text(
+                text = localBadge,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onMuted,
+                modifier = Modifier.padding(start = Dimens.Space.s1),
+            )
         }
     }
 }
