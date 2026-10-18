@@ -9,7 +9,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -26,18 +25,16 @@ class DefaultImageStore @Inject constructor(
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ImageStore {
 
-    /** 暂存序号：单调递增，保证一次会话内多个暂存图不互相覆盖 */
-    private val stashSeq = AtomicLong(0)
-
-    /** 抠图暂存序号（与选图暂存分开计数，文件后缀也不同） */
-    private val cutoutSeq = AtomicLong(0)
-
     private val stashDir: File
         get() = File(context.cacheDir, STASH_DIR)
 
     override suspend fun stash(uri: Uri): StagedImage = withContext(ioDispatcher) {
         if (!stashDir.exists()) stashDir.mkdirs()
-        val target = File(stashDir, "staged_${stashSeq.incrementAndGet()}.jpg")
+        // R01：文件名必须**跨进程唯一**——SavedStateHandle 草稿会跨进程保留暂存路径，
+        // 进程内计数器重建后从 0 开始会复用同名文件并覆盖仍在草稿里的图片。
+        // createTempFile 由系统保证原子创建、不重名；目标先以空文件存在，
+        // 压缩器随后用「临时文件 + rename」替换它。
+        val target = File.createTempFile("staged_", ".jpg", stashDir)
         val size = compressor.compress(Source.Uri(uri), target)
         StagedImage(file = target, byteSize = size)
     }
@@ -137,7 +134,8 @@ class DefaultImageStore @Inject constructor(
         if (!dir.exists() && !dir.mkdirs() && !dir.exists()) {
             throw ImageProcessException("无法创建抠图暂存目录：${dir.path}")
         }
-        val target = File(dir, "cutout_${cutoutSeq.incrementAndGet()}.png")
+        // 同上：抠图 PNG 也跨进程保留在草稿里，必须唯一
+        val target = File.createTempFile("cutout_", ".png", dir)
         val tmp = File(dir, target.name + TEMP_SUFFIX)
         try {
             FileOutputStream(tmp).use { output ->

@@ -1,6 +1,8 @@
 package com.yuhinhsiung.clothesmate.feature.addclothing.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -31,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -221,6 +225,7 @@ private fun TwoSegmentControl(
         modifier = Modifier
             .fillMaxWidth()
             .height(Dimens.settingsSegmentHeight)
+            .selectableGroup()
             .background(
                 color = MaterialTheme.colorScheme.muted,
                 shape = RoundedCornerShape(Dimens.Radius.m),
@@ -242,6 +247,7 @@ private fun androidx.compose.foundation.layout.RowScope.Segment(
         modifier = Modifier
             .weight(1f)
             .fillMaxSize()
+            .minimumInteractiveComponentSize()
             .background(
                 color = if (selected) {
                     MaterialTheme.colorScheme.surface
@@ -250,7 +256,11 @@ private fun androidx.compose.foundation.layout.RowScope.Segment(
                 },
                 shape = RoundedCornerShape(Dimens.Radius.s + Dimens.Space.s1),
             )
-            .clickable(onClick = onClick),
+            .selectable(
+                selected = selected,
+                onClick = onClick,
+                role = Role.RadioButton,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Text(

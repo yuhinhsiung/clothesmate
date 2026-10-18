@@ -141,6 +141,8 @@
     <string name="form_custom_tag">自定义标签</string>
     <string name="form_custom_tag_hint">输入标签，如「极简」</string>
     <string name="clothing_saved">已保存</string>
+    <string name="form_image_missing">原图暂存已失效，请重试或返回重新选图</string>
+    <string name="form_image_retry">重试</string>
 
     <!-- 穿搭分类首页（M1-17，UI 文档 §7.4 / mockup-07） -->
     <string name="outfit_create">创建穿搭</string>

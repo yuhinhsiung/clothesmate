@@ -29,6 +29,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
+import com.yuhinhsiung.clothesmate.ui.theme.accentText
 import com.yuhinhsiung.clothesmate.ui.theme.muted
 import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 
@@ -79,7 +80,7 @@ fun WardrobeDeleteDialog(
                             uiState.deletedItemCount,
                         ),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.tertiary,
+                        color = MaterialTheme.colorScheme.accentText,
                         modifier = Modifier.padding(top = Dimens.Space.s1),
                     )
                 }

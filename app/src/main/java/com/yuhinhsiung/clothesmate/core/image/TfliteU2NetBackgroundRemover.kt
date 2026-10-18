@@ -8,7 +8,10 @@ import androidx.core.graphics.createBitmap
 import androidx.core.graphics.scale
 import com.yuhinhsiung.clothesmate.core.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -18,6 +21,7 @@ import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.GpuDelegate
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.Executors
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
@@ -55,6 +59,22 @@ class TfliteU2NetBackgroundRemover @Inject constructor(
     private val inferenceMutex = Mutex()
     private val initMutex = Mutex()
 
+    /**
+     * GPU delegate 官方要求「创建 / 执行 / 释放」在同一线程（M2-R04）。共享的
+     * Dispatchers.IO 只保证串行、不保证线程，故给推理单独一条单线程执行器；
+     * CPU 路径也走同一条，行为一致。
+     */
+    private val inferenceDispatcher: CoroutineDispatcher = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "cm-cutout-inference").apply { isDaemon = true }
+    }.asCoroutineDispatcher()
+
+    /** 模型字节缓存：GPU 失败回退 CPU 时复用，避免二次读 assets */
+    private var modelBuffer: ByteBuffer? = null
+
+    /** 当前解释器是否使用 GPU delegate（决定正式推理失败时是否回退） */
+    @Volatile
+    private var gpuActive = false
+
     /** 懒初始化；失败不缓存异常，下一次调用允许重试（例如内存瞬时不足） */
     @Volatile
     private var interpreter: Interpreter? = null
@@ -67,20 +87,29 @@ class TfliteU2NetBackgroundRemover @Inject constructor(
     private var mainOutputSlot: Int? = null
 
     override suspend fun removeBackground(uri: Uri, timeoutMillis: Long): Bitmap =
-        withTimeout(timeoutMillis) {
-            withContext(ioDispatcher) {
-                val source = bitmapLoader.decode(uri, CutoutSpec.DECODE_MAX_EDGE)
+        try {
+            withTimeout(timeoutMillis) {
+                val source = withContext(ioDispatcher) {
+                    bitmapLoader.decode(uri, CutoutSpec.DECODE_MAX_EDGE)
+                }
                 try {
-                    val engine = ensureInterpreter()
-                    coroutineContext.ensureActive()
-                    val input = buildInput(source, engine)
-                    val mask = runInference(engine, input)
-                    coroutineContext.ensureActive()
-                    applyMask(source, mask)
+                    // 创建 / 执行 / 释放 GPU 解释器必须同线程（M2-R04）
+                    withContext(inferenceDispatcher) {
+                        val engine = ensureInterpreter()
+                        coroutineContext.ensureActive()
+                        val input = buildInput(source, engine)
+                        val mask = runInferenceWithFallback(engine, input)
+                        coroutineContext.ensureActive()
+                        applyMask(source, mask)
+                    }
                 } finally {
                     source.recycle()
                 }
             }
+        } catch (timeout: TimeoutCancellationException) {
+            // M2-R03：这是**本次操作超时**，不是页面销毁/用户取消；必须转领域异常，
+            // 否则预览页会把它当外部取消重新抛出，界面永远停在「处理中」。
+            throw BackgroundRemovalException("抠图超时，请使用原图或重试", timeout)
         }
 
     /** 懒加载模型 + 尝试 GPU；GPU 建不起来就回退 CPU（不抛错）。 */
@@ -88,7 +117,7 @@ class TfliteU2NetBackgroundRemover @Inject constructor(
         interpreter?.let { return it }
         return initMutex.withLock {
             interpreter?.let { return@withLock it }
-            val buffer = readModelAsset()
+            val buffer = modelBuffer ?: readModelAsset().also { modelBuffer = it }
             var candidate: Interpreter? = null
             val gpu = runCatching {
                 val options = Interpreter.Options()
@@ -100,7 +129,8 @@ class TfliteU2NetBackgroundRemover @Inject constructor(
                 // 空跑一次验证 delegate 真能执行（建得起来 ≠ 跑得动）
                 runInference(candidate!!, zeroInput(candidate!!))
                 candidate
-            }.getOrElse {
+            }.getOrElse { failure ->
+                if (failure is CancellationException) throw failure
                 // 清理半成品：先关解释器再关 delegate，与创建顺序相反
                 runCatching { candidate?.close() }
                 candidate = null
@@ -110,16 +140,53 @@ class TfliteU2NetBackgroundRemover @Inject constructor(
             }
             if (gpu != null) {
                 interpreter = gpu
+                gpuActive = true
                 return@withLock gpu
             }
             // CPU 回退
-            val cpu = Interpreter(
-                buffer,
-                Interpreter.Options().setNumThreads(CPU_THREADS).setUseXNNPACK(false),
-            )
+            val cpu = createCpuInterpreter(buffer)
             interpreter = cpu
+            gpuActive = false
             cpu
         }
+    }
+
+    private fun createCpuInterpreter(buffer: ByteBuffer): Interpreter =
+        Interpreter(
+            buffer,
+            Interpreter.Options().setNumThreads(CPU_THREADS).setUseXNNPACK(false),
+        )
+
+    /**
+     * 正式推理的 GPU 失败兜底（M2-R04）：初始化成功不代表后续永远成功。
+     * 在**同一推理线程**关闭 GPU 解释器/delegate，换 CPU 重跑一次；
+     * 外部取消继续向上传播。
+     */
+    private suspend fun runInferenceWithFallback(
+        engine: Interpreter,
+        input: ByteBuffer,
+    ): FloatArray = try {
+        runInference(engine, input)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Throwable) {
+        if (!gpuActive) throw failure
+        android.util.Log.w(TAG, "GPU 推理失败，关闭并回退 CPU", failure)
+        closeGpu()
+        val buffer = modelBuffer
+            ?: throw BackgroundRemovalException("抠图模型缓存丢失，请使用原图", failure)
+        val cpu = createCpuInterpreter(buffer)
+        interpreter = cpu
+        gpuActive = false
+        runInference(cpu, input)
+    }
+
+    private fun closeGpu() {
+        runCatching { interpreter?.close() }
+        interpreter = null
+        runCatching { gpuDelegate?.close() }
+        gpuDelegate = null
+        gpuActive = false
     }
 
     private fun readModelAsset(): ByteBuffer {
@@ -343,6 +410,7 @@ class TfliteU2NetBackgroundRemover @Inject constructor(
     }
 
     private companion object {
+        const val TAG = "TfliteCutout"
         const val CPU_THREADS = 4
 
         /** d0 的张量名以 PartitionedCall:0 结尾（其余侧输出是 :1..:6） */

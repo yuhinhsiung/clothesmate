@@ -43,6 +43,14 @@ val LightOnMuted = Color(0xFF5C4756)
 val LightOutline = Color(0xFFF0D9E3)
 val LightError = Color(0xFFDC2626)
 val LightOnError = Color(0xFFFFFFFF)
+/**
+ * 小字号**文字**用的深琥珀金（U01）：`LightAccent #D97706` 对白仅 3.19:1，
+ * 不满足正文 4.5:1；图标/描边仍用 `lightAccent`（图形 3:1 达标）。
+ * `#92400E` 对白约 7.0:1。
+ */
+val LightAccentText = Color(0xFF92400E)
+/** 小字号成功绿文字（U01）：`StatusOk #16A34A` 对白 3.30:1 → 深绿约 6.4:1 */
+val LightStatusOkText = Color(0xFF166534)
 
 // ── 深色模式 ───────────────────────────────────────────────────
 
@@ -68,6 +76,10 @@ val DarkOnMuted = Color(0xFFB69FAD)
 val DarkOutline = Color(0xFF4A3941)
 val DarkError = Color(0xFFF87171)
 val DarkOnError = Color(0xFF4A0B0B)
+/** 深色下小字号琥珀文字：沿用 `DarkAccent`（对深底对比充足） */
+val DarkAccentText = DarkAccent
+/** 深色下小字号成功绿文字（U01）：浅绿对深底约 10:1 */
+val DarkStatusOkText = Color(0xFF86EFAC)
 
 // ── 图表色阶（概览页，取自主色系，不另造色）────────────────────
 

@@ -61,6 +61,7 @@ import com.yuhinhsiung.clothesmate.ui.component.ShimmerCard
 import com.yuhinhsiung.clothesmate.ui.component.SelectableChip
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
+import com.yuhinhsiung.clothesmate.ui.theme.accentText
 import com.yuhinhsiung.clothesmate.ui.theme.muted
 import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 
@@ -155,6 +156,7 @@ fun ClothingFormRoute(
             onAddCustomStyle = { showCustomTag = true },
             onCancelAi = viewModel::cancelRecognition,
             onOpenSettings = onOpenSettings,
+            onRetryImage = viewModel::retryImageStash,
             onSave = {
                 viewModel.save { wardrobeId, isEdit ->
                     if (isEdit) onSavedEdit() else onSavedCreate(wardrobeId)
@@ -230,6 +232,7 @@ private fun ClothingFormContent(
     onAddCustomStyle: () -> Unit,
     onCancelAi: () -> Unit,
     onOpenSettings: () -> Unit,
+    onRetryImage: () -> Unit,
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -275,6 +278,32 @@ private fun ClothingFormContent(
         }
 
         Column(modifier = Modifier.padding(horizontal = Dimens.pagePadding)) {
+
+            // ── R02：恢复时原图暂存失效，保存已禁用，给重试/返回重选入口 ──
+            if (state.imageUnavailable && !state.isEdit) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = Dimens.Space.s3)
+                        .clip(RoundedCornerShape(Dimens.Radius.s))
+                        .background(MaterialTheme.colorScheme.muted)
+                        .padding(start = Dimens.Space.s3),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.form_image_missing),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onMuted,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onRetryImage) {
+                        Text(
+                            text = stringResource(R.string.form_image_retry),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
+            }
 
             // ── M2-04 AI 三态区（识别中 / 已预填 / 降级） ─────────
             AiStatusBanner(
@@ -531,7 +560,7 @@ private fun AiBadge(label: String, modifier: Modifier = Modifier) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.tertiary,
+            color = MaterialTheme.colorScheme.accentText,
             modifier = Modifier.padding(start = Dimens.Space.s1),
         )
     }

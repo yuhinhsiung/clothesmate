@@ -1,6 +1,8 @@
 package com.yuhinhsiung.clothesmate.feature.settings.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +33,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -41,6 +44,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -61,7 +65,7 @@ import com.yuhinhsiung.clothesmate.ui.component.CmTextField
 import com.yuhinhsiung.clothesmate.ui.component.privacyEndpointHost
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
-import com.yuhinhsiung.clothesmate.ui.theme.StatusOk
+import com.yuhinhsiung.clothesmate.ui.theme.statusOkText
 import com.yuhinhsiung.clothesmate.ui.theme.muted
 import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 
@@ -307,6 +311,7 @@ private fun ThemeModeRow(
                 .padding(top = Dimens.Space.s3)
                 .fillMaxWidth()
                 .height(Dimens.settingsSegmentHeight)
+                .selectableGroup()
                 .background(
                     color = MaterialTheme.colorScheme.muted,
                     shape = RoundedCornerShape(Dimens.Radius.s + Dimens.Space.s1),
@@ -324,6 +329,7 @@ private fun ThemeModeRow(
                     modifier = Modifier
                         .weight(1f)
                         .height(Dimens.settingsSegmentHeight - Dimens.Space.s2)
+                        .minimumInteractiveComponentSize()
                         .background(
                             color = if (selected) {
                                 MaterialTheme.colorScheme.surface
@@ -332,7 +338,11 @@ private fun ThemeModeRow(
                             },
                             shape = RoundedCornerShape(Dimens.Radius.s),
                         )
-                        .clickable { onChange(mode) },
+                        .selectable(
+                            selected = selected,
+                            onClick = { onChange(mode) },
+                            role = Role.RadioButton,
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -363,7 +373,7 @@ private fun AiConfigCard(
     var showKey by rememberSaveable { mutableStateOf(false) }
     val statusColor = when (state.aiStatus) {
         AiStatus.NotConfigured, AiStatus.Unverified -> MaterialTheme.colorScheme.onMuted
-        AiStatus.Verified -> StatusOk
+        AiStatus.Verified -> MaterialTheme.colorScheme.statusOkText
         AiStatus.Failed -> MaterialTheme.colorScheme.error
     }
     val statusText = when (state.aiStatus) {

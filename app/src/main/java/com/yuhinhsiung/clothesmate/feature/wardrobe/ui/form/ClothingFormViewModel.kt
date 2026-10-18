@@ -18,6 +18,7 @@ import com.yuhinhsiung.clothesmate.core.datastore.AiStatus
 import com.yuhinhsiung.clothesmate.core.datastore.UserSettingsStore
 import com.yuhinhsiung.clothesmate.core.image.BitmapLoader
 import com.yuhinhsiung.clothesmate.core.image.ImageStorage
+import com.yuhinhsiung.clothesmate.core.image.ImageProcessException
 import com.yuhinhsiung.clothesmate.core.image.ImageStore
 import com.yuhinhsiung.clothesmate.core.image.LocalColorExtractorService
 import com.yuhinhsiung.clothesmate.core.image.StagedImage
@@ -106,6 +107,9 @@ class ClothingFormViewModel @Inject constructor(
     /** 草稿已清（保存/放弃）；此后不再把状态写回 SavedStateHandle */
     private var draftCleared = false
 
+    /** R08：暂存文件是否已释放，避免 onCleared 重复删除 */
+    private var stagedResourcesReleased = false
+
     /**
      * 初始数据是否已就绪。**编辑模式在 loadForEdit 完成前不能写草稿**——
      * 否则进程恰好死在那几毫秒里，会留下「isEdit=true 但字段全空」的假草稿，
@@ -164,41 +168,96 @@ class ClothingFormViewModel @Inject constructor(
         staged = stagedFile?.let { StagedImage(file = it, byteSize = it.length()) }
         val cutoutFile = draft.cutoutStagedPath?.let(::File)?.takeIf { it.exists() && it.length() > 0 }
         stagedCutout = cutoutFile?.let { StagedImage(file = it, byteSize = it.length()) }
-        _uiState.value = draft.toUiState(ClothingFormUiState(isEdit = editingId != null))
+        _uiState.value = draft.toUiState(ClothingFormUiState(isEdit = editingId != null)).let { state ->
+            val hasStaged = staged?.file?.exists() == true
+            val hasCutout = stagedCutout?.file?.exists() == true
+            state.copy(
+                // R02：恢复时必须显式给出图片就绪态；缺失暂存图时先进入处理态，
+                // 重新压缩完成前 canSave 必须为 false。
+                imageReady = editingId != null || hasStaged,
+                compressing = editingId == null && !hasStaged && route.imageUri != null,
+                imageUnavailable = editingId == null && !hasStaged && route.imageUri == null,
+                // 展示路径按实际存在性重算：草稿里的抠图路径可能已被系统清掉
+                imagePath = if (editingId == null) {
+                    stagedCutout?.file?.path ?: staged?.file?.path ?: state.imagePath
+                } else {
+                    state.imagePath
+                },
+                imageIsCutout = if (editingId == null) hasCutout else state.imageIsCutout,
+            )
+        }
         draftReady = true
 
         if (editingId == null) {
-            if (staged == null && route.imageUri != null) {
-                // 暂存原图丢了：重新压一份，字段草稿保留
-                viewModelScope.launch {
-                    runCatching { imageStore.stash(route.imageUri.toUri()) }
-                        .onSuccess { result ->
-                            staged = result
-                            _uiState.update { state ->
-                                state.copy(
-                                    compressing = false,
-                                    imagePath = stagedCutout?.file?.path ?: result.file.path,
-                                    imageIsCutout = stagedCutout != null,
-                                )
-                            }
-                        }
-                        .onFailure { failure ->
-                            _uiState.update {
-                                it.copy(
-                                    compressing = false,
-                                    error = failure.message ?: "图片处理失败，请重试",
-                                )
-                            }
-                        }
-                }
+            if (staged?.file?.exists() == true) {
+                startColorExtraction()
+                evaluateAiStart()
+            } else if (route.imageUri != null) {
+                restashOriginal()
             }
-            startColorExtraction()
-            evaluateAiStart()
         }
     }
 
+    /**
+     * R02：缓存里的暂存原图丢失时重新压缩。期间 compressing=true、imageReady=false，
+     * 保存按钮禁用；失败时保留字段草稿并给出「重试 / 返回重新选图」入口。
+     */
+    private fun restashOriginal() {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    compressing = true,
+                    imageReady = false,
+                    imageUnavailable = false,
+                    error = null,
+                )
+            }
+            runCatching { route.imageUri?.let { uri -> imageStore.stash(uri.toUri()) } }
+                .onSuccess { result ->
+                    staged = result
+                    val ready = result != null && result.file.exists()
+                    _uiState.update {
+                        it.copy(
+                            compressing = false,
+                            imageReady = ready,
+                            imageUnavailable = !ready,
+                            imagePath = stagedCutout?.file?.path ?: result?.file?.path,
+                            imageIsCutout = stagedCutout != null,
+                        )
+                    }
+                    if (ready) {
+                        startColorExtraction()
+                        evaluateAiStart()
+                    }
+                }
+                .onFailure { failure ->
+                    staged = null
+                    _uiState.update {
+                        it.copy(
+                            compressing = false,
+                            imageReady = false,
+                            imageUnavailable = true,
+                            error = failure.message ?: "图片处理失败，请重试",
+                        )
+                    }
+                }
+        }
+    }
+
+    /** UI「重试」：重新压缩路由带来的原图；失败仍停在不可保存态 */
+    fun retryImageStash() {
+        if (editingId != null) return
+        if (route.imageUri == null) {
+            _uiState.update { it.copy(imageUnavailable = true) }
+            return
+        }
+        restashOriginal()
+    }
+
     private fun prepareCreate() {
-        _uiState.update { it.copy(compressing = true) }
+        _uiState.update {
+            it.copy(compressing = true, imageReady = false, imageUnavailable = false)
+        }
         viewModelScope.launch {
             // 图与默认衣柜互不依赖，并行取
             val stashJob = launch {
@@ -206,18 +265,24 @@ class ClothingFormViewModel @Inject constructor(
                     route.imageUri?.let { uri -> imageStore.stash(uri.toUri()) }
                 }.onSuccess { result ->
                     staged = result
+                    // R02：没有有效原图时不能进入可保存态（避免保存出无图衣物）
                     _uiState.update {
                         it.copy(
                             compressing = false,
+                            imageReady = result != null && result.file.exists(),
+                            imageUnavailable = result == null || !result.file.exists(),
                             // 有抠图时确认页展示抠图（透明底铺 muted），否则原图
                             imagePath = stagedCutout?.file?.path ?: result?.file?.path,
                             imageIsCutout = stagedCutout != null,
                         )
                     }
                 }.onFailure { failure ->
+                    staged = null
                     _uiState.update {
                         it.copy(
                             compressing = false,
+                            imageReady = false,
+                            imageUnavailable = true,
                             error = failure.message ?: "图片处理失败，请重试",
                         )
                     }
@@ -263,6 +328,8 @@ class ClothingFormViewModel @Inject constructor(
                     isEdit = true,
                     imagePath = item.displayImagePath,
                     imageIsCutout = item.cutoutImagePath != null,
+                    // 编辑模式照片只读，不依赖暂存原图；允许保存字段修改
+                    imageReady = true,
                     name = item.name.orEmpty(),
                     categoryKey = item.categoryKey,
                     // 编辑预填：展开既有类别所属大类（B-02 两级上下文完整可见）
@@ -368,7 +435,8 @@ class ClothingFormViewModel @Inject constructor(
         val tag = raw.trim()
         if (tag.isEmpty()) return
         updateField(AutoFillField.STYLE) { state ->
-            if (tag in state.styleTags) state else state.copy(styleTags = state.styleTags + tag)
+            // U03：用户自己输入/确认的标签不再是「AI 预填」，必须清掉 ✨ 来源角标
+            state.withCustomStyleTag(tag)
         }
     }
 
@@ -435,9 +503,9 @@ class ClothingFormViewModel @Inject constructor(
     private fun evaluateAiStart() {
         if (editingId != null || aiStarted || staged == null) return
         val state = _uiState.value
-        if (state.aiPhase == AiPhase.Running) return
-        // 草稿恢复时已有建议/已预填：不再重跑一次识别（避免重复计费与覆盖恢复态）
-        if (state.aiPhase == AiPhase.Prefilled || state.aiSuggestions != null) return
+        // R07：取消是**终止态**。草稿恢复时若曾经「取消识别」，不能因为设置流重新发射
+        // 或进程重建又自动发起一次识别（用户已经明确不要这次识别）。
+        if (shouldSkipAutoAi(state)) return
         when {
             !aiConfig.isConfigured -> {
                 if (state.aiPhase != AiPhase.Degraded || state.aiDegrade != AiDegradeReason.NotConfigured) {
@@ -617,6 +685,10 @@ class ClothingFormViewModel @Inject constructor(
      * 先 insert 拿 id，再把暂存图归位到 `clothing/original/{id}.jpg` 并回写路径。
      */
     private suspend fun saveCreate(state: ClothingFormUiState): Long {
+        // R02：最后一道防线——canSave 已要求原图就绪，这里再校验一次，
+        // 宁可报错重试，也不允许写入一条没有照片的衣物。
+        val original = staged?.takeIf { it.file.exists() }
+            ?: throw ImageProcessException("原图尚未就绪，请稍后重试或返回重新选图")
         val code = if (state.codeTouched) state.code.trim() else codeAllocator.nextCode()
         val now = System.currentTimeMillis()
         val id = clothingRepository.createItem(
@@ -646,7 +718,7 @@ class ClothingFormViewModel @Inject constructor(
         // 暂存源，只删归位产物的话草稿指向的文件已经不存在，用户按提示重试仍然失败。
         // 退回之后草稿恢复成可重试状态，同时不留孤儿图片文件。
         try {
-            staged?.let { image ->
+            original.let { image ->
                 val path = imageStore.promote(image, imageStorage.clothingOriginalFile(id))
                 clothingRepository.getItem(id)?.let { item ->
                     clothingRepository.updateItem(item.copy(originalImagePath = path))
@@ -656,9 +728,7 @@ class ClothingFormViewModel @Inject constructor(
             runCatching {
                 // 先把已归位的原图退回暂存区（R-14）：promote 会 consume 暂存源，
                 // 只删归位产物的话草稿指向的文件已经不存在，用户按提示重试仍然失败
-                staged?.let { image ->
-                    imageStore.restoreStaged(image, imageStorage.clothingOriginalFile(id))
-                }
+                imageStore.restoreStaged(original, imageStorage.clothingOriginalFile(id))
                 // 再回滚数据库：删行 + **撤回本次预约的编号占用**。
                 // 不撤回的话，同一个草稿重试会被「编号 500 已被使用」拦住——
                 // 用户什么都没得到，号却永久归给了刚被删掉的那一行（R-14 场景 A）。
@@ -732,16 +802,31 @@ class ClothingFormViewModel @Inject constructor(
     /** 放弃（M1-15 [确认]）：清暂存图。 */
     fun discard() {
         clearDraft()
-        val toClear = staged
-        val cutoutToClear = stagedCutout
+        releaseStagedResources()
+    }
+
+    /**
+     * R08：**未保存就离开**（直接返回/系统返回且无改动）时，ViewModel 被清理由这里
+     * 删除暂存原图与抠图，不能让 cache 里永远堆着没人引用的图片。
+     * 保存成功时文件已被 promote 消费（不存在则 delete 幂等）；进程被杀时 onCleared
+     * 不会执行，暂存文件仍随草稿保留——这正是恢复所需。
+     */
+    private fun releaseStagedResources() {
+        stagedResourcesReleased = true
+        staged?.file?.delete()
         staged = null
+        stagedCutout?.file?.delete()
         stagedCutout = null
-        if (toClear != null || cutoutToClear != null) {
-            viewModelScope.launch {
-                toClear?.let { imageStore.clearStaged(it) }
-                cutoutToClear?.let { imageStore.clearStaged(it) }
-            }
+    }
+
+    override fun onCleared() {
+        aiJob?.cancel()
+        colorJob?.cancel()
+        if (!draftCleared) {
+            // 正常离开（未保存）不应复活草稿；只有进程回收才会跳过 onCleared
+            savedStateHandle.remove<String>(ClothingFormDraft.KEY)
         }
+        if (!stagedResourcesReleased) releaseStagedResources()
     }
 
     /** 保存/放弃后清草稿：进程再被回收时不应复活已结束的编辑 */
@@ -766,6 +851,10 @@ data class ClothingFormUiState(
     /** 当前展示的是抠图 PNG（透明底）→ 用 Fit 而非 Crop，避免裁掉主体 */
     val imageIsCutout: Boolean = false,
     val compressing: Boolean = false,
+    /** R02：创建模式必须有有效的暂存原图才允许保存；编辑模式为只读照片 */
+    val imageReady: Boolean = false,
+    /** R02：暂存原图失效且无法自动重取，UI 显示重试/重新选图入口 */
+    val imageUnavailable: Boolean = false,
     /**
      * 自定义名称（review R-08）。**仅编辑模式可编辑**：创建确认页按 §2.3.3 不提供名称输入，
      * 空值展示侧回落「主色 · 类别」兜底名。
@@ -811,6 +900,7 @@ data class ClothingFormUiState(
     /** 可保存：编号合法 + 已选衣柜 + 不在压缩/保存中。保存按钮据此禁用（§6.3 38% 透明）。 */
     val canSave: Boolean
         get() = !compressing && !saving && !notFound &&
+            (isEdit || imageReady) &&
             wardrobeId != null && code.isNotBlank() && codeError == null
 }
 
@@ -911,6 +1001,30 @@ data class AiSuggestions(
  * - `onlyEmpty = false`（全部采纳）：未手填的字段统一采用 AI 值。
  * 手填过的字段在两种路径下都不会被改写。
  */
+/**
+ * R07：AI 自动启动的终止态判定 —— 纯函数，JVM 直测。
+ *
+ * - Running：已在跑，不能重复发起；
+ * - Prefilled / 有建议：已有结果，重跑会覆盖恢复态并重复计费；
+ * - Degraded(Cancelled)：用户明确取消，必须保持终止，不能在设置流重发/进程恢复后复活。
+ */
+/**
+ * U03：追加自定义风格标签，并清除 AI 来源角标（纯函数，JVM 直测）。
+ * 同名标签也算用户已确认：标签保留，但不再标成 AI。
+ */
+internal fun ClothingFormUiState.withCustomStyleTag(tag: String): ClothingFormUiState =
+    if (tag in styleTags) {
+        copy(styleAiFilled = false)
+    } else {
+        copy(styleTags = styleTags + tag, styleAiFilled = false)
+    }
+
+internal fun shouldSkipAutoAi(state: ClothingFormUiState): Boolean =
+    state.aiPhase == AiPhase.Running ||
+        state.aiPhase == AiPhase.Prefilled ||
+        state.aiSuggestions != null ||
+        state.aiDegrade == AiDegradeReason.Cancelled
+
 internal fun applyAiSuggestions(
     state: ClothingFormUiState,
     result: AiRecognition,

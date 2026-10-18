@@ -12,10 +12,11 @@ import com.yuhinhsiung.clothesmate.core.datastore.AiStatus
 import com.yuhinhsiung.clothesmate.core.datastore.ThemeMode
 import com.yuhinhsiung.clothesmate.core.datastore.UserSettings
 import com.yuhinhsiung.clothesmate.core.datastore.UserSettingsStore
+import com.yuhinhsiung.clothesmate.core.di.ApplicationScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,7 +28,8 @@ import javax.inject.Inject
 /**
  * 设置页 ViewModel —— M2-05 / UI 文档 §7.6。
  *
- * - 三个 AI 字段采用 **800ms 防抖自动保存**（无「保存」按钮，与 mockup-12 一致）；
+ * - 三个 AI 字段即时写入 **应用级作用域**（R05）：页面退出/系统返回不会取消最后一次
+ *   持久化，避免「输入后 800ms 内退出丢字」；无「保存」按钮，与 mockup-12 一致；
  * - 「测试连接」用当前输入（即使还没落盘）测一次，并把状态点持久化；
  * - 深色模式写 DataStore 后由 MainActivity 的根主题立即响应，重启保持；
  * - Key 只进 DataStore 与内存，**不写日志**（OkHttp 层也没有日志拦截器）。
@@ -36,14 +38,25 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val settingsStore: UserSettingsStore,
     private val recognizer: ClothingRecognizer,
+    @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
-    private var saveJob: Job? = null
+    /**
+     * R05：配置写入走应用级作用域的一次性队列。CONFLATED 保留最新值；
+     * VM 退出时 close() 仍会先消费缓冲值，最后输入不会丢。
+     */
+    private val configChannel = Channel<AiConfig>(Channel.CONFLATED)
 
     init {
+        appScope.launch {
+            for (config in configChannel) {
+                runCatching { settingsStore.saveAiConfig(config) }
+                    .onFailure { android.util.Log.e(TAG, "AI 配置落盘失败", it) }
+            }
+        }
         viewModelScope.launch {
             val initial = settingsStore.settings.first()
             _uiState.update { it.copy(loaded = true).from(initial) }
@@ -52,10 +65,19 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             settingsStore.settings.collect { settings ->
                 _uiState.update { state ->
+                    // 输入中的配置可能还没落盘；此时不要用旧存储状态覆盖本地
+                    // 「未验证」预览，否则用户会看到刚改的字段又变回已验证。
+                    val sameConfig = state.baseUrl.trim() == settings.aiConfig.baseUrl.trim() &&
+                        state.apiKey.trim() == settings.aiConfig.apiKey.trim() &&
+                        state.model.trim() == settings.aiConfig.model.trim()
                     state.copy(
                         themeMode = settings.themeMode,
-                        aiStatus = settings.effectiveAiStatus,
-                        aiStatusDetail = settings.aiStatusDetail,
+                        aiStatus = if (sameConfig) settings.effectiveAiStatus else state.aiStatus,
+                        aiStatusDetail = if (sameConfig) {
+                            settings.aiStatusDetail
+                        } else {
+                            state.aiStatusDetail
+                        },
                         aiConsent = settings.aiConsent,
                     )
                 }
@@ -65,41 +87,33 @@ class SettingsViewModel @Inject constructor(
 
     fun onThemeModeChange(mode: ThemeMode) {
         _uiState.update { it.copy(themeMode = mode) }
-        viewModelScope.launch { settingsStore.setThemeMode(mode) }
+        appScope.launch { settingsStore.setThemeMode(mode) }
     }
 
     fun onBaseUrlChange(value: String) {
         _uiState.update { it.copy(baseUrl = value, aiStatus = previewStatus(value, it.apiKey, it.model)) }
-        scheduleSave()
+        enqueueConfig()
     }
 
     fun onApiKeyChange(value: String) {
         _uiState.update { it.copy(apiKey = value, aiStatus = previewStatus(it.baseUrl, value, it.model)) }
-        scheduleSave()
+        enqueueConfig()
     }
 
     fun onModelChange(value: String) {
         _uiState.update { it.copy(model = value, aiStatus = previewStatus(it.baseUrl, it.apiKey, value)) }
-        scheduleSave()
+        enqueueConfig()
     }
 
-    /** 输入框失焦/IME Done 时立即落盘（防抖任务未到点也不丢） */
-    fun flushConfig() {
-        saveJob?.cancel()
-        viewModelScope.launch { persistConfig(_uiState.value) }
+    /** 输入框失焦/IME Done 时可显式再投递一次（当前实现已在每次变更时投递） */
+    fun flushConfig() = enqueueConfig()
+
+    private fun enqueueConfig() {
+        configChannel.trySend(currentConfig())
     }
 
-    private fun scheduleSave() {
-        saveJob?.cancel()
-        saveJob = viewModelScope.launch {
-            delay(SAVE_DEBOUNCE_MILLIS)
-            persistConfig(_uiState.value)
-        }
-    }
-
-    private suspend fun persistConfig(state: SettingsUiState) {
-        val config = AiConfig(baseUrl = state.baseUrl, apiKey = state.apiKey, model = state.model)
-        settingsStore.saveAiConfig(config)
+    private fun currentConfig(): AiConfig = _uiState.value.let {
+        AiConfig(baseUrl = it.baseUrl, apiKey = it.apiKey, model = it.model)
     }
 
     /**
@@ -119,7 +133,6 @@ class SettingsViewModel @Inject constructor(
             _uiState.update { it.copy(error = SettingsError.InvalidUrl) }
             return
         }
-        saveJob?.cancel()
         viewModelScope.launch {
             _uiState.update { it.copy(testing = true, error = null) }
             settingsStore.saveAiConfig(config)
@@ -132,13 +145,19 @@ class SettingsViewModel @Inject constructor(
                 ConnectionTestResult(false, failure.javaClass.simpleName)
             }
             val status = if (result.success) AiStatus.Verified else AiStatus.Failed
-            settingsStore.setAiStatus(status, result.detail)
-            _uiState.update {
-                it.copy(
-                    testing = false,
-                    aiStatus = status,
-                    aiStatusDetail = result.detail,
-                )
+            // R06：状态与发起测试时的配置快照绑定；期间改过配置则存储层丢弃
+            settingsStore.setAiStatus(status, result.detail, expectedConfig = config)
+            _uiState.update { state ->
+                if (currentConfigMatches(state, config)) {
+                    state.copy(
+                        testing = false,
+                        aiStatus = status,
+                        aiStatusDetail = result.detail,
+                    )
+                } else {
+                    // 过期结果：新配置仍是「未验证」，不显示旧结果
+                    state.copy(testing = false)
+                }
             }
         }
     }
@@ -146,17 +165,17 @@ class SettingsViewModel @Inject constructor(
     fun onConsentChange(granted: Boolean) {
         val consent = if (granted) AiConsent.Granted else AiConsent.Declined
         _uiState.update { it.copy(aiConsent = consent) }
-        viewModelScope.launch { settingsStore.setAiConsent(consent) }
+        appScope.launch { settingsStore.setAiConsent(consent) }
     }
 
     fun onWeatherCityChange(city: String) {
         _uiState.update { it.copy(weatherCity = city) }
-        viewModelScope.launch { settingsStore.setWeatherCity(city) }
+        appScope.launch { settingsStore.setWeatherCity(city) }
     }
 
     fun onWeatherKeyChange(key: String) {
         _uiState.update { it.copy(weatherApiKey = key) }
-        viewModelScope.launch { settingsStore.setWeatherApiKey(key) }
+        appScope.launch { settingsStore.setWeatherApiKey(key) }
     }
 
     fun clearError() = _uiState.update { it.copy(error = null) }
@@ -168,8 +187,18 @@ class SettingsViewModel @Inject constructor(
             AiStatus.Unverified
         }
 
+    private fun currentConfigMatches(state: SettingsUiState, config: AiConfig): Boolean =
+        state.baseUrl.trim() == config.baseUrl.trim() &&
+            state.apiKey.trim() == config.apiKey.trim() &&
+            state.model.trim() == config.model.trim()
+
+    override fun onCleared() {
+        // close 不会丢弃已缓冲的最后一个配置；应用级 collector 会把它写完
+        configChannel.close()
+    }
+
     private companion object {
-        const val SAVE_DEBOUNCE_MILLIS = 800L
+        const val TAG = "Settings"
     }
 }
 

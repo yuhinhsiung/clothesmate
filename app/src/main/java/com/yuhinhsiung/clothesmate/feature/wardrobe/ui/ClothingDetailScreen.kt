@@ -62,6 +62,7 @@ import com.yuhinhsiung.clothesmate.ui.component.ColorDot
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.ClothingColors
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
+import com.yuhinhsiung.clothesmate.ui.theme.accentText
 import com.yuhinhsiung.clothesmate.ui.theme.muted
 import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 import kotlinx.coroutines.launch
@@ -340,7 +341,7 @@ private fun ClothingDeleteDialog(
                             referencedOutfitCount,
                         ),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.tertiary,
+                        color = MaterialTheme.colorScheme.accentText,
                         modifier = Modifier.padding(top = Dimens.Space.s2),
                     )
                 }

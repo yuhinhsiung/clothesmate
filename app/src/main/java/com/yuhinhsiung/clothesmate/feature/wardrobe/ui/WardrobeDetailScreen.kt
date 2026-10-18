@@ -57,6 +57,7 @@ import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
 import com.yuhinhsiung.clothesmate.ui.component.EmptyStateSpec
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
+import com.yuhinhsiung.clothesmate.ui.theme.accentText
 import com.yuhinhsiung.clothesmate.ui.theme.muted
 import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 
@@ -349,7 +350,7 @@ private fun ClothingGridCard(
                     Text(
                         text = stringResource(R.string.clothing_incomplete_badge),
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.tertiary,
+                        color = MaterialTheme.colorScheme.accentText,
                         modifier = Modifier.padding(start = Dimens.Space.s1),
                     )
                 }

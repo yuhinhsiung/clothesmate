@@ -116,8 +116,18 @@ interface UserSettingsStore {
 
     suspend fun setAiConsent(consent: AiConsent)
 
-    /** 记录「测试连接」结果；未配置时不写入 */
-    suspend fun setAiStatus(status: AiStatus, detail: String? = null)
+    /**
+     * 记录「测试连接」结果。
+     *
+     * @param expectedConfig 发起测试时的配置快照（R06）。存储层在同一 edit 事务里比较
+     *   当前配置；不一致说明用户在测试期间改了端点/Key/模型，**丢弃过期结果**，
+     *   绝不能把未测试的新配置标成 Verified/Failed。null 表示不做快照校验（兼容旧调用）。
+     */
+    suspend fun setAiStatus(
+        status: AiStatus,
+        detail: String? = null,
+        expectedConfig: AiConfig? = null,
+    )
 
     suspend fun setWeatherCity(city: String)
 
@@ -205,14 +215,16 @@ class DataStoreUserSettingsStore @Inject constructor(
         dataStore.edit { it[KEY_AI_CONSENT] = consent.name }
     }
 
-    override suspend fun setAiStatus(status: AiStatus, detail: String?) {
+    override suspend fun setAiStatus(
+        status: AiStatus,
+        detail: String?,
+        expectedConfig: AiConfig?,
+    ) {
         dataStore.edit { prefs ->
-            val apiKey = prefs[KEY_AI_KEY].orEmpty()
-            val configured = !prefs[KEY_AI_BASE_URL].isNullOrBlank() &&
-                apiKey.isNotEmpty() &&
-                secretCipher.decrypt(apiKey) != null &&
-                !prefs[KEY_AI_MODEL].isNullOrBlank()
-            if (!configured) {
+            val current = prefs.readAiConfig()
+            // R06：结果必须属于当前配置；测试期间改过任一字段就丢弃
+            if (expectedConfig != null && current != expectedConfig.normalized()) return@edit
+            if (!current.isConfigured) {
                 prefs[KEY_AI_STATUS] = AiStatus.NotConfigured.name
                 prefs.remove(KEY_AI_STATUS_DETAIL)
                 return@edit
@@ -233,6 +245,21 @@ class DataStoreUserSettingsStore @Inject constructor(
     override suspend fun setWeatherApiKey(key: String) {
         dataStore.edit { it[KEY_WEATHER_KEY] = key.trim() }
     }
+
+    /** 从 Preferences 还原完整 AI 配置（含解密）；读写两侧共用，避免口径漂移 */
+    private fun Preferences.readAiConfig(): AiConfig = AiConfig(
+        baseUrl = this[KEY_AI_BASE_URL].orEmpty(),
+        apiKey = this[KEY_AI_KEY].orEmpty().let { cipherText ->
+            if (cipherText.isEmpty()) "" else secretCipher.decrypt(cipherText).orEmpty()
+        },
+        model = this[KEY_AI_MODEL].orEmpty(),
+    )
+
+    private fun AiConfig.normalized(): AiConfig = copy(
+        baseUrl = baseUrl.trim(),
+        apiKey = apiKey.trim(),
+        model = model.trim(),
+    )
 
     private companion object {
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
@@ -291,7 +318,12 @@ class InMemoryUserSettingsStore(initial: UserSettings = UserSettings()) : UserSe
         state.value = state.value.copy(aiConsent = consent)
     }
 
-    override suspend fun setAiStatus(status: AiStatus, detail: String?) {
+    override suspend fun setAiStatus(
+        status: AiStatus,
+        detail: String?,
+        expectedConfig: AiConfig?,
+    ) {
+        if (expectedConfig != null && state.value.aiConfig != expectedConfig) return
         state.value = state.value.copy(aiStatus = status, aiStatusDetail = detail)
     }
 

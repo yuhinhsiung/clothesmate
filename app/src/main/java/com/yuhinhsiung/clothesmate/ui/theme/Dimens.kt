@@ -168,7 +168,7 @@ object Dimens {
     val settingsTestButtonHeight = 40.dp
 
     /** 设置页深色模式三段控件高度（与表单控件同量级） */
-    val settingsSegmentHeight = 40.dp
+    val settingsSegmentHeight = 48.dp
 
     /** 抠图预览页棋盘格单元边长（表达透明背景，§7.3） */
     val checkerCell = 16.dp
