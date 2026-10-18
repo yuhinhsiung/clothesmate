@@ -64,6 +64,39 @@ class SettingsPersistenceTest {
     }
 
     @Test
+    fun rapidChangesAcrossFieldsAllPersist() = runBlocking {
+        val store = RecordingStore(
+            initial = AiConfig("http://old.example/v1", "old-key", "old-model"),
+            writeDelayMs = 300,
+        )
+        val appScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        try {
+            val handle = newHandle(store, appScope)
+            withTimeout(2_000) { handle.vm.uiState.first { it.loaded } }
+
+            // 连续改三个字段，写入尚未完成；CONFLATED 队列的消息必须包含全部 dirty 字段
+            handle.vm.onModelChange("new-model")
+            handle.vm.onBaseUrlChange("http://new.example/v1")
+            handle.vm.onApiKeyChange("new-key")
+            handle.store.clear()
+
+            val deadline = System.currentTimeMillis() + 3_000
+            while ((store.current().model != "new-model" ||
+                    store.current().baseUrl != "http://new.example/v1" ||
+                    store.current().apiKey != "new-key") &&
+                System.currentTimeMillis() < deadline
+            ) {
+                delay(20)
+            }
+            assertEquals("new-model", store.current().model)
+            assertEquals("http://new.example/v1", store.current().baseUrl)
+            assertEquals("new-key", store.current().apiKey)
+        } finally {
+            appScope.cancel()
+        }
+    }
+
+    @Test
     fun reentryWithStaleSnapshotMergesFieldsInsteadOfOverwriting() = runBlocking {
         val store = RecordingStore(
             initial = AiConfig("http://a.example/v1", "sk-test", "old-model"),

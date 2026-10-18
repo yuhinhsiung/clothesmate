@@ -6,10 +6,12 @@ import android.net.Uri
 import com.yuhinhsiung.clothesmate.core.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
@@ -30,21 +32,31 @@ class DefaultImageStore @Inject constructor(
     private val stashDir: File
         get() = File(context.cacheDir, STASH_DIR)
 
-    override suspend fun stash(uri: Uri): StagedImage = withContext(ioDispatcher) {
-        if (!stashDir.exists()) stashDir.mkdirs()
-        // R01：文件名必须**跨进程唯一**——SavedStateHandle 草稿会跨进程保留暂存路径，
-        // 进程内计数器重建后从 0 开始会复用同名文件并覆盖仍在草稿里的图片。
-        // createTempFile 由系统保证原子创建、不重名；目标先以空文件存在，
-        // 压缩器随后用「临时文件 + rename」替换它。
-        val target = File.createTempFile("staged_", ".jpg", stashDir)
-        try {
-            val size = compressor.compress(Source.Uri(uri), target)
-            // R08：压缩可能阻塞很久；若调用方已取消，withContext 不会把结果交回去，
-            // 这个文件就再也没人登记。必须在交出结果前检查取消并删除。
-            coroutineContext.ensureActive()
-            StagedImage(file = target, byteSize = size)
+    override suspend fun stash(uri: Uri): StagedImage {
+        val callerJob = coroutineContext[Job]
+        val target = AtomicReference<File?>(null)
+        // R08：把清理挂到**调用方协程**的完成上。IO 成功返回后、调用方恢复前被取消时，
+        // withContext 内的 catch 已经执行完，只有这里还能删掉尚未交接的输出。
+        callerJob?.invokeOnCompletion { cause ->
+            if (cause != null) target.get()?.delete()
+        }
+        return try {
+            withContext(ioDispatcher) {
+                if (!stashDir.exists()) stashDir.mkdirs()
+                // R01：文件名必须**跨进程唯一**——SavedStateHandle 草稿会跨进程保留暂存路径，
+                // 进程内计数器重建后从 0 开始会复用同名文件并覆盖仍在草稿里的图片。
+                // createTempFile 由系统保证原子创建、不重名；目标先以空文件存在，
+                // 压缩器随后用「临时文件 + rename」替换它。
+                val file = File.createTempFile("staged_", ".jpg", stashDir)
+                target.set(file)
+                val size = compressor.compress(Source.Uri(uri), file)
+                // 写入期间取消：调用方 job 的完成回调已删过；这里再查一次，防止
+                // NonCancellable 压缩在删除之后又把文件写回来。
+                coroutineContext.ensureActive()
+                StagedImage(file = file, byteSize = size)
+            }
         } catch (failure: Throwable) {
-            target.delete()
+            target.get()?.delete()
             throw failure
         }
     }
@@ -139,35 +151,48 @@ class DefaultImageStore @Inject constructor(
      * 写盘沿用「先 `.tmp` + fsync + rename」——预览页可能立刻读这张图，
      * 半截 PNG 会让 Coil 显示成占位色。
      */
-    override suspend fun stageCutout(bitmap: Bitmap): StagedImage = withContext(ioDispatcher) {
-        val dir = File(context.cacheDir, CUTOUT_DIR)
-        if (!dir.exists() && !dir.mkdirs() && !dir.exists()) {
-            throw ImageProcessException("无法创建抠图暂存目录：${dir.path}")
+    override suspend fun stageCutout(bitmap: Bitmap): StagedImage {
+        val callerJob = coroutineContext[Job]
+        val target = AtomicReference<File?>(null)
+        callerJob?.invokeOnCompletion { cause ->
+            if (cause != null) target.get()?.delete()
         }
-        // 同上：抠图 PNG 也跨进程保留在草稿里，必须唯一
-        val target = File.createTempFile("cutout_", ".png", dir)
-        val tmp = File(dir, target.name + TEMP_SUFFIX)
-        try {
-            try {
-                FileOutputStream(tmp).use { output ->
-                    if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
-                        throw ImageProcessException("PNG 编码失败")
+        return try {
+            withContext(ioDispatcher) {
+                val dir = File(context.cacheDir, CUTOUT_DIR)
+                if (!dir.exists() && !dir.mkdirs() && !dir.exists()) {
+                    throw ImageProcessException("无法创建抠图暂存目录：${dir.path}")
+                }
+                // 同上：抠图 PNG 也跨进程保留在草稿里，必须唯一
+                val file = File.createTempFile("cutout_", ".png", dir)
+                target.set(file)
+                val tmp = File(dir, file.name + TEMP_SUFFIX)
+                try {
+                    try {
+                        FileOutputStream(tmp).use { output ->
+                            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                                throw ImageProcessException("PNG 编码失败")
+                            }
+                            output.flush()
+                            output.fd.sync()
+                        }
+                        if (!tmp.renameTo(file)) {
+                            tmp.copyTo(file, overwrite = true)
+                            tmp.delete()
+                        }
+                    } finally {
+                        if (tmp.exists()) tmp.delete()
                     }
-                    output.flush()
-                    output.fd.sync()
+                    // 与 stash 同理：取消后的 PNG 不能留在 cache
+                    coroutineContext.ensureActive()
+                    StagedImage(file = file, byteSize = file.length())
+                } catch (failure: Throwable) {
+                    file.delete()
+                    throw failure
                 }
-                if (!tmp.renameTo(target)) {
-                    tmp.copyTo(target, overwrite = true)
-                    tmp.delete()
-                }
-            } finally {
-                if (tmp.exists()) tmp.delete()
             }
-            // R08：与 stash 同理，取消后的 PNG 不能留在 cache
-            coroutineContext.ensureActive()
-            StagedImage(file = target, byteSize = target.length())
         } catch (failure: Throwable) {
-            target.delete()
+            target.get()?.delete()
             throw failure
         }
     }

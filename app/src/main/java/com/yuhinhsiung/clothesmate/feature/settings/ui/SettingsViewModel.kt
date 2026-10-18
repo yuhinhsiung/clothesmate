@@ -118,19 +118,19 @@ class SettingsViewModel @Inject constructor(
     fun onBaseUrlChange(value: String) {
         dirtyFields += ConfigField.BASE_URL
         _uiState.update { it.copy(baseUrl = value, aiStatus = previewStatus(value, it.apiKey, it.model)) }
-        configChannel.trySend(AiConfigPatch(baseUrl = value))
+        configChannel.trySend(dirtyPatch(_uiState.value))
     }
 
     fun onApiKeyChange(value: String) {
         dirtyFields += ConfigField.API_KEY
         _uiState.update { it.copy(apiKey = value, aiStatus = previewStatus(it.baseUrl, value, it.model)) }
-        configChannel.trySend(AiConfigPatch(apiKey = value))
+        configChannel.trySend(dirtyPatch(_uiState.value))
     }
 
     fun onModelChange(value: String) {
         dirtyFields += ConfigField.MODEL
         _uiState.update { it.copy(model = value, aiStatus = previewStatus(it.baseUrl, it.apiKey, value)) }
-        configChannel.trySend(AiConfigPatch(model = value))
+        configChannel.trySend(dirtyPatch(_uiState.value))
     }
 
     /** 输入框失焦/IME Done：补齐本页动过的字段（已投递的合并写不重复覆盖其它字段） */
