@@ -7,6 +7,7 @@ import com.yuhinhsiung.clothesmate.core.ai.ConnectionTestResult
 import com.yuhinhsiung.clothesmate.core.ai.EndpointNormalizer
 import com.yuhinhsiung.clothesmate.core.ai.RecognitionEndpoint
 import com.yuhinhsiung.clothesmate.core.datastore.AiConfig
+import com.yuhinhsiung.clothesmate.core.datastore.AiConfigField
 import com.yuhinhsiung.clothesmate.core.datastore.AiConfigPatch
 import com.yuhinhsiung.clothesmate.core.datastore.AiConsent
 import com.yuhinhsiung.clothesmate.core.datastore.AiStatus
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 
 /**
@@ -67,7 +69,13 @@ class SettingsViewModel @Inject constructor(
     private val configChannel = Channel<AiConfigPatch>(Channel.CONFLATED)
 
     /** 本页面动过的字段；从存储回填时只回填「没动过」的字段，避免覆盖用户输入 */
-    private val dirtyFields = mutableSetOf<ConfigField>()
+    private val dirtyFields = mutableSetOf<AiConfigField>()
+
+    /**
+     * 各字段最后一次用户输入的版本号（进程级单调递增）。跨页面重进/旧页面缓冲
+     * 输入晚到时，存储层按此拒绝旧版本，保证最后输入获胜。
+     */
+    private val dirtyVersions = mutableMapOf<AiConfigField, Long>()
 
     init {
         appScope.launch {
@@ -93,9 +101,9 @@ class SettingsViewModel @Inject constructor(
                     state.copy(
                         // R05：只回填本页没动过的字段。另一页面刚提交的新值会随
                         // DataStore 发射到达，不会被本页旧快照覆盖。
-                        baseUrl = if (ConfigField.BASE_URL in dirtyFields) state.baseUrl else incoming.baseUrl,
-                        apiKey = if (ConfigField.API_KEY in dirtyFields) state.apiKey else incoming.apiKey,
-                        model = if (ConfigField.MODEL in dirtyFields) state.model else incoming.model,
+                        baseUrl = if (AiConfigField.BASE_URL in dirtyFields) state.baseUrl else incoming.baseUrl,
+                        apiKey = if (AiConfigField.API_KEY in dirtyFields) state.apiKey else incoming.apiKey,
+                        model = if (AiConfigField.MODEL in dirtyFields) state.model else incoming.model,
                         themeMode = settings.themeMode,
                         aiStatus = if (sameConfig) settings.effectiveAiStatus else state.aiStatus,
                         aiStatusDetail = if (sameConfig) {
@@ -116,21 +124,26 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun onBaseUrlChange(value: String) {
-        dirtyFields += ConfigField.BASE_URL
+        markDirty(AiConfigField.BASE_URL)
         _uiState.update { it.copy(baseUrl = value, aiStatus = previewStatus(value, it.apiKey, it.model)) }
         configChannel.trySend(dirtyPatch(_uiState.value))
     }
 
     fun onApiKeyChange(value: String) {
-        dirtyFields += ConfigField.API_KEY
+        markDirty(AiConfigField.API_KEY)
         _uiState.update { it.copy(apiKey = value, aiStatus = previewStatus(it.baseUrl, value, it.model)) }
         configChannel.trySend(dirtyPatch(_uiState.value))
     }
 
     fun onModelChange(value: String) {
-        dirtyFields += ConfigField.MODEL
+        markDirty(AiConfigField.MODEL)
         _uiState.update { it.copy(model = value, aiStatus = previewStatus(it.baseUrl, it.apiKey, value)) }
         configChannel.trySend(dirtyPatch(_uiState.value))
+    }
+
+    private fun markDirty(field: AiConfigField) {
+        dirtyFields += field
+        dirtyVersions[field] = AiConfigEditClock.next()
     }
 
     /** 输入框失焦/IME Done：补齐本页动过的字段（已投递的合并写不重复覆盖其它字段） */
@@ -140,9 +153,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun dirtyPatch(state: SettingsUiState): AiConfigPatch = AiConfigPatch(
-        baseUrl = if (ConfigField.BASE_URL in dirtyFields) state.baseUrl else null,
-        apiKey = if (ConfigField.API_KEY in dirtyFields) state.apiKey else null,
-        model = if (ConfigField.MODEL in dirtyFields) state.model else null,
+        baseUrl = if (AiConfigField.BASE_URL in dirtyFields) state.baseUrl else null,
+        apiKey = if (AiConfigField.API_KEY in dirtyFields) state.apiKey else null,
+        model = if (AiConfigField.MODEL in dirtyFields) state.model else null,
+        versions = dirtyVersions.toMap(),
     )
 
     private fun currentConfig(): AiConfig = _uiState.value.let {
@@ -232,7 +246,10 @@ class SettingsViewModel @Inject constructor(
         configChannel.close()
     }
 
-    private enum class ConfigField { BASE_URL, API_KEY, MODEL }
+    private object AiConfigEditClock {
+        private val sequence = AtomicLong(0)
+        fun next(): Long = sequence.incrementAndGet()
+    }
 
     private companion object {
         const val TAG = "Settings"

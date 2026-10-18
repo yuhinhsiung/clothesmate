@@ -8,6 +8,7 @@ import com.yuhinhsiung.clothesmate.core.ai.ClothingRecognizer
 import com.yuhinhsiung.clothesmate.core.ai.ConnectionTestResult
 import com.yuhinhsiung.clothesmate.core.ai.RecognitionEndpoint
 import com.yuhinhsiung.clothesmate.core.datastore.AiConfig
+import com.yuhinhsiung.clothesmate.core.datastore.AiConfigField
 import com.yuhinhsiung.clothesmate.core.datastore.AiConfigPatch
 import com.yuhinhsiung.clothesmate.core.datastore.AiConsent
 import com.yuhinhsiung.clothesmate.core.datastore.AiStatus
@@ -97,6 +98,36 @@ class SettingsPersistenceTest {
     }
 
     @Test
+    fun latestEditFromReopenedPageWinsOverOlderBufferedEdit() = runBlocking {
+        val store = RecordingStore(
+            initial = AiConfig("http://example.invalid/v1", "old-key", "old-model"),
+            writeDelayMs = 300,
+        )
+        val appScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        try {
+            val pageA = newHandle(store, appScope)
+            withTimeout(2_000) { pageA.vm.uiState.first { it.loaded } }
+            pageA.vm.onModelChange("page1-first")
+            pageA.vm.onModelChange("page1-buffered")
+            pageA.store.clear()
+
+            // 页面 A 的写入/缓冲尚未结束，页面 B 立即重进并修正同一字段
+            val pageB = newHandle(store, appScope)
+            withTimeout(2_000) { pageB.vm.uiState.first { it.loaded } }
+            pageB.vm.onModelChange("page2-final")
+            pageB.store.clear()
+
+            val deadline = System.currentTimeMillis() + 3_000
+            while (store.current().model != "page2-final" && System.currentTimeMillis() < deadline) {
+                delay(20)
+            }
+            assertEquals("最后输入必须获胜", "page2-final", store.current().model)
+        } finally {
+            appScope.cancel()
+        }
+    }
+
+    @Test
     fun reentryWithStaleSnapshotMergesFieldsInsteadOfOverwriting() = runBlocking {
         val store = RecordingStore(
             initial = AiConfig("http://a.example/v1", "sk-test", "old-model"),
@@ -156,6 +187,7 @@ class SettingsPersistenceTest {
             UserSettings(aiConfig = initial, aiConsent = AiConsent.Unasked),
         )
         private val mutex = Mutex()
+        private val appliedVersions = mutableMapOf<AiConfigField, Long>()
         val lastSaved = AtomicReference<AiConfig?>(null)
         override val settings = state
         fun current(): AiConfig = state.value.aiConfig
@@ -168,11 +200,37 @@ class SettingsPersistenceTest {
             mutex.withLock {
                 delay(writeDelayMs)
                 val current = state.value.aiConfig
+                val accepted = mutableSetOf<AiConfigField>()
+                fun accepts(field: AiConfigField): Boolean {
+                    val version = patch.versions[field] ?: return true
+                    if (version <= 0L) return true
+                    return if (version > (appliedVersions[field] ?: 0L)) {
+                        accepted += field
+                        true
+                    } else {
+                        false
+                    }
+                }
                 val next = current.copy(
-                    baseUrl = patch.baseUrl?.trim() ?: current.baseUrl,
-                    apiKey = patch.apiKey?.trim() ?: current.apiKey,
-                    model = patch.model?.trim() ?: current.model,
+                    baseUrl = if (patch.baseUrl != null && accepts(AiConfigField.BASE_URL)) {
+                        patch.baseUrl.trim()
+                    } else {
+                        current.baseUrl
+                    },
+                    apiKey = if (patch.apiKey != null && accepts(AiConfigField.API_KEY)) {
+                        patch.apiKey.trim()
+                    } else {
+                        current.apiKey
+                    },
+                    model = if (patch.model != null && accepts(AiConfigField.MODEL)) {
+                        patch.model.trim()
+                    } else {
+                        current.model
+                    },
                 )
+                accepted.forEach { field ->
+                    patch.versions[field]?.let { appliedVersions[field] = it }
+                }
                 lastSaved.set(next)
                 state.value = state.value.copy(aiConfig = next)
             }

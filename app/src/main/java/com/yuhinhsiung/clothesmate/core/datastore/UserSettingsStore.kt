@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import java.net.URI
 import javax.inject.Inject
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Singleton
 
 /**
@@ -111,10 +112,21 @@ data class AiConfigPatch(
     val baseUrl: String? = null,
     val apiKey: String? = null,
     val model: String? = null,
+    /**
+     * 每个字段的**用户输入版本号**（R05 第三轮）。版本由设置页在每次编辑时从
+     * 进程级单调计数器领取；存储层按字段拒绝晚到的旧版本，解决两个页面实例各自
+     * 消费队列导致的「旧页面缓冲输入覆盖新页面最终输入」。
+     *
+     * 空 map = 兼容旧调用（视为最新，不做版本拒绝）。
+     */
+    val versions: Map<AiConfigField, Long> = emptyMap(),
 ) {
     val isEmpty: Boolean
         get() = baseUrl == null && apiKey == null && model == null
 }
+
+/** AI 配置的三个可编辑字段（与 `AiConfig` 一一对应） */
+enum class AiConfigField { BASE_URL, API_KEY, MODEL }
 
 interface UserSettingsStore {
     val settings: Flow<UserSettings>
@@ -162,6 +174,9 @@ class DataStoreUserSettingsStore @Inject constructor(
     private val secretCipher: SecretCipher,
 ) : UserSettingsStore {
 
+    /** 每个字段已应用的最大用户输入版本；进程内有效（跨进程草稿不携带未落盘队列） */
+    private val appliedVersions = ConcurrentHashMap<AiConfigField, Long>()
+
     override val settings: Flow<UserSettings> = dataStore.data.map { prefs ->
         val config = AiConfig(
             baseUrl = prefs[KEY_AI_BASE_URL].orEmpty(),
@@ -206,11 +221,31 @@ class DataStoreUserSettingsStore @Inject constructor(
         if (patch.isEmpty) return
         dataStore.edit { prefs ->
             val previous = prefs.readAiConfig()
+            val accepted = mutableSetOf<AiConfigField>()
+            fun accepts(field: AiConfigField): Boolean {
+                val version = patch.versions[field] ?: return true
+                if (version <= 0L) return true
+                val applied = appliedVersions[field] ?: 0L
+                return if (version > applied) {
+                    accepted += field
+                    true
+                } else {
+                    false
+                }
+            }
+
+            val applyBase = patch.baseUrl != null && accepts(AiConfigField.BASE_URL)
+            val applyKey = patch.apiKey != null && accepts(AiConfigField.API_KEY)
+            val applyModel = patch.model != null && accepts(AiConfigField.MODEL)
             val next = previous.copy(
-                baseUrl = patch.baseUrl?.trim() ?: previous.baseUrl,
-                apiKey = patch.apiKey?.trim() ?: previous.apiKey,
-                model = patch.model?.trim() ?: previous.model,
+                baseUrl = if (applyBase) patch.baseUrl!!.trim() else previous.baseUrl,
+                apiKey = if (applyKey) patch.apiKey!!.trim() else previous.apiKey,
+                model = if (applyModel) patch.model!!.trim() else previous.model,
             )
+            // 即使值没变，也记下已接受的版本：防止更旧的缓冲输入随后覆盖
+            accepted.forEach { field ->
+                patch.versions[field]?.let { appliedVersions[field] = it }
+            }
             if (next == previous) return@edit
             prefs[KEY_AI_BASE_URL] = next.baseUrl
             // 绝不回退明文：加密失败就写空，让用户重新填写（并在设置页表现为未配置）。
