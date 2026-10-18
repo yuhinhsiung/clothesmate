@@ -100,6 +100,22 @@ data class UserSettings(
         get() = if (aiConfig.isConfigured) aiStatus else AiStatus.NotConfigured
 }
 
+/**
+ * AI 配置的**字段级**补丁（M2-R05）。
+ *
+ * 为什么不是整份 [AiConfig]：设置页可能在上一页的写入尚未落盘时重新进入，
+ * 读到旧快照；若此时整份提交，会把上一页刚改的字段覆盖回去。补丁只改用户
+ * 本次动过的字段，由存储层在同一个 DataStore edit 事务里与**当前磁盘值**合并。
+ */
+data class AiConfigPatch(
+    val baseUrl: String? = null,
+    val apiKey: String? = null,
+    val model: String? = null,
+) {
+    val isEmpty: Boolean
+        get() = baseUrl == null && apiKey == null && model == null
+}
+
 interface UserSettingsStore {
     val settings: Flow<UserSettings>
 
@@ -113,6 +129,12 @@ interface UserSettingsStore {
      * 只改模型名不影响端点归属，保留授权，但验证状态回到未验证。
      */
     suspend fun saveAiConfig(config: AiConfig)
+
+    /**
+     * 只更新 [patch] 里非 null 的字段，与当前存储值原子合并（M2-R05）。
+     * 不改变的字段不会被旧页面快照覆盖；端点/Key 变化仍会重置隐私授权。
+     */
+    suspend fun updateAiConfig(patch: AiConfigPatch)
 
     suspend fun setAiConsent(consent: AiConsent)
 
@@ -170,20 +192,26 @@ class DataStoreUserSettingsStore @Inject constructor(
     }
 
     override suspend fun saveAiConfig(config: AiConfig) {
-        val next = config.copy(
-            baseUrl = config.baseUrl.trim(),
-            apiKey = config.apiKey.trim(),
-            model = config.model.trim(),
+        // 兼容旧调用：三字段全量补丁，语义与旧 saveAiConfig 一致。
+        updateAiConfig(
+            AiConfigPatch(
+                baseUrl = config.baseUrl,
+                apiKey = config.apiKey,
+                model = config.model,
+            ),
         )
+    }
+
+    override suspend fun updateAiConfig(patch: AiConfigPatch) {
+        if (patch.isEmpty) return
         dataStore.edit { prefs ->
-            val previous = AiConfig(
-                baseUrl = prefs[KEY_AI_BASE_URL].orEmpty(),
-                // 只对外暴露明文；落盘的是 Keystore 加密后的 Base64（见下方写入）
-                apiKey = prefs[KEY_AI_KEY].orEmpty().let { cipherText ->
-                    if (cipherText.isEmpty()) "" else secretCipher.decrypt(cipherText).orEmpty()
-                },
-                model = prefs[KEY_AI_MODEL].orEmpty(),
+            val previous = prefs.readAiConfig()
+            val next = previous.copy(
+                baseUrl = patch.baseUrl?.trim() ?: previous.baseUrl,
+                apiKey = patch.apiKey?.trim() ?: previous.apiKey,
+                model = patch.model?.trim() ?: previous.model,
             )
+            if (next == previous) return@edit
             prefs[KEY_AI_BASE_URL] = next.baseUrl
             // 绝不回退明文：加密失败就写空，让用户重新填写（并在设置页表现为未配置）。
             // 旧版本遗留的明文 Key 在读取时解密失败 → 视为空，同样需要重填。
@@ -200,14 +228,12 @@ class DataStoreUserSettingsStore @Inject constructor(
             if (previous.baseUrl != next.baseUrl || previous.apiKey != next.apiKey) {
                 prefs[KEY_AI_CONSENT] = AiConsent.Unasked.name
             }
-            if (previous != next) {
-                prefs[KEY_AI_STATUS] = if (next.isConfigured) {
-                    AiStatus.Unverified.name
-                } else {
-                    AiStatus.NotConfigured.name
-                }
-                prefs.remove(KEY_AI_STATUS_DETAIL)
+            prefs[KEY_AI_STATUS] = if (next.isConfigured) {
+                AiStatus.Unverified.name
+            } else {
+                AiStatus.NotConfigured.name
             }
+            prefs.remove(KEY_AI_STATUS_DETAIL)
         }
     }
 
@@ -312,6 +338,17 @@ class InMemoryUserSettingsStore(initial: UserSettings = UserSettings()) : UserSe
 
     override suspend fun saveAiConfig(config: AiConfig) {
         state.value = state.value.copy(aiConfig = config)
+    }
+
+    override suspend fun updateAiConfig(patch: AiConfigPatch) {
+        val current = state.value.aiConfig
+        state.value = state.value.copy(
+            aiConfig = current.copy(
+                baseUrl = patch.baseUrl?.trim() ?: current.baseUrl,
+                apiKey = patch.apiKey?.trim() ?: current.apiKey,
+                model = patch.model?.trim() ?: current.model,
+            ),
+        )
     }
 
     override suspend fun setAiConsent(consent: AiConsent) {

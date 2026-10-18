@@ -1,9 +1,7 @@
 package com.yuhinhsiung.clothesmate
 
-import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -11,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -64,20 +61,6 @@ class MainActivity : ComponentActivity() {
             }
             val themeMode by themeFlow.collectAsStateWithLifecycle(initialValue = ThemeMode.System)
             val darkTheme = themeMode.isDark(isSystemInDarkTheme())
-            // R09：enableEdgeToEdge 必须跟随**手动主题**，而不只是系统深色——
-            // 否则系统浅色 + App 选「深色」时，状态栏/导航栏仍是深色图标，落在深色底上不可见。
-            LaunchedEffect(darkTheme) {
-                enableEdgeToEdge(
-                    statusBarStyle = SystemBarStyle.auto(
-                        lightScrim = Color.TRANSPARENT,
-                        darkScrim = Color.TRANSPARENT,
-                    ) { darkTheme },
-                    navigationBarStyle = SystemBarStyle.auto(
-                        lightScrim = Color.TRANSPARENT,
-                        darkScrim = Color.TRANSPARENT,
-                    ) { darkTheme },
-                )
-            }
             ClothesMateTheme(darkTheme = darkTheme) {
                 CompositionLocalProvider(
                     LocalImageStorage provides imageStorage,

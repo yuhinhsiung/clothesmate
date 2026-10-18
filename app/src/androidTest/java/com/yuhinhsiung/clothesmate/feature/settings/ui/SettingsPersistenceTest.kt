@@ -8,6 +8,7 @@ import com.yuhinhsiung.clothesmate.core.ai.ClothingRecognizer
 import com.yuhinhsiung.clothesmate.core.ai.ConnectionTestResult
 import com.yuhinhsiung.clothesmate.core.ai.RecognitionEndpoint
 import com.yuhinhsiung.clothesmate.core.datastore.AiConfig
+import com.yuhinhsiung.clothesmate.core.datastore.AiConfigPatch
 import com.yuhinhsiung.clothesmate.core.datastore.AiConsent
 import com.yuhinhsiung.clothesmate.core.datastore.AiStatus
 import com.yuhinhsiung.clothesmate.core.datastore.ThemeMode
@@ -18,7 +19,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -58,15 +63,86 @@ class SettingsPersistenceTest {
         appScope.cancel()
     }
 
-    private class RecordingStore : UserSettingsStore {
-        private val state = MutableStateFlow(UserSettings(aiConsent = AiConsent.Unasked))
+    @Test
+    fun reentryWithStaleSnapshotMergesFieldsInsteadOfOverwriting() = runBlocking {
+        val store = RecordingStore(
+            initial = AiConfig("http://a.example/v1", "sk-test", "old-model"),
+            writeDelayMs = 800,
+        )
+        val appScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        try {
+            val first = newHandle(store, appScope)
+            withTimeout(2_000) { first.vm.uiState.first { it.loaded } }
+            first.vm.onModelChange("new-model")
+            // 页面 1 退出；写入仍在延迟中（模拟 DataStore 提交边界被阻塞）
+            first.store.clear()
+
+            // 立即重进：此时 DataStore 仍是旧快照
+            val second = newHandle(store, appScope)
+            withTimeout(2_000) { second.vm.uiState.first { it.loaded } }
+            assertEquals("重进时应先看到旧快照", "old-model", second.vm.uiState.value.model)
+            // 只改 Base URL，不能把模型改回 old-model
+            second.vm.onBaseUrlChange("http://b.example/v1")
+            second.store.clear()
+
+            val deadline = System.currentTimeMillis() + 3_000
+            while ((store.current().baseUrl != "http://b.example/v1" ||
+                    store.current().model != "new-model") &&
+                System.currentTimeMillis() < deadline
+            ) {
+                delay(20)
+            }
+            assertEquals("http://b.example/v1", store.current().baseUrl)
+            assertEquals("new-model", store.current().model)
+        } finally {
+            appScope.cancel()
+        }
+    }
+
+    private class VmHandle(val vm: SettingsViewModel, val store: ViewModelStore)
+
+    private fun newHandle(
+        store: UserSettingsStore,
+        appScope: CoroutineScope,
+    ): VmHandle {
+        val vmStore = ViewModelStore()
+        val factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                SettingsViewModel(store, NoopRecognizer, appScope) as T
+        }
+        val vm = ViewModelProvider(vmStore, factory)[SettingsViewModel::class.java]
+        return VmHandle(vm, vmStore)
+    }
+
+    private class RecordingStore(
+        initial: AiConfig = AiConfig(),
+        private val writeDelayMs: Long = 50,
+    ) : UserSettingsStore {
+        private val state = MutableStateFlow(
+            UserSettings(aiConfig = initial, aiConsent = AiConsent.Unasked),
+        )
+        private val mutex = Mutex()
         val lastSaved = AtomicReference<AiConfig?>(null)
         override val settings = state
+        fun current(): AiConfig = state.value.aiConfig
         override suspend fun setThemeMode(mode: ThemeMode) = Unit
         override suspend fun saveAiConfig(config: AiConfig) {
-            delay(50)
-            lastSaved.set(config)
-            state.value = state.value.copy(aiConfig = config)
+            updateAiConfig(AiConfigPatch(config.baseUrl, config.apiKey, config.model))
+        }
+
+        override suspend fun updateAiConfig(patch: AiConfigPatch) {
+            mutex.withLock {
+                delay(writeDelayMs)
+                val current = state.value.aiConfig
+                val next = current.copy(
+                    baseUrl = patch.baseUrl?.trim() ?: current.baseUrl,
+                    apiKey = patch.apiKey?.trim() ?: current.apiKey,
+                    model = patch.model?.trim() ?: current.model,
+                )
+                lastSaved.set(next)
+                state.value = state.value.copy(aiConfig = next)
+            }
         }
 
         override suspend fun setAiConsent(consent: AiConsent) = Unit

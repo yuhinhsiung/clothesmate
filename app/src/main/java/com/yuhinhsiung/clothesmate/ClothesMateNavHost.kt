@@ -1,7 +1,13 @@
 package com.yuhinhsiung.clothesmate
 
+import android.content.Context
+import android.content.ContextWrapper
+import android.graphics.Color
 import androidx.annotation.StringRes
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -26,6 +32,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +42,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -68,6 +76,7 @@ import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobePickerSheet
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.form.ClothingFormRoute
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
+import com.yuhinhsiung.clothesmate.ui.theme.LocalIsDarkTheme
 import com.yuhinhsiung.clothesmate.ui.component.LocalNavResultBus
 import com.yuhinhsiung.clothesmate.ui.navigation.Capture
 import com.yuhinhsiung.clothesmate.ui.navigation.CaptureTarget
@@ -137,6 +146,26 @@ fun ClothesMateNavHost(
     val currentDestination = backStackEntry?.destination
     val showBottomBar = TopLevelDestination.entries.any { dest ->
         currentDestination?.hasRouteAny(dest.routeClass) == true
+    }
+
+    // R09：系统栏模式由「当前目的地 + App 主题」**单一来源**决定。
+    // 相机是深色取景，必须恒用浅色图标；其它页面跟随手动/系统主题。
+    // 放在 NavHost 外层（而不是相机页 DisposableEffect 与 MainActivity 各写一次），
+    // 旋转/进程重建后由目的地重新计算，不会出现根主题晚到覆盖相机的问题。
+    val isCameraDestination = currentDestination?.hasRouteAny(Capture::class) == true
+    val darkSystemBars = LocalIsDarkTheme.current || isCameraDestination
+    val hostActivity = LocalContext.current.findComponentActivity()
+    LaunchedEffect(hostActivity, darkSystemBars) {
+        hostActivity?.enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(
+                lightScrim = Color.TRANSPARENT,
+                darkScrim = Color.TRANSPARENT,
+            ) { darkSystemBars },
+            navigationBarStyle = SystemBarStyle.auto(
+                lightScrim = Color.TRANSPARENT,
+                darkScrim = Color.TRANSPARENT,
+            ) { darkSystemBars },
+        )
     }
 
     // 衣柜相关弹层状态（M1-06/07/08）。rememberSaveable：旋转/深色切换不丢（review C-06）
@@ -701,3 +730,14 @@ private fun FabActionPanel(
 /** 类型安全路由从当前栈条目读参（读不到返回 null，不抛）。 */
 private inline fun <reified T : Any> NavBackStackEntry.toRouteOrNull(): T? =
     runCatching { toRoute<T>() }.getOrNull()
+
+
+/** Compose 的 LocalContext 可能被 ContextThemeWrapper 包一层；找到真正的 Activity 才能改系统栏 */
+private fun Context.findComponentActivity(): ComponentActivity? {
+    var current: Context = this
+    while (current is ContextWrapper) {
+        if (current is ComponentActivity) return current
+        current = current.baseContext
+    }
+    return current as? ComponentActivity
+}

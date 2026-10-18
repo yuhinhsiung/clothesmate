@@ -6,11 +6,13 @@ import android.net.Uri
 import com.yuhinhsiung.clothesmate.core.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.coroutineContext
 
 /**
  * [ImageStore] 默认实现 —— 开发计划 M1-14 / M1-15。
@@ -35,8 +37,16 @@ class DefaultImageStore @Inject constructor(
         // createTempFile 由系统保证原子创建、不重名；目标先以空文件存在，
         // 压缩器随后用「临时文件 + rename」替换它。
         val target = File.createTempFile("staged_", ".jpg", stashDir)
-        val size = compressor.compress(Source.Uri(uri), target)
-        StagedImage(file = target, byteSize = size)
+        try {
+            val size = compressor.compress(Source.Uri(uri), target)
+            // R08：压缩可能阻塞很久；若调用方已取消，withContext 不会把结果交回去，
+            // 这个文件就再也没人登记。必须在交出结果前检查取消并删除。
+            coroutineContext.ensureActive()
+            StagedImage(file = target, byteSize = size)
+        } catch (failure: Throwable) {
+            target.delete()
+            throw failure
+        }
     }
 
     override suspend fun promote(
@@ -138,21 +148,28 @@ class DefaultImageStore @Inject constructor(
         val target = File.createTempFile("cutout_", ".png", dir)
         val tmp = File(dir, target.name + TEMP_SUFFIX)
         try {
-            FileOutputStream(tmp).use { output ->
-                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
-                    throw ImageProcessException("PNG 编码失败")
+            try {
+                FileOutputStream(tmp).use { output ->
+                    if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                        throw ImageProcessException("PNG 编码失败")
+                    }
+                    output.flush()
+                    output.fd.sync()
                 }
-                output.flush()
-                output.fd.sync()
+                if (!tmp.renameTo(target)) {
+                    tmp.copyTo(target, overwrite = true)
+                    tmp.delete()
+                }
+            } finally {
+                if (tmp.exists()) tmp.delete()
             }
-            if (!tmp.renameTo(target)) {
-                tmp.copyTo(target, overwrite = true)
-                tmp.delete()
-            }
-        } finally {
-            if (tmp.exists()) tmp.delete()
+            // R08：与 stash 同理，取消后的 PNG 不能留在 cache
+            coroutineContext.ensureActive()
+            StagedImage(file = target, byteSize = target.length())
+        } catch (failure: Throwable) {
+            target.delete()
+            throw failure
         }
-        StagedImage(file = target, byteSize = target.length())
     }
 
     private companion object {

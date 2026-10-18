@@ -7,6 +7,7 @@ import com.yuhinhsiung.clothesmate.core.ai.ConnectionTestResult
 import com.yuhinhsiung.clothesmate.core.ai.EndpointNormalizer
 import com.yuhinhsiung.clothesmate.core.ai.RecognitionEndpoint
 import com.yuhinhsiung.clothesmate.core.datastore.AiConfig
+import com.yuhinhsiung.clothesmate.core.datastore.AiConfigPatch
 import com.yuhinhsiung.clothesmate.core.datastore.AiConsent
 import com.yuhinhsiung.clothesmate.core.datastore.AiStatus
 import com.yuhinhsiung.clothesmate.core.datastore.ThemeMode
@@ -63,12 +64,15 @@ class SettingsViewModel @Inject constructor(
      * R05：配置写入走应用级作用域的一次性队列。CONFLATED 保留最新值；
      * VM 退出时 close() 仍会先消费缓冲值，最后输入不会丢。
      */
-    private val configChannel = Channel<AiConfig>(Channel.CONFLATED)
+    private val configChannel = Channel<AiConfigPatch>(Channel.CONFLATED)
+
+    /** 本页面动过的字段；从存储回填时只回填「没动过」的字段，避免覆盖用户输入 */
+    private val dirtyFields = mutableSetOf<ConfigField>()
 
     init {
         appScope.launch {
-            for (config in configChannel) {
-                runCatching { settingsStore.saveAiConfig(config) }
+            for (patch in configChannel) {
+                runCatching { settingsStore.updateAiConfig(patch) }
                     .onFailure { android.util.Log.e(TAG, "AI 配置落盘失败", it) }
             }
         }
@@ -82,10 +86,16 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update { state ->
                     // 输入中的配置可能还没落盘；此时不要用旧存储状态覆盖本地
                     // 「未验证」预览，否则用户会看到刚改的字段又变回已验证。
-                    val sameConfig = state.baseUrl.trim() == settings.aiConfig.baseUrl.trim() &&
-                        state.apiKey.trim() == settings.aiConfig.apiKey.trim() &&
-                        state.model.trim() == settings.aiConfig.model.trim()
+                    val incoming = settings.aiConfig
+                    val sameConfig = state.baseUrl.trim() == incoming.baseUrl.trim() &&
+                        state.apiKey.trim() == incoming.apiKey.trim() &&
+                        state.model.trim() == incoming.model.trim()
                     state.copy(
+                        // R05：只回填本页没动过的字段。另一页面刚提交的新值会随
+                        // DataStore 发射到达，不会被本页旧快照覆盖。
+                        baseUrl = if (ConfigField.BASE_URL in dirtyFields) state.baseUrl else incoming.baseUrl,
+                        apiKey = if (ConfigField.API_KEY in dirtyFields) state.apiKey else incoming.apiKey,
+                        model = if (ConfigField.MODEL in dirtyFields) state.model else incoming.model,
                         themeMode = settings.themeMode,
                         aiStatus = if (sameConfig) settings.effectiveAiStatus else state.aiStatus,
                         aiStatusDetail = if (sameConfig) {
@@ -106,26 +116,34 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun onBaseUrlChange(value: String) {
+        dirtyFields += ConfigField.BASE_URL
         _uiState.update { it.copy(baseUrl = value, aiStatus = previewStatus(value, it.apiKey, it.model)) }
-        enqueueConfig()
+        configChannel.trySend(AiConfigPatch(baseUrl = value))
     }
 
     fun onApiKeyChange(value: String) {
+        dirtyFields += ConfigField.API_KEY
         _uiState.update { it.copy(apiKey = value, aiStatus = previewStatus(it.baseUrl, value, it.model)) }
-        enqueueConfig()
+        configChannel.trySend(AiConfigPatch(apiKey = value))
     }
 
     fun onModelChange(value: String) {
+        dirtyFields += ConfigField.MODEL
         _uiState.update { it.copy(model = value, aiStatus = previewStatus(it.baseUrl, it.apiKey, value)) }
-        enqueueConfig()
+        configChannel.trySend(AiConfigPatch(model = value))
     }
 
-    /** 输入框失焦/IME Done 时可显式再投递一次（当前实现已在每次变更时投递） */
-    fun flushConfig() = enqueueConfig()
-
-    private fun enqueueConfig() {
-        configChannel.trySend(currentConfig())
+    /** 输入框失焦/IME Done：补齐本页动过的字段（已投递的合并写不重复覆盖其它字段） */
+    fun flushConfig() {
+        val patch = dirtyPatch(_uiState.value)
+        if (!patch.isEmpty) configChannel.trySend(patch)
     }
+
+    private fun dirtyPatch(state: SettingsUiState): AiConfigPatch = AiConfigPatch(
+        baseUrl = if (ConfigField.BASE_URL in dirtyFields) state.baseUrl else null,
+        apiKey = if (ConfigField.API_KEY in dirtyFields) state.apiKey else null,
+        model = if (ConfigField.MODEL in dirtyFields) state.model else null,
+    )
 
     private fun currentConfig(): AiConfig = _uiState.value.let {
         AiConfig(baseUrl = it.baseUrl, apiKey = it.apiKey, model = it.model)
@@ -150,7 +168,9 @@ class SettingsViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _uiState.update { it.copy(testing = true, error = null) }
-            settingsStore.saveAiConfig(config)
+            // R05：只落本页动过的字段，绝不把整份旧快照写回
+            val patch = dirtyPatch(state)
+            if (!patch.isEmpty) settingsStore.updateAiConfig(patch)
             val endpoint = RecognitionEndpoint(config.baseUrl, config.apiKey, config.model)
             val result = try {
                 recognizer.testConnection(endpoint)
@@ -211,6 +231,8 @@ class SettingsViewModel @Inject constructor(
         // close 不会丢弃已缓冲的最后一个配置；应用级 collector 会把它写完
         configChannel.close()
     }
+
+    private enum class ConfigField { BASE_URL, API_KEY, MODEL }
 
     private companion object {
         const val TAG = "Settings"
