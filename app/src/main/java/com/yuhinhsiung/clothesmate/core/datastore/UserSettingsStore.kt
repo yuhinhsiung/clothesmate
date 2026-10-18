@@ -15,6 +15,8 @@ import java.net.URI
 import javax.inject.Inject
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Singleton
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * 用户设置（M2-05）—— 外观 / AI 配置 / 天气 / 隐私授权。
@@ -174,7 +176,16 @@ class DataStoreUserSettingsStore @Inject constructor(
     private val secretCipher: SecretCipher,
 ) : UserSettingsStore {
 
-    /** 每个字段已应用的最大用户输入版本；进程内有效（跨进程草稿不携带未落盘队列） */
+    /**
+     * 字段版本判定、提交与水位发布的**统一串行化锁**。
+     *
+     * 水位只能在这个锁内、且 `dataStore.edit` **成功返回后**推进：
+     * 失败事务不改变内存水位，同版本重试仍可落盘；同时不会出现「提交已完成但水位
+     * 尚未发布」时另一个旧补丁插入的窗口。
+     */
+    private val versionMutex = Mutex()
+
+    /** 每个字段已成功提交的最大用户输入版本；进程内有效（未落盘队列不会跨进程） */
     private val appliedVersions = ConcurrentHashMap<AiConfigField, Long>()
 
     override val settings: Flow<UserSettings> = dataStore.data.map { prefs ->
@@ -219,56 +230,60 @@ class DataStoreUserSettingsStore @Inject constructor(
 
     override suspend fun updateAiConfig(patch: AiConfigPatch) {
         if (patch.isEmpty) return
-        dataStore.edit { prefs ->
-            val previous = prefs.readAiConfig()
-            val accepted = mutableSetOf<AiConfigField>()
-            fun accepts(field: AiConfigField): Boolean {
-                val version = patch.versions[field] ?: return true
-                if (version <= 0L) return true
-                val applied = appliedVersions[field] ?: 0L
-                return if (version > applied) {
-                    accepted += field
-                    true
-                } else {
-                    false
+        versionMutex.withLock {
+            var accepted: Set<AiConfigField> = emptySet()
+            dataStore.edit { prefs ->
+                val previous = prefs.readAiConfig()
+                val acceptedHere = mutableSetOf<AiConfigField>()
+                fun accepts(field: AiConfigField): Boolean {
+                    val version = patch.versions[field] ?: return true
+                    if (version <= 0L) return true
+                    val applied = appliedVersions[field] ?: 0L
+                    return if (version > applied) {
+                        acceptedHere += field
+                        true
+                    } else {
+                        false
+                    }
                 }
-            }
 
-            val applyBase = patch.baseUrl != null && accepts(AiConfigField.BASE_URL)
-            val applyKey = patch.apiKey != null && accepts(AiConfigField.API_KEY)
-            val applyModel = patch.model != null && accepts(AiConfigField.MODEL)
-            val next = previous.copy(
-                baseUrl = if (applyBase) patch.baseUrl!!.trim() else previous.baseUrl,
-                apiKey = if (applyKey) patch.apiKey!!.trim() else previous.apiKey,
-                model = if (applyModel) patch.model!!.trim() else previous.model,
-            )
-            // 即使值没变，也记下已接受的版本：防止更旧的缓冲输入随后覆盖
+                val applyBase = patch.baseUrl != null && accepts(AiConfigField.BASE_URL)
+                val applyKey = patch.apiKey != null && accepts(AiConfigField.API_KEY)
+                val applyModel = patch.model != null && accepts(AiConfigField.MODEL)
+                accepted = acceptedHere
+                val next = previous.copy(
+                    baseUrl = if (applyBase) patch.baseUrl!!.trim() else previous.baseUrl,
+                    apiKey = if (applyKey) patch.apiKey!!.trim() else previous.apiKey,
+                    model = if (applyModel) patch.model!!.trim() else previous.model,
+                )
+                if (next == previous) return@edit
+                prefs[KEY_AI_BASE_URL] = next.baseUrl
+                // 绝不回退明文：加密失败就写空，让用户重新填写（并在设置页表现为未配置）。
+                // 旧版本遗留的明文 Key 在读取时解密失败 → 视为空，同样需要重填。
+                prefs[KEY_AI_KEY] = if (next.apiKey.isEmpty()) {
+                    ""
+                } else {
+                    runCatching { secretCipher.encrypt(next.apiKey) }.getOrElse { failure ->
+                        android.util.Log.e("UserSettings", "API Key 加密失败，未落盘明文", failure)
+                        ""
+                    }
+                }
+                prefs[KEY_AI_MODEL] = next.model
+                // 端点或凭据变化 → 隐私授权重新询问（M2-06 验收：清空 Key 后再次弹窗）
+                if (previous.baseUrl != next.baseUrl || previous.apiKey != next.apiKey) {
+                    prefs[KEY_AI_CONSENT] = AiConsent.Unasked.name
+                }
+                prefs[KEY_AI_STATUS] = if (next.isConfigured) {
+                    AiStatus.Unverified.name
+                } else {
+                    AiStatus.NotConfigured.name
+                }
+                prefs.remove(KEY_AI_STATUS_DETAIL)
+            }
+            // 只有 DataStore 真正提交成功才会走到这里；失败事务不推进水位。
             accepted.forEach { field ->
                 patch.versions[field]?.let { appliedVersions[field] = it }
             }
-            if (next == previous) return@edit
-            prefs[KEY_AI_BASE_URL] = next.baseUrl
-            // 绝不回退明文：加密失败就写空，让用户重新填写（并在设置页表现为未配置）。
-            // 旧版本遗留的明文 Key 在读取时解密失败 → 视为空，同样需要重填。
-            prefs[KEY_AI_KEY] = if (next.apiKey.isEmpty()) {
-                ""
-            } else {
-                runCatching { secretCipher.encrypt(next.apiKey) }.getOrElse { failure ->
-                    android.util.Log.e("UserSettings", "API Key 加密失败，未落盘明文", failure)
-                    ""
-                }
-            }
-            prefs[KEY_AI_MODEL] = next.model
-            // 端点或凭据变化 → 隐私授权重新询问（M2-06 验收：清空 Key 后再次弹窗）
-            if (previous.baseUrl != next.baseUrl || previous.apiKey != next.apiKey) {
-                prefs[KEY_AI_CONSENT] = AiConsent.Unasked.name
-            }
-            prefs[KEY_AI_STATUS] = if (next.isConfigured) {
-                AiStatus.Unverified.name
-            } else {
-                AiStatus.NotConfigured.name
-            }
-            prefs.remove(KEY_AI_STATUS_DETAIL)
         }
     }
 
