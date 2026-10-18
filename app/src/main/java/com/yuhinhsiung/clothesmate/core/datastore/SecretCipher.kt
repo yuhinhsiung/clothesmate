@@ -99,21 +99,3 @@ class AndroidKeystoreSecretCipher @Inject constructor() : SecretCipher {
         const val MAX_IV_BYTES = 32
     }
 }
-
-/**
- * 测试 / 预览用的假实现：**不做任何加密**，只在内存里前缀标记。
- *
- * ⚠️ 仅用于单元测试与无 Android 环境的预览；生产绑定必须是
- * [AndroidKeystoreSecretCipher]（见 [UserSettingsModule]）。
- */
-class FakeSecretCipher : SecretCipher {
-    override fun encrypt(plainText: String): String = PREFIX + plainText.reversed()
-    override fun decrypt(cipherText: String): String? =
-        cipherText.takeIf { it.startsWith(PREFIX) }
-            ?.removePrefix(PREFIX)
-            ?.reversed()
-
-    private companion object {
-        const val PREFIX = "fake-enc:"
-    }
-}

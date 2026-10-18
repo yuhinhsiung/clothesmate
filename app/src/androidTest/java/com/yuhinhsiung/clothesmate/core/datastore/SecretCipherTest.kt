@@ -80,3 +80,18 @@ class SecretCipherTest {
         }
     }
 }
+
+
+/**
+ * 仅测试用：用可逆前缀代替 Keystore，让 DataStore 落盘逻辑可被断言。
+ * 不放进 main，避免生产包出现「假加密」实现。
+ */
+private class FakeSecretCipher : SecretCipher {
+    override fun encrypt(plainText: String): String = PREFIX + plainText.reversed()
+    override fun decrypt(cipherText: String): String? =
+        cipherText.takeIf { it.startsWith(PREFIX) }?.removePrefix(PREFIX)?.reversed()
+
+    private companion object {
+        const val PREFIX = "fake-enc:"
+    }
+}
