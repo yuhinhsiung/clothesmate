@@ -1,6 +1,9 @@
 package com.yuhinhsiung.clothesmate.core.weather
 
 import kotlinx.serialization.Serializable
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * 天气快照 —— 开发文档 §2.4 T-01、§5 推荐输入、M3-01。
@@ -45,6 +48,28 @@ data class WeatherSnapshot(
     /** 缓存是否仍在 TTL 内；FetchedAt 用系统时间，跨进程重启同样适用。 */
     fun isFresh(now: Long = System.currentTimeMillis(), ttlMillis: Long = 30 * 60 * 1000L): Boolean =
         fetchedAt > 0 && now - fetchedAt in 0 until ttlMillis
+
+    /**
+     * 快照是否属于 [date]：历史快照看 `date`，实时快照看抓取时的本地日期。
+     * 跨午夜后不能把昨天的天气写进今天的穿着记录（review R04）。
+     */
+    fun isForDate(date: LocalDate): Boolean {
+        val historical = this.date?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        if (historical != null) return historical == date
+        val fetchedDate = Instant.ofEpochMilli(fetchedAt).atZone(ZoneId.systemDefault()).toLocalDate()
+        return fetchedDate == date
+    }
+
+    /**
+     * 缓存是否属于用户当前查询：优先用 LocationID 缓存里的原始 query 对齐，
+     * 避免城市名「北京」与查询「beijing」被误判为不同城市（review R07）。
+     */
+    fun matchesQuery(query: String, cachedLocation: CachedWeatherLocation?): Boolean {
+        val target = query.trim()
+        if (target.isEmpty()) return false
+        if (cachedLocation?.query == target) return cachedLocation.name == city
+        return city == target || city.contains(target) || target.contains(city)
+    }
 }
 
 enum class WeatherCondition { SUNNY, CLOUDY, RAIN, SNOW }

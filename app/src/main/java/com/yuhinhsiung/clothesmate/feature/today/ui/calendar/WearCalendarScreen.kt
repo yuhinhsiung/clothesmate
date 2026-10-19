@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -387,7 +388,9 @@ private fun DaySheet(
                     color = MaterialTheme.colorScheme.onMuted,
                 )
             } else {
-                LazyColumn {
+                // review R09：记录多时列表不能把「补记这一天」推出可视区域；
+                // 列表自身限高滚动，底部按钮始终可见。
+                LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
                     items(records, key = { it.id }) { record ->
                         DayRecord(
                             record = record,

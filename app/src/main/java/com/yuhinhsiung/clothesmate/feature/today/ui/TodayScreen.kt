@@ -43,6 +43,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +67,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.core.model.WearFailure
@@ -102,6 +106,16 @@ fun TodayRoute(
     var celebrate by remember { mutableStateOf(false) }
     var celebrateRepeated by remember { mutableStateOf(false) }
 
+    // review R02：从后台恢复时重新核对日期，跨午夜后立即换到新的一天。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.onResume()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted -> viewModel.onLocationPermissionResult(granted) }
@@ -123,7 +137,6 @@ fun TodayRoute(
     val wearOutfitDeletedText = stringResource(R.string.completion_outfit_deleted)
 
     LaunchedEffect(viewModel) {
-        viewModel.refreshWeatherIfStale()
         viewModel.events.collect { event ->
             when (event) {
                 is TodayEvent.WearConfirmed -> {
@@ -223,7 +236,7 @@ fun TodayRoute(
                         items(state.visibleRecommendations, key = { it.outfit.outfit.id }) { item ->
                             RecommendationCard(
                                 recommended = item,
-                                weather = state.weatherSnapshotOrNull,
+                                weather = state.todayWeatherSnapshot,
                                 confirming = state.confirmingOutfitId == item.outfit.outfit.id,
                                 onOpen = { onOpenOutfit(item.outfit.outfit.id) },
                                 onWear = { viewModel.requestWear(item) },
@@ -323,7 +336,7 @@ fun TodayRoute(
             date = state.today,
             isBackfill = false,
             scheduleTags = state.selectedSchedule.sorted(),
-            weather = state.weatherSnapshotOrNull,
+            weather = state.todayWeatherSnapshot,
             submitting = state.confirmingOutfitId != null,
             onConfirm = viewModel::confirmPendingWear,
             onDismiss = viewModel::dismissWearConfirm,

@@ -79,22 +79,22 @@ class DefaultWearRepository @Inject constructor(
         if (date.isAfter(LocalDate.now())) {
             throw WearException(WearFailure.INVALID_DATE)
         }
-        val outfit = outfitDao.findById(outfitId)
-            ?: throw WearException(WearFailure.OUTFIT_NOT_FOUND)
-        val orderedIds = outfitDao.getClothingIds(outfitId)
-        if (orderedIds.isEmpty()) throw WearException(WearFailure.EMPTY_OUTFIT)
-
-        val byId = clothingDao.findByIds(orderedIds).associateBy { it.id }
-        val orderedItems = orderedIds.map { id ->
-            byId[id] ?: throw WearException(WearFailure.ITEM_UNAVAILABLE)
-        }
-        if (orderedItems.any { it.status == ClothingStatus.STORED }) {
-            throw WearException(WearFailure.ITEM_STORED)
-        }
-
         val wornAt = date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val createdAt = System.currentTimeMillis()
+        // review R06：存在性/收起校验必须和写入在同一事务里。否则校验通过后、
+        // 写入前若衣物被收起，仍会把一件已收起的衣物记成“今天穿过”。
         val recordId = db.withTransaction {
+            outfitDao.findById(outfitId)
+                ?: throw WearException(WearFailure.OUTFIT_NOT_FOUND)
+            val orderedIds = outfitDao.getClothingIds(outfitId)
+            if (orderedIds.isEmpty()) throw WearException(WearFailure.EMPTY_OUTFIT)
+            val byId = clothingDao.findByIds(orderedIds).associateBy { it.id }
+            val orderedItems = orderedIds.map { id ->
+                byId[id] ?: throw WearException(WearFailure.ITEM_UNAVAILABLE)
+            }
+            if (orderedItems.any { it.status == ClothingStatus.STORED }) {
+                throw WearException(WearFailure.ITEM_STORED)
+            }
             val id = wearDao.insert(
                 WearRecordEntity(
                     date = date.toString(),
@@ -107,6 +107,14 @@ class DefaultWearRepository @Inject constructor(
             )
             outfitDao.recordWear(outfitId, wornAt)
             orderedItems.forEach { item -> clothingDao.recordWear(item.id, wornAt) }
+            // review R06：提交前再核对一次「将被计数的集合」；并发/拦截器若在首次读取后
+            // 把衣物收起，这里必须抛错让整个事务回滚，而不是留下一条已穿记录。
+            val finalItems = clothingDao.findByIds(orderedIds)
+            if (finalItems.size != orderedIds.size ||
+                finalItems.any { it.status == ClothingStatus.STORED }
+            ) {
+                throw WearException(WearFailure.ITEM_STORED)
+            }
             id
         }
 

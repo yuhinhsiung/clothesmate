@@ -53,6 +53,7 @@ fun CmTextField(
     errorMessage: String? = null,
     singleLine: Boolean = true,
     minLines: Int = 1,
+    maxLines: Int = Int.MAX_VALUE,
     enabled: Boolean = true,
     imeAction: ImeAction = ImeAction.Default,
     keyboardOptions: KeyboardOptions = KeyboardOptions(imeAction = imeAction),
@@ -104,6 +105,7 @@ fun CmTextField(
                 enabled = enabled,
                 singleLine = singleLine,
                 minLines = minLines,
+                maxLines = maxLines,
                 textStyle = TextStyle(
                     fontFamily = MaterialTheme.typography.bodyLarge.fontFamily,
                     fontWeight = MaterialTheme.typography.bodyLarge.fontWeight,

@@ -58,6 +58,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yuhinhsiung.clothesmate.BuildConfig
 import com.yuhinhsiung.clothesmate.R
+import com.yuhinhsiung.clothesmate.core.ai.AiProvider
 import com.yuhinhsiung.clothesmate.core.datastore.AiConsent
 import com.yuhinhsiung.clothesmate.core.database.TagDictionarySeeder
 import com.yuhinhsiung.clothesmate.core.datastore.AiStatus
@@ -137,6 +138,7 @@ fun SettingsRoute(
             SettingsGroup(title = stringResource(R.string.settings_group_ai)) {
                 AiConfigCard(
                     state = state,
+                    onProviderChange = viewModel::onAiProviderChange,
                     onBaseUrlChange = viewModel::onBaseUrlChange,
                     onApiKeyChange = viewModel::onApiKeyChange,
                     onModelChange = viewModel::onModelChange,
@@ -416,9 +418,76 @@ private fun ThemeModeRow(
     }
 }
 
+/** AI 服务商二选一（DeepSeek 预设 / 自定义），沿用深色模式的分段控件视觉。 */
+@Composable
+private fun AiProviderRow(
+    current: AiProvider,
+    onChange: (AiProvider) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = stringResource(R.string.settings_ai_provider),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Row(
+            modifier = Modifier
+                .padding(top = Dimens.Space.s3)
+                .fillMaxWidth()
+                .height(Dimens.settingsSegmentHeight)
+                .selectableGroup()
+                .background(
+                    color = MaterialTheme.colorScheme.muted,
+                    shape = RoundedCornerShape(Dimens.Radius.s + Dimens.Space.s1),
+                )
+                .padding(Dimens.Space.s1),
+        ) {
+            AiProvider.entries.forEach { provider ->
+                val selected = provider == current
+                val label = when (provider) {
+                    AiProvider.DeepSeek -> stringResource(R.string.settings_ai_provider_deepseek)
+                    AiProvider.Custom -> stringResource(R.string.settings_ai_provider_custom)
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(Dimens.settingsSegmentHeight - Dimens.Space.s2)
+                        .minimumInteractiveComponentSize()
+                        .background(
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.surface
+                            } else {
+                                Color.Transparent
+                            },
+                            shape = RoundedCornerShape(Dimens.Radius.s),
+                        )
+                        .selectable(
+                            selected = selected,
+                            onClick = { onChange(provider) },
+                            role = Role.RadioButton,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onMuted
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun AiConfigCard(
     state: SettingsUiState,
+    onProviderChange: (AiProvider) -> Unit,
     onBaseUrlChange: (String) -> Unit,
     onApiKeyChange: (String) -> Unit,
     onModelChange: (String) -> Unit,
@@ -427,6 +496,7 @@ private fun AiConfigCard(
     onRequestConsent: () -> Unit,
 ) {
     var showKey by rememberSaveable { mutableStateOf(false) }
+    val provider = AiProvider.fromBaseUrl(state.baseUrl)
     val statusColor = when (state.aiStatus) {
         AiStatus.NotConfigured, AiStatus.Unverified -> MaterialTheme.colorScheme.onMuted
         AiStatus.Verified -> MaterialTheme.colorScheme.statusOkText
@@ -469,17 +539,41 @@ private fun AiConfigCard(
                 )
             }
 
-            CmTextField(
-                value = state.baseUrl,
-                onValueChange = onBaseUrlChange,
-                label = stringResource(R.string.settings_ai_base_url),
-                placeholder = stringResource(R.string.settings_ai_base_url_hint),
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                    keyboardType = KeyboardType.Uri,
-                    imeAction = ImeAction.Next,
-                ),
+            AiProviderRow(
+                current = provider,
+                onChange = onProviderChange,
                 modifier = Modifier.padding(top = Dimens.Space.s4),
             )
+            Text(
+                text = stringResource(
+                    if (provider == AiProvider.DeepSeek) {
+                        R.string.settings_ai_deepseek_desc
+                    } else {
+                        R.string.settings_ai_custom_desc
+                    },
+                    if (provider == AiProvider.DeepSeek) {
+                        AiProvider.DEEPSEEK_MODEL
+                    } else {
+                        AiProvider.CUSTOM_DEFAULT_MODEL
+                    },
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onMuted,
+                modifier = Modifier.padding(top = Dimens.Space.s2),
+            )
+            if (provider == AiProvider.Custom) {
+                CmTextField(
+                    value = state.baseUrl,
+                    onValueChange = onBaseUrlChange,
+                    label = stringResource(R.string.settings_ai_base_url),
+                    placeholder = stringResource(R.string.settings_ai_base_url_hint),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = KeyboardType.Uri,
+                        imeAction = ImeAction.Next,
+                    ),
+                    modifier = Modifier.padding(top = Dimens.Space.s3),
+                )
+            }
             CmTextField(
                 value = state.apiKey,
                 onValueChange = onApiKeyChange,
@@ -511,14 +605,16 @@ private fun AiConfigCard(
                 },
                 modifier = Modifier.padding(top = Dimens.Space.s3),
             )
-            CmTextField(
-                value = state.model,
-                onValueChange = onModelChange,
-                label = stringResource(R.string.settings_ai_model),
-                placeholder = stringResource(R.string.settings_ai_model_hint),
-                imeAction = ImeAction.Done,
-                modifier = Modifier.padding(top = Dimens.Space.s3),
-            )
+            if (provider == AiProvider.Custom) {
+                CmTextField(
+                    value = state.model,
+                    onValueChange = onModelChange,
+                    label = stringResource(R.string.settings_ai_model),
+                    placeholder = stringResource(R.string.settings_ai_model_hint),
+                    imeAction = ImeAction.Done,
+                    modifier = Modifier.padding(top = Dimens.Space.s3),
+                )
+            }
 
             Button(
                 onClick = onTest,

@@ -42,12 +42,14 @@ class DefaultWearService @Inject constructor(
             ?.sorted()
             .orEmpty()
         val configuredCity = settingsStore.settings.firstOrNull()?.weatherCity.orEmpty().trim()
+        val cachedLocation = weatherCacheStore.location.firstOrNull()
         val weather = weatherCacheStore.snapshot.firstOrNull()
             ?.takeIf { snapshot ->
-                snapshot.fetchedAt > System.currentTimeMillis() - WEATHER_MAX_AGE_MS &&
-                    (configuredCity.isBlank() ||
-                        snapshot.city.contains(configuredCity) ||
-                        configuredCity.contains(snapshot.city))
+                // review R04：跨午夜后昨天的缓存不能写进今天的记录；
+                // review R07：城市查询用 LocationID 缓存对齐，不能只比中文名。
+                snapshot.isForDate(today) &&
+                    snapshot.fetchedAt > System.currentTimeMillis() - WEATHER_MAX_AGE_MS &&
+                    (configuredCity.isBlank() || snapshot.matchesQuery(configuredCity, cachedLocation))
             }
             ?.toJsonOrNull()
         return wearRepository.confirmWear(

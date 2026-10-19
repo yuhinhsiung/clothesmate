@@ -6,6 +6,7 @@ import com.yuhinhsiung.clothesmate.core.ai.ClothingRecognizer
 import com.yuhinhsiung.clothesmate.core.ai.ConnectionTestResult
 import com.yuhinhsiung.clothesmate.core.ai.EndpointNormalizer
 import com.yuhinhsiung.clothesmate.core.ai.RecognitionEndpoint
+import com.yuhinhsiung.clothesmate.core.ai.AiProvider
 import com.yuhinhsiung.clothesmate.core.datastore.AiConfig
 import com.yuhinhsiung.clothesmate.core.datastore.AiConfigField
 import com.yuhinhsiung.clothesmate.core.datastore.AiConfigPatch
@@ -139,6 +140,47 @@ class SettingsViewModel @Inject constructor(
     fun onModelChange(value: String) {
         markDirty(AiConfigField.MODEL)
         _uiState.update { it.copy(model = value, aiStatus = previewStatus(it.baseUrl, it.apiKey, value)) }
+        configChannel.trySend(dirtyPatch(_uiState.value))
+    }
+
+    /**
+     * 切换 DeepSeek 预设 / 自定义入口。
+     *
+     * DeepSeek 固定官方 Base URL 与默认模型，用户只需填 Key；切换到自定义时
+     * 清掉官方地址、模型回落到常用默认值，用户只需填 URL 与 Key。
+     */
+    fun onAiProviderChange(provider: AiProvider) {
+        val current = _uiState.value
+        val baseUrl = when (provider) {
+            AiProvider.DeepSeek -> AiProvider.DEEPSEEK_BASE_URL
+            AiProvider.Custom -> {
+                if (AiProvider.fromBaseUrl(current.baseUrl) == AiProvider.DeepSeek) {
+                    ""
+                } else {
+                    current.baseUrl
+                }
+            }
+        }
+        val model = when (provider) {
+            AiProvider.DeepSeek -> AiProvider.DEEPSEEK_MODEL
+            AiProvider.Custom -> {
+                if (current.model.isBlank() || current.model == AiProvider.DEEPSEEK_MODEL) {
+                    AiProvider.CUSTOM_DEFAULT_MODEL
+                } else {
+                    current.model
+                }
+            }
+        }
+        markDirty(AiConfigField.BASE_URL)
+        markDirty(AiConfigField.MODEL)
+        _uiState.update {
+            it.copy(
+                baseUrl = baseUrl,
+                model = model,
+                aiStatus = previewStatus(baseUrl, it.apiKey, model),
+                error = null,
+            )
+        }
         configChannel.trySend(dirtyPatch(_uiState.value))
     }
 

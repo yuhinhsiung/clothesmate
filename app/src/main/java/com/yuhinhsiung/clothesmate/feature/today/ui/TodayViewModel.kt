@@ -28,6 +28,7 @@ import com.yuhinhsiung.clothesmate.feature.today.data.ScheduleTagRepository
 import com.yuhinhsiung.clothesmate.feature.today.data.WearRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +38,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -104,6 +106,10 @@ data class TodayUiState(
             else -> null
         }
 
+    /** 仅在快照属于今天时返回；昨天缓存不能写进今天记录（review R04）。 */
+    val todayWeatherSnapshot: WeatherSnapshot?
+        get() = weatherSnapshotOrNull?.takeIf { it.isForDate(today) }
+
     companion object {
         const val PAGE_SIZE = 3
     }
@@ -130,9 +136,13 @@ class TodayViewModel @Inject constructor(
     private val json: Json,
 ) : ViewModel() {
 
-    private val today: LocalDate = LocalDate.now()
+    /**
+     * 今日不是 ViewModel 创建时的常量：跨午夜/恢复前台后必须重新核对
+     * （review R02：13:02 创建、次日 00:05 恢复仍写前一天）。
+     */
+    private val currentDate = MutableStateFlow(LocalDate.now())
 
-    private val _uiState = MutableStateFlow(TodayUiState(today = today))
+    private val _uiState = MutableStateFlow(TodayUiState(today = currentDate.value))
     val uiState: StateFlow<TodayUiState> = _uiState.asStateFlow()
 
     private val _events = MutableSharedFlow<TodayEvent>(extraBufferCapacity = 4)
@@ -147,6 +157,7 @@ class TodayViewModel @Inject constructor(
     private var weatherJob: Job? = null
     private var weatherLocationConfig: Pair<String, WeatherAuthConfig>? = null
     private var lastWeatherAttemptAt: Long = 0L
+    private var lastWeatherAttemptKey: String? = null
     private var lastWeatherFailure: WeatherFailure? = null
 
     init {
@@ -186,8 +197,9 @@ class TodayViewModel @Inject constructor(
 
     private fun observeSchedule() {
         viewModelScope.launch {
-            scheduleSelectionStore.observe().collect { selection ->
-                val tags = if (selection.date == today) selection.tags else emptySet()
+            combine(scheduleSelectionStore.observe(), currentDate) { selection, date ->
+                if (selection.date == date) selection.tags else emptySet()
+            }.collect { tags ->
                 selectedSchedule.value = tags
                 _uiState.update { it.copy(selectedSchedule = tags) }
             }
@@ -201,9 +213,11 @@ class TodayViewModel @Inject constructor(
 
     private fun observeRecords() {
         viewModelScope.launch {
-            wearRepository.observeRecords(today).collect { records ->
-                _uiState.update { it.copy(records = records) }
-            }
+            currentDate
+                .flatMapLatest { date -> wearRepository.observeRecords(date) }
+                .collect { records ->
+                    _uiState.update { it.copy(records = records) }
+                }
         }
     }
 
@@ -212,16 +226,17 @@ class TodayViewModel @Inject constructor(
             combine(
                 outfitRepository.observeAllWithItems(),
                 clothingItemDao.observeAll(),
-                selectedSchedule,
+                combine(currentDate, selectedSchedule) { date, schedule -> date to schedule },
                 _uiState.map { it.weather }.distinctUntilChanged(),
                 combine(selectedStyle, fallbackSeed) { style, seed -> style to seed },
-            ) { outfits, clothing, schedule, weather, tuning ->
+            ) { outfits, clothing, dateSchedule, weather, tuning ->
+                val (date, schedule) = dateSchedule
                 val (style, seed) = tuning
                 val input = RecommendationInput(
                     outfits = outfits,
-                    weather = weather.recommendationWeather(),
+                    weather = weather.recommendationWeather(date),
                     scheduleTags = schedule,
-                    today = today,
+                    today = date,
                     stylePreference = style,
                     allClothing = clothing.map { it.toDomain() }
                         .filter { it.status == ClothingStatus.NORMAL },
@@ -258,6 +273,7 @@ class TodayViewModel @Inject constructor(
      * `force = true`，绕过自动冷却。
      */
     fun reloadWeather(force: Boolean = false) {
+        refreshDate()
         weatherJob?.cancel()
         val city = _uiState.value.weatherCity
         val auth = weatherAuth
@@ -266,6 +282,7 @@ class TodayViewModel @Inject constructor(
             return
         }
         weatherJob = viewModelScope.launch {
+            val cachedLocation = weatherCacheStore.location.firstOrNull()
             if (city.isBlank()) {
                 val cached = weatherCacheStore.snapshot.firstOrNull()
                 if (!force && cached?.isFresh() == true) {
@@ -285,7 +302,7 @@ class TodayViewModel @Inject constructor(
                 fetchWeather(coordinates.toQueryValue(), auth, cached, force)
             } else {
                 val cached = weatherCacheStore.snapshot.firstOrNull()
-                    ?.takeIf { it.matchesCity(city) }
+                    ?.takeIf { it.matchesQuery(city, cachedLocation) }
                 if (!force && cached?.isFresh() == true) {
                     updateWeather(WeatherUiState.Ready(cached))
                     return@launch
@@ -312,16 +329,27 @@ class TodayViewModel @Inject constructor(
         force: Boolean,
     ) {
         val now = System.currentTimeMillis()
-        if (!force && now - lastWeatherAttemptAt < MIN_AUTO_RETRY_MS) {
-            // 冷却期内不重复请求；没有缓存时恢复上一次失败态，避免页面卡在 Loading。
+        val requestKey = weatherRequestKey(query, auth)
+        // review R01：冷却只应拦截「同一地点 + 同一认证」的自动重放。
+        // 换城市/换凭据后必须立刻允许请求，不能被上一条请求的失败冷却吞掉。
+        if (!force &&
+            requestKey == lastWeatherAttemptKey &&
+            now - lastWeatherAttemptAt < MIN_AUTO_RETRY_MS
+        ) {
             val failure = lastWeatherFailure
             if (cached != null) {
                 updateWeather(WeatherUiState.Ready(cached))
-            } else if (failure != null) {
-                updateWeather(WeatherUiState.Failed(cached = null, failure = failure))
+            } else {
+                updateWeather(
+                    WeatherUiState.Failed(
+                        cached = null,
+                        failure = failure ?: WeatherFailure.UNKNOWN,
+                    ),
+                )
             }
             return
         }
+        lastWeatherAttemptKey = requestKey
         lastWeatherAttemptAt = now
         try {
             val snapshot = weatherRepository.fetch(query, auth)
@@ -356,17 +384,22 @@ class TodayViewModel @Inject constructor(
     fun selectCity(city: String) {
         val cleaned = city.trim()
         if (cleaned.isEmpty()) return
+        val sameCity = _uiState.value.weatherCity == cleaned
+        // 先把城市写进内存状态，下一次 fetch 才真正使用新 query。
+        _uiState.update { it.copy(weatherCity = cleaned) }
         viewModelScope.launch {
             settingsStore.setWeatherCity(cleaned)
-            // 同一城市重复选择不会触发 settings 的 distinct 流，这里主动刷新一次。
-            reloadWeather(force = true)
+            // 同一城市重复选择不会触发 settings 的 distinct 流；只有此时主动刷新。
+            if (sameCity) reloadWeather(force = true)
         }
     }
 
     fun useCurrentLocation() {
+        val alreadyAutomatic = _uiState.value.weatherCity.isBlank()
+        _uiState.update { it.copy(weatherCity = "") }
         viewModelScope.launch {
             settingsStore.setWeatherCity("")
-            reloadWeather(force = true)
+            if (alreadyAutomatic) reloadWeather(force = true)
         }
     }
 
@@ -389,7 +422,7 @@ class TodayViewModel @Inject constructor(
     private fun applySchedule(tags: Set<String>) {
         selectedSchedule.value = tags
         _uiState.update { it.copy(selectedSchedule = tags) }
-        viewModelScope.launch { scheduleSelectionStore.save(today, tags) }
+        viewModelScope.launch { scheduleSelectionStore.save(currentDate.value, tags) }
     }
 
     fun shuffleRecommendations() {
@@ -416,6 +449,7 @@ class TodayViewModel @Inject constructor(
 
     /** 推荐卡/详情页的「今天穿这套」先打开二次确认，不立刻写库。 */
     fun requestWear(outfit: RecommendedOutfit) {
+        refreshDate()
         if (_uiState.value.confirmingOutfitId != null) return
         _uiState.update { it.copy(pendingWear = outfit) }
     }
@@ -428,9 +462,12 @@ class TodayViewModel @Inject constructor(
     fun confirmPendingWear(note: String) {
         val pending = _uiState.value.pendingWear ?: return
         if (_uiState.value.confirmingOutfitId != null) return
+        val wearDate = refreshDate()
         _uiState.update { it.copy(confirmingOutfitId = pending.outfit.outfit.id) }
         viewModelScope.launch {
-            val snapshot = (_uiState.value.weather as? WeatherUiState.Ready)?.snapshot
+            // review R03：展示与落库必须用同一个快照；Failed.cached 也要落库。
+            // review R04：只接受属于 wearDate 的快照，避免把昨晚缓存写进今天。
+            val snapshot = _uiState.value.todayWeatherSnapshot
             val weatherJson = snapshot?.let {
                 json.encodeToString(WeatherSnapshot.serializer(), it)
             }
@@ -438,7 +475,7 @@ class TodayViewModel @Inject constructor(
                 val repeated = _uiState.value.records.isNotEmpty()
                 wearRepository.confirmWear(
                     outfitId = pending.outfit.outfit.id,
-                    date = today,
+                    date = wearDate,
                     scheduleTags = _uiState.value.selectedSchedule.sorted(),
                     weatherJson = weatherJson,
                     note = note.trim().take(500).ifBlank { null },
@@ -463,12 +500,36 @@ class TodayViewModel @Inject constructor(
         }
     }
 
-    /** 回到今日页时若天气已超过 30 分钟，静默刷新；不打断已有卡片。 */
+    /** 恢复前台：先核对日期，再按需静默刷新天气。 */
+    fun onResume() {
+        refreshDate()
+        refreshWeatherIfStale()
+    }
+
+    /**
+     * 跨午夜刷新：日期一变，行程/记录/推荐三条流都会重新订阅；
+     * 未提交的确认弹窗作废，避免把旧日期的确认写到新日期。
+     */
+    private fun refreshDate(): LocalDate {
+        val now = LocalDate.now()
+        if (now != currentDate.value) {
+            currentDate.value = now
+            _uiState.update {
+                it.copy(today = now, pendingWear = null, confirmingOutfitId = null, pageIndex = 0)
+            }
+        }
+        return now
+    }
+
+    /** 回到今日页时若天气已超过 30 分钟（或已跨日），静默刷新；不打断已有卡片。 */
     fun refreshWeatherIfStale() {
         val snapshot = _uiState.value.weatherSnapshotOrNull ?: return
         val age = System.currentTimeMillis() - snapshot.fetchedAt
-        if (age > WEATHER_STALE_MS) reloadWeather()
+        if (!snapshot.isForDate(LocalDate.now()) || age > WEATHER_STALE_MS) reloadWeather()
     }
+
+    private fun weatherRequestKey(query: String, auth: WeatherAuthConfig): String =
+        "$query|${auth.apiHost}|${auth.developerId}|${auth.projectId}|${auth.keyId}"
 
     private fun updateWeather(weather: WeatherUiState) {
         _uiState.update { it.copy(weather = weather) }
@@ -492,21 +553,15 @@ class TodayViewModel @Inject constructor(
     }
 }
 
-private fun WeatherUiState.recommendationWeather(): WeatherFacts? {
+private fun WeatherUiState.recommendationWeather(today: LocalDate): WeatherFacts? {
     val snapshot = when (this) {
         is WeatherUiState.Ready -> snapshot
         is WeatherUiState.Failed -> cached
         else -> null
-    } ?: return null
+    }?.takeIf { it.isForDate(today) } ?: return null
     return WeatherFacts(
         minTemp = snapshot.minTemp,
         maxTemp = snapshot.maxTemp,
         phenomenon = snapshot.text,
     )
-}
-
-private fun WeatherSnapshot.matchesCity(city: String): Boolean {
-    val target = city.trim()
-    return target.isNotEmpty() &&
-        (this.city == target || this.city.contains(target) || target.contains(this.city))
 }

@@ -1,0 +1,8 @@
+EdDSA-Java 0.3.0
+Copyright (c) 2016 str4d
+
+This project is distributed under the CC0 1.0 Universal public domain dedication.
+Full text: https://creativecommons.org/publicdomain/zero/1.0/
+Source: https://github.com/str4d/ed25519-java
+
+Used for Ed25519 JWT signing for QWeather authentication.

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -144,7 +145,11 @@ fun WearConfirmDialog(
                 placeholder = stringResource(R.string.wear_confirm_note_hint),
                 singleLine = false,
                 minLines = 2,
+                maxLines = 4,
                 enabled = !submitting,
+                // review R08：备注最多 500 字，原先无高度上限会把取消/确认挤出屏幕；
+                // 限制在 4 行内，超出部分在输入框内部滚动。
+                modifier = Modifier.heightIn(max = 120.dp),
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),

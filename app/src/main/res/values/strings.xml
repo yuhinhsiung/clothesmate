@@ -250,7 +250,12 @@
     <string name="settings_theme_system">跟随系统</string>
     <string name="settings_theme_light">浅色</string>
     <string name="settings_theme_dark">深色</string>
-    <string name="settings_ai_title">OpenAI 兼容端点</string>
+    <string name="settings_ai_title">AI 配置</string>
+    <string name="settings_ai_provider">服务商</string>
+    <string name="settings_ai_provider_deepseek">DeepSeek</string>
+    <string name="settings_ai_provider_custom">自定义</string>
+    <string name="settings_ai_deepseek_desc">官方端点 · 模型 %1$s；只需填写 API Key 即可使用</string>
+    <string name="settings_ai_custom_desc">任意 OpenAI 兼容服务；填写 Base URL 和 API Key，模型默认 %1$s，可修改</string>
     <string name="settings_ai_base_url">Base URL</string>
     <string name="settings_ai_base_url_hint">https://api.openai.com/v1</string>
     <string name="settings_ai_key">API Key</string>
@@ -292,7 +297,7 @@
     <string name="settings_backup_clean_desc">省空间 · 随 M4 交付</string>
     <string name="settings_about_version">版本 %1$s</string>
     <string name="settings_about_local">数据全部存于本机 · 无云同步</string>
-    <string name="settings_about_license">开源许可：Playfair Display（OFL）、U²-Net（Apache-2.0）</string>
+    <string name="settings_about_license">开源许可：Playfair Display（OFL）、U² Net（Apache 2.0）、EdDSA Java（CC0 1.0）</string>
     <string name="settings_city_dialog">设置城市</string>
     <string name="settings_save">保存</string>
     <!-- 穿着二次确认（M3 修订） -->

@@ -134,13 +134,8 @@ fun buildFallbackCombination(
         }
     }
 
-    // 分类不全时用剩余正常衣物补位，保证 UI 的三格组合尽量完整；
-    // 只有两件也展示（单件不叫“组合”）。
-    val remaining = normal.filter { item -> chosen.none { it.id == item.id } }.shuffled(random)
-    for (item in remaining) {
-        if (chosen.size >= 3) break
-        chosen += item
-    }
+    // review R05：不再用「剩余衣物」跨槽补位。分类不全时宁可比 3 件少，
+    // 也不能把三件 T 恤凑成一套“搭配”；单件仍不叫组合。
     if (chosen.size < 2) return null
     return FallbackCombination(
         items = chosen,

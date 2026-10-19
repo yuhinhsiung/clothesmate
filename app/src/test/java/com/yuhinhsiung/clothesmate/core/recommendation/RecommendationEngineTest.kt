@@ -204,6 +204,24 @@ class RecommendationEngineTest {
     }
 
     @Test
+    fun `fallback never duplicates one category to force three items`() {
+        val input = input(
+            outfits = emptyList(),
+            weather = WeatherFacts(minTemp = 30, maxTemp = 34, phenomenon = "晴"),
+            allClothing = listOf(
+                item(1, ClothingCategory.TShirt.key),
+                item(2, ClothingCategory.Shorts.key),
+            ),
+        )
+
+        val fallback = buildFallbackCombination(input, seed = 3L)
+
+        assertNotNull(fallback)
+        assertEquals(2, fallback!!.items.size)
+        assertEquals(2, fallback.items.map { it.categoryKey }.distinct().size)
+    }
+
+    @Test
     fun `fallback returns null when fewer than two normal items`() {
         val input = input(
             outfits = emptyList(),
