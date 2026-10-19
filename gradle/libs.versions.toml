@@ -18,6 +18,8 @@ coil = "3.6.3"
 camerax = "1.6.2"
 tensorflowLite = "2.17.0"
 vico = "3.3.1"
+# 和风天气 JWT（Ed25519）签名：QWeather 官方 Java 8+ 方案
+eddsa = "0.3.0"
 # 次要库：Android Studio 模板默认版本，开发文档未逐项列明
 coreKtx = "1.17.0"
 activityCompose = "1.11.2"
@@ -88,6 +90,7 @@ tensorflow-lite-gpu = { group = "org.tensorflow", name = "tensorflow-lite-gpu", 
 # 抠图走 core TFLite 的 Interpreter + ByteBuffer 直接推理，不需要 support 封装。
 
 vico-compose = { group = "com.patrykandpatrick.vico", name = "compose", version.ref = "vico" }
+eddsa = { group = "net.i2p.crypto", name = "eddsa", version.ref = "eddsa" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxJunit" }

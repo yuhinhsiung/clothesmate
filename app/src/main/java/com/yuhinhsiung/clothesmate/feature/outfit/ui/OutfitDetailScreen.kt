@@ -61,6 +61,7 @@ import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.core.model.OutfitDetail
 import com.yuhinhsiung.clothesmate.core.model.Season
 import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
+import com.yuhinhsiung.clothesmate.ui.component.WearConfirmDialog
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitDetailArgs
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
@@ -75,6 +76,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import javax.inject.Inject
 
 /**
@@ -356,7 +358,7 @@ fun OutfitDetailRoute(
 
                 // ── 「今天穿这套」（M3-06 实装） ──────────────────
                 Button(
-                    onClick = viewModel::wearToday,
+                    onClick = viewModel::requestWear,
                     enabled = detail.outfit.itemCount > 0 && !uiState.wearing,
                     shape = RoundedCornerShape(Dimens.Radius.m),
                     modifier = Modifier
@@ -405,6 +407,19 @@ fun OutfitDetailRoute(
                     },
                 )
             },
+        )
+    }
+
+    if (uiState.showWearConfirm && detail != null) {
+        WearConfirmDialog(
+            outfit = detail.outfit,
+            date = LocalDate.now(),
+            isBackfill = false,
+            scheduleTags = emptyList(),
+            weather = null,
+            submitting = uiState.wearing,
+            onConfirm = viewModel::confirmWear,
+            onDismiss = viewModel::dismissWearConfirm,
         )
     }
 }
@@ -586,15 +601,22 @@ class OutfitDetailViewModel @Inject constructor(
     private val clearableCount = MutableStateFlow(0)
 
     private val _wearing = MutableStateFlow(false)
+    private val _showWearConfirm = MutableStateFlow(false)
 
     val uiState: StateFlow<OutfitDetailUiState> = combine(
         outfitRepository.observeOutfitDetail(outfitId),
         clearableCount,
         _wearing,
-    ) { detail, count, wearing ->
+        _showWearConfirm,
+    ) { detail, count, wearing, showConfirm ->
         when {
             detail == null -> OutfitDetailUiState(notFound = true, wearing = wearing)
-            else -> OutfitDetailUiState(detail = detail, clearableCount = count, wearing = wearing)
+            else -> OutfitDetailUiState(
+                detail = detail,
+                clearableCount = count,
+                wearing = wearing,
+                showWearConfirm = showConfirm,
+            )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OutfitDetailUiState())
 
@@ -621,12 +643,24 @@ class OutfitDetailViewModel @Inject constructor(
         navResultBus.consumeOutfitSaved()
     }
 
-    fun wearToday() {
+    fun requestWear() {
+        if (_wearing.value) return
+        _showWearConfirm.value = true
+    }
+
+    fun dismissWearConfirm() {
+        _showWearConfirm.value = false
+    }
+
+    fun confirmWear(note: String) {
         if (_wearing.value) return
         _wearing.value = true
         viewModelScope.launch {
-            runCatching { wearService.confirmToday(outfitId) }
-                .onSuccess { _wornSignal.value = true }
+            runCatching { wearService.confirmToday(outfitId, note) }
+                .onSuccess {
+                    _showWearConfirm.value = false
+                    _wornSignal.value = true
+                }
                 .onFailure { _wearError.value = it.message ?: "记录失败，请重试" }
             _wearing.value = false
         }
@@ -689,4 +723,5 @@ data class OutfitDetailUiState(
     /** 删除弹窗用的「将同时彻底清除 N 件」预计算值（B-10 口径：独属本穿搭才计入） */
     val clearableCount: Int = 0,
     val wearing: Boolean = false,
+    val showWearConfirm: Boolean = false,
 )

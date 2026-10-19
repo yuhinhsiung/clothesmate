@@ -20,6 +20,7 @@ import com.yuhinhsiung.clothesmate.core.weather.WeatherCacheStore
 import com.yuhinhsiung.clothesmate.core.weather.WeatherException
 import com.yuhinhsiung.clothesmate.core.weather.WeatherFailure
 import com.yuhinhsiung.clothesmate.core.weather.WeatherRepository
+import com.yuhinhsiung.clothesmate.core.weather.WeatherAuthConfig
 import com.yuhinhsiung.clothesmate.core.weather.WeatherSnapshot
 import com.yuhinhsiung.clothesmate.feature.outfit.data.OutfitRepository
 import com.yuhinhsiung.clothesmate.feature.today.data.ScheduleSelectionStore
@@ -70,7 +71,8 @@ data class TodayUiState(
     val today: LocalDate = LocalDate.now(),
     val weather: WeatherUiState = WeatherUiState.Loading,
     val weatherCity: String = "",
-    val hasWeatherKey: Boolean = false,
+    val hasWeatherAuth: Boolean = false,
+    val stylePreference: String = "",
     val scheduleOptions: List<String> = emptyList(),
     val selectedSchedule: Set<String> = emptySet(),
     val candidates: List<RecommendedOutfit> = emptyList(),
@@ -79,6 +81,8 @@ data class TodayUiState(
     val fallback: FallbackCombination? = null,
     val records: List<WearRecord> = emptyList(),
     val confirmingOutfitId: Long? = null,
+    /** 非空 = 二次确认弹窗正在展示这套推荐 */
+    val pendingWear: RecommendedOutfit? = null,
 ) {
     val pageCount: Int
         get() = if (candidates.isEmpty()) 0 else (candidates.size + PAGE_SIZE - 1) / PAGE_SIZE
@@ -137,9 +141,11 @@ class TodayViewModel @Inject constructor(
     private val selectedSchedule = MutableStateFlow<Set<String>>(emptySet())
     private val fallbackSeed = MutableStateFlow(System.nanoTime())
 
-    /** 设置里的天气 Key；不进入 UI 状态，避免误显示/泄露。 */
-    private var weatherApiKey: String = ""
+    /** 设置里的和风天气 JWT 凭据；不进入 UI 状态，避免误显示/泄露。 */
+    private var weatherAuth: WeatherAuthConfig = WeatherAuthConfig()
+    private val selectedStyle = MutableStateFlow<String?>(null)
     private var weatherJob: Job? = null
+    private var weatherLocationConfig: Pair<String, WeatherAuthConfig>? = null
 
     init {
         observeSettings()
@@ -151,17 +157,27 @@ class TodayViewModel @Inject constructor(
     private fun observeSettings() {
         viewModelScope.launch {
             settingsStore.settings
-                .map { UserWeatherSettings(city = it.weatherCity.trim(), key = it.weatherApiKey) }
+                .map {
+                    UserWeatherSettings(
+                        city = it.weatherCity.trim(),
+                        auth = it.weatherAuth,
+                        style = it.stylePreference.trim(),
+                    )
+                }
                 .distinctUntilChanged()
                 .collect { settings ->
-                    weatherApiKey = settings.key
+                    val configChanged = weatherLocationConfig != (settings.city to settings.auth)
+                    weatherLocationConfig = settings.city to settings.auth
+                    weatherAuth = settings.auth
+                    selectedStyle.value = settings.style.ifBlank { null }
                     _uiState.update {
                         it.copy(
                             weatherCity = settings.city,
-                            hasWeatherKey = settings.key.isNotBlank(),
+                            hasWeatherAuth = settings.auth.isConfigured,
+                            stylePreference = settings.style,
                         )
                     }
-                    reloadWeather()
+                    if (configChanged) reloadWeather()
                 }
         }
     }
@@ -196,13 +212,15 @@ class TodayViewModel @Inject constructor(
                 clothingItemDao.observeAll(),
                 selectedSchedule,
                 _uiState.map { it.weather }.distinctUntilChanged(),
-                fallbackSeed,
-            ) { outfits, clothing, schedule, weather, seed ->
+                combine(selectedStyle, fallbackSeed) { style, seed -> style to seed },
+            ) { outfits, clothing, schedule, weather, tuning ->
+                val (style, seed) = tuning
                 val input = RecommendationInput(
                     outfits = outfits,
                     weather = weather.recommendationWeather(),
                     scheduleTags = schedule,
                     today = today,
+                    stylePreference = style,
                     allClothing = clothing.map { it.toDomain() }
                         .filter { it.status == ClothingStatus.NORMAL },
                 )
@@ -234,8 +252,8 @@ class TodayViewModel @Inject constructor(
     fun reloadWeather() {
         weatherJob?.cancel()
         val city = _uiState.value.weatherCity
-        val key = weatherApiKey
-        if (key.isBlank()) {
+        val auth = weatherAuth
+        if (!auth.isConfigured) {
             updateWeather(WeatherUiState.NoKey)
             return
         }
@@ -251,7 +269,7 @@ class TodayViewModel @Inject constructor(
                     updateWeather(WeatherUiState.NeedCity(locationDenied = true))
                     return@launch
                 }
-                fetchWeather(coordinates.toQueryValue(), key, cached = null)
+                fetchWeather(coordinates.toQueryValue(), auth, cached = null)
             } else {
                 val cached = weatherCacheStore.snapshot.first()
                     ?.takeIf { it.matchesCity(city) }
@@ -262,14 +280,14 @@ class TodayViewModel @Inject constructor(
                         WeatherUiState.Loading
                     },
                 )
-                fetchWeather(city, key, cached)
+                fetchWeather(city, auth, cached)
             }
         }
     }
 
-    private suspend fun fetchWeather(query: String, key: String, cached: WeatherSnapshot?) {
+    private suspend fun fetchWeather(query: String, auth: WeatherAuthConfig, cached: WeatherSnapshot?) {
         try {
-            val snapshot = weatherRepository.fetch(query, key)
+            val snapshot = weatherRepository.fetch(query, auth)
             updateWeather(WeatherUiState.Ready(snapshot))
         } catch (error: WeatherException) {
             if (error.failure == WeatherFailure.NO_LOCATION) {
@@ -292,7 +310,7 @@ class TodayViewModel @Inject constructor(
             updateWeather(WeatherUiState.NeedCity(locationDenied = true))
             return
         }
-        if (_uiState.value.hasWeatherKey) reloadWeather()
+        if (_uiState.value.hasWeatherAuth) reloadWeather()
     }
 
     fun selectCity(city: String) {
@@ -356,9 +374,21 @@ class TodayViewModel @Inject constructor(
         fallbackSeed.value = System.nanoTime()
     }
 
-    fun confirmWear(outfitId: Long) {
+    /** 推荐卡/详情页的「今天穿这套」先打开二次确认，不立刻写库。 */
+    fun requestWear(outfit: RecommendedOutfit) {
         if (_uiState.value.confirmingOutfitId != null) return
-        _uiState.update { it.copy(confirmingOutfitId = outfitId) }
+        _uiState.update { it.copy(pendingWear = outfit) }
+    }
+
+    fun dismissWearConfirm() {
+        _uiState.update { it.copy(pendingWear = null) }
+    }
+
+    /** 用户在确认弹窗里点了「确认穿着」；备注只随本次记录保存。 */
+    fun confirmPendingWear(note: String) {
+        val pending = _uiState.value.pendingWear ?: return
+        if (_uiState.value.confirmingOutfitId != null) return
+        _uiState.update { it.copy(confirmingOutfitId = pending.outfit.outfit.id) }
         viewModelScope.launch {
             val snapshot = (_uiState.value.weather as? WeatherUiState.Ready)?.snapshot
             val weatherJson = snapshot?.let {
@@ -367,12 +397,13 @@ class TodayViewModel @Inject constructor(
             try {
                 val repeated = _uiState.value.records.isNotEmpty()
                 wearRepository.confirmWear(
-                    outfitId = outfitId,
+                    outfitId = pending.outfit.outfit.id,
                     date = today,
                     scheduleTags = _uiState.value.selectedSchedule.sorted(),
                     weatherJson = weatherJson,
-                    note = null,
+                    note = note.trim().take(500).ifBlank { null },
                 )
+                _uiState.update { it.copy(pendingWear = null) }
                 _events.emit(TodayEvent.WearConfirmed(repeated = repeated))
             } catch (error: WearException) {
                 _events.emit(TodayEvent.WearFailed(error.failure))
@@ -409,7 +440,11 @@ class TodayViewModel @Inject constructor(
         val fallback: FallbackCombination?,
     )
 
-    private data class UserWeatherSettings(val city: String, val key: String)
+    private data class UserWeatherSettings(
+        val city: String,
+        val auth: WeatherAuthConfig,
+        val style: String,
+    )
 
     private companion object {
         const val WEATHER_STALE_MS = 30 * 60 * 1000L

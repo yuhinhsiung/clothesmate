@@ -115,6 +115,7 @@ dependencies {
     implementation(libs.retrofit.converter.kotlinx.serialization)
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
+    implementation(libs.eddsa)
 
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)

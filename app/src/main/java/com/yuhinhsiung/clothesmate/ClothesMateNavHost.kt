@@ -65,6 +65,7 @@ import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitHomeRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitWaterfallRoute
 import com.yuhinhsiung.clothesmate.feature.overview.ui.OverviewRoute
 import com.yuhinhsiung.clothesmate.feature.settings.ui.SettingsRoute
+import com.yuhinhsiung.clothesmate.feature.settings.ui.WeatherAuthRoute
 import com.yuhinhsiung.clothesmate.feature.today.ui.TodayRoute
 import com.yuhinhsiung.clothesmate.feature.today.ui.calendar.WearCalendarRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.ClothingDetailRoute
@@ -93,6 +94,7 @@ import com.yuhinhsiung.clothesmate.ui.navigation.OutfitWaterfall
 import com.yuhinhsiung.clothesmate.ui.navigation.OverviewTab
 import com.yuhinhsiung.clothesmate.ui.navigation.Search
 import com.yuhinhsiung.clothesmate.ui.navigation.Settings
+import com.yuhinhsiung.clothesmate.ui.navigation.WeatherAuth
 import com.yuhinhsiung.clothesmate.ui.navigation.TodayTab
 import com.yuhinhsiung.clothesmate.ui.navigation.WardrobeDetail
 import com.yuhinhsiung.clothesmate.ui.navigation.WardrobeTab
@@ -513,7 +515,14 @@ fun ClothesMateNavHost(
                 )
             }
             composable<Settings> {
-                SettingsRoute(onBack = { navController.popBackStack() })
+                SettingsRoute(
+                    onBack = { navController.popBackStack() },
+                    onOpenWeatherAuth = { navController.navigate(WeatherAuth) },
+                )
+            }
+
+            composable<WeatherAuth> {
+                WeatherAuthRoute(onBack = { navController.popBackStack() })
             }
 
             composable<WearCalendar> {

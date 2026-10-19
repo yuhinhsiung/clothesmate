@@ -2,6 +2,7 @@ package com.yuhinhsiung.clothesmate.feature.today.data
 
 import com.yuhinhsiung.clothesmate.core.datastore.UserSettingsStore
 import com.yuhinhsiung.clothesmate.core.weather.WeatherCacheStore
+import com.yuhinhsiung.clothesmate.core.weather.WeatherRepository
 import com.yuhinhsiung.clothesmate.core.weather.WeatherSnapshot
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.serialization.json.Json
@@ -17,9 +18,9 @@ import javax.inject.Inject
  */
 interface WearService {
     /** 今天穿这套；返回新建的 wear_record id。 */
-    suspend fun confirmToday(outfitId: Long): Long
+    suspend fun confirmToday(outfitId: Long, note: String? = null): Long
 
-    /** 补记历史日期（M3-07）：行程/天气留空，避免伪造当天快照。 */
+    /** 补记历史日期（M3-07）：能取到最近 10 天历史天气时写入真实快照。 */
     suspend fun backfill(outfitId: Long, date: LocalDate, note: String? = null): Long
 }
 
@@ -28,10 +29,11 @@ class DefaultWearService @Inject constructor(
     private val scheduleSelectionStore: ScheduleSelectionStore,
     private val weatherCacheStore: WeatherCacheStore,
     private val settingsStore: UserSettingsStore,
+    private val weatherRepository: WeatherRepository,
     private val json: Json,
 ) : WearService {
 
-    override suspend fun confirmToday(outfitId: Long): Long {
+    override suspend fun confirmToday(outfitId: Long, note: String?): Long {
         val today = LocalDate.now()
         val schedule = scheduleSelectionStore.observe()
             .firstOrNull()
@@ -53,18 +55,33 @@ class DefaultWearService @Inject constructor(
             date = today,
             scheduleTags = schedule,
             weatherJson = weather,
-            note = null,
+            note = note?.trim()?.take(500)?.takeIf { it.isNotEmpty() },
         ).id
     }
 
     override suspend fun backfill(outfitId: Long, date: LocalDate, note: String?): Long {
-        require(!date.isAfter(LocalDate.now())) { "不能补记未来日期" }
+        val today = LocalDate.now()
+        require(!date.isAfter(today)) { "不能补记未来日期" }
+        val historicalWeather = if (date.isBefore(today) && date >= today.minusDays(10)) {
+            val settings = settingsStore.settings.firstOrNull()
+            val city = settings?.weatherCity.orEmpty().trim()
+            val auth = settings?.weatherAuth
+            if (city.isNotEmpty() && auth != null && auth.isConfigured) {
+                runCatching { weatherRepository.fetchHistorical(city, auth, date) }
+                    .getOrNull()
+                    ?.toJsonOrNull()
+            } else {
+                null
+            }
+        } else {
+            null
+        }
         return wearRepository.confirmWear(
             outfitId = outfitId,
             date = date,
             scheduleTags = emptyList(),
-            weatherJson = null,
-            note = note?.trim()?.takeIf { it.isNotEmpty() },
+            weatherJson = historicalWeather,
+            note = note?.trim()?.take(500)?.takeIf { it.isNotEmpty() },
         ).id
     }
 

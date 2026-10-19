@@ -14,6 +14,7 @@ import com.yuhinhsiung.clothesmate.core.datastore.AiStatus
 import com.yuhinhsiung.clothesmate.core.datastore.ThemeMode
 import com.yuhinhsiung.clothesmate.core.datastore.UserSettings
 import com.yuhinhsiung.clothesmate.core.datastore.UserSettingsStore
+import com.yuhinhsiung.clothesmate.core.weather.WeatherAuthConfig
 import com.yuhinhsiung.clothesmate.core.di.ApplicationScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -217,14 +218,14 @@ class SettingsViewModel @Inject constructor(
         appScope.launch { settingsStore.setAiConsent(consent) }
     }
 
+    fun onStylePreferenceChange(style: String) {
+        _uiState.update { it.copy(stylePreference = style) }
+        appScope.launch { settingsStore.setStylePreference(style) }
+    }
+
     fun onWeatherCityChange(city: String) {
         _uiState.update { it.copy(weatherCity = city) }
         appScope.launch { settingsStore.setWeatherCity(city) }
-    }
-
-    fun onWeatherKeyChange(key: String) {
-        _uiState.update { it.copy(weatherApiKey = key) }
-        appScope.launch { settingsStore.setWeatherApiKey(key) }
     }
 
     fun clearError() = _uiState.update { it.copy(error = null) }
@@ -271,7 +272,8 @@ data class SettingsUiState(
     /** 非阻塞错误提示：Incomplete / InvalidUrl */
     val error: SettingsError? = null,
     val weatherCity: String = "",
-    val weatherApiKey: String = "",
+    val weatherAuth: WeatherAuthConfig = WeatherAuthConfig(),
+    val stylePreference: String = "",
 )
 
 enum class SettingsError {
@@ -288,5 +290,6 @@ private fun SettingsUiState.from(settings: UserSettings): SettingsUiState = copy
     aiStatusDetail = settings.aiStatusDetail,
     aiConsent = settings.aiConsent,
     weatherCity = settings.weatherCity,
-    weatherApiKey = settings.weatherApiKey,
+    weatherAuth = settings.weatherAuth,
+    stylePreference = settings.stylePreference,
 )

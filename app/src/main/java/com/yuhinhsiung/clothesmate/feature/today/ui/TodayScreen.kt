@@ -72,6 +72,7 @@ import com.yuhinhsiung.clothesmate.core.model.WearFailure
 import com.yuhinhsiung.clothesmate.core.model.WearRecord
 import com.yuhinhsiung.clothesmate.core.weather.WeatherSnapshot
 import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
+import com.yuhinhsiung.clothesmate.ui.component.WearConfirmDialog
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
 import com.yuhinhsiung.clothesmate.ui.theme.muted
@@ -225,7 +226,7 @@ fun TodayRoute(
                                 weather = state.weatherSnapshotOrNull,
                                 confirming = state.confirmingOutfitId == item.outfit.outfit.id,
                                 onOpen = { onOpenOutfit(item.outfit.outfit.id) },
-                                onWear = { viewModel.confirmWear(item.outfit.outfit.id) },
+                                onWear = { viewModel.requestWear(item) },
                             )
                         }
                     }
@@ -313,6 +314,19 @@ fun TodayRoute(
         WearCelebration(
             simple = celebrateRepeated,
             onFinished = { celebrate = false },
+        )
+    }
+
+    state.pendingWear?.let { pending ->
+        WearConfirmDialog(
+            outfit = pending.outfit.outfit,
+            date = state.today,
+            isBackfill = false,
+            scheduleTags = state.selectedSchedule.sorted(),
+            weather = state.weatherSnapshotOrNull,
+            submitting = state.confirmingOutfitId != null,
+            onConfirm = viewModel::confirmPendingWear,
+            onDismiss = viewModel::dismissWearConfirm,
         )
     }
 }

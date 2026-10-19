@@ -37,3 +37,8 @@
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
+
+# 和风天气 JWT（eddsa 0.3.0）：库的 verify 路径引用 JDK 内部 X509Key，
+# Android 运行时没有该类；App 只用签名路径（token 生成），忽略即可。
+-dontwarn sun.security.x509.X509Key
+-keep class net.i2p.crypto.eddsa.** { *; }

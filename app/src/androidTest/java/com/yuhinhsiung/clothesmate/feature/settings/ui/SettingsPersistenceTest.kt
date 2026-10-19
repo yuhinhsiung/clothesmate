@@ -244,7 +244,8 @@ class SettingsPersistenceTest {
         ) = Unit
 
         override suspend fun setWeatherCity(city: String) = Unit
-        override suspend fun setWeatherApiKey(key: String) = Unit
+        override suspend fun setWeatherAuth(auth: com.yuhinhsiung.clothesmate.core.weather.WeatherAuthConfig) = Unit
+        override suspend fun setStylePreference(style: String) = Unit
     }
 
     private object NoopRecognizer : ClothingRecognizer {

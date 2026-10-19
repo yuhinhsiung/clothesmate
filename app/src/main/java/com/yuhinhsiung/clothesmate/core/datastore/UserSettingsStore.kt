@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Singleton
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import com.yuhinhsiung.clothesmate.core.weather.WeatherAuthConfig
 
 /**
  * 用户设置（M2-05）—— 外观 / AI 配置 / 天气 / 隐私授权。
@@ -96,8 +97,10 @@ data class UserSettings(
     val aiStatusDetail: String? = null,
     /** 默认城市（M3 天气使用，M2-05 先落配置） */
     val weatherCity: String = "",
-    /** 和风天气 Key（M3 天气使用，M2-05 先落配置） */
-    val weatherApiKey: String = "",
+    /** 和风天气 JWT 认证配置（M3 天气；私钥加密后落盘） */
+    val weatherAuth: WeatherAuthConfig = WeatherAuthConfig(),
+    /** 用户偏好的风格（可选，参与推荐 +1；空 = 未设置） */
+    val stylePreference: String = "",
 ) {
     /** 状态点口径：未配置优先于历史验证结果 */
     val effectiveAiStatus: AiStatus
@@ -168,7 +171,9 @@ interface UserSettingsStore {
 
     suspend fun setWeatherCity(city: String)
 
-    suspend fun setWeatherApiKey(key: String)
+    suspend fun setWeatherAuth(auth: WeatherAuthConfig)
+
+    suspend fun setStylePreference(style: String)
 }
 
 @Singleton
@@ -210,9 +215,16 @@ class DataStoreUserSettingsStore @Inject constructor(
             aiStatus = if (config.isConfigured) storedStatus ?: AiStatus.Unverified else AiStatus.NotConfigured,
             aiStatusDetail = prefs[KEY_AI_STATUS_DETAIL],
             weatherCity = prefs[KEY_WEATHER_CITY].orEmpty(),
-            weatherApiKey = prefs[KEY_WEATHER_KEY].orEmpty().let { cipherText ->
-                if (cipherText.isEmpty()) "" else secretCipher.decrypt(cipherText).orEmpty()
-            },
+            stylePreference = prefs[KEY_STYLE_PREFERENCE].orEmpty(),
+            weatherAuth = WeatherAuthConfig(
+                apiHost = prefs[KEY_WEATHER_API_HOST].orEmpty(),
+                developerId = prefs[KEY_WEATHER_DEVELOPER_ID].orEmpty(),
+                projectId = prefs[KEY_WEATHER_PROJECT_ID].orEmpty(),
+                keyId = prefs[KEY_WEATHER_KEY_ID].orEmpty(),
+                privateKeyPem = prefs[KEY_WEATHER_PRIVATE_KEY].orEmpty().let { cipherText ->
+                    if (cipherText.isEmpty()) "" else secretCipher.decrypt(cipherText).orEmpty()
+                },
+            ),
         )
     }
 
@@ -321,14 +333,22 @@ class DataStoreUserSettingsStore @Inject constructor(
         dataStore.edit { it[KEY_WEATHER_CITY] = city.trim() }
     }
 
-    override suspend fun setWeatherApiKey(key: String) {
-        val trimmed = key.trim()
+    override suspend fun setStylePreference(style: String) {
+        dataStore.edit { it[KEY_STYLE_PREFERENCE] = style.trim() }
+    }
+
+    override suspend fun setWeatherAuth(auth: WeatherAuthConfig) {
         dataStore.edit { prefs ->
-            prefs[KEY_WEATHER_KEY] = if (trimmed.isEmpty()) {
+            prefs[KEY_WEATHER_API_HOST] = auth.apiHost.trim()
+            prefs[KEY_WEATHER_DEVELOPER_ID] = auth.developerId.trim()
+            prefs[KEY_WEATHER_PROJECT_ID] = auth.projectId.trim()
+            prefs[KEY_WEATHER_KEY_ID] = auth.keyId.trim()
+            val privateKey = auth.privateKeyPem.trim()
+            prefs[KEY_WEATHER_PRIVATE_KEY] = if (privateKey.isEmpty()) {
                 ""
             } else {
-                runCatching { secretCipher.encrypt(trimmed) }.getOrElse { failure ->
-                    android.util.Log.e("UserSettings", "天气 Key 加密失败，未落盘明文", failure)
+                runCatching { secretCipher.encrypt(privateKey) }.getOrElse { failure ->
+                    android.util.Log.e("UserSettings", "天气私钥加密失败，未落盘明文", failure)
                     ""
                 }
             }
@@ -358,8 +378,13 @@ class DataStoreUserSettingsStore @Inject constructor(
         val KEY_AI_CONSENT = stringPreferencesKey("ai_consent")
         val KEY_AI_STATUS = stringPreferencesKey("ai_status")
         val KEY_AI_STATUS_DETAIL = stringPreferencesKey("ai_status_detail")
+        val KEY_STYLE_PREFERENCE = stringPreferencesKey("style_preference")
         val KEY_WEATHER_CITY = stringPreferencesKey("weather_city")
-        val KEY_WEATHER_KEY = stringPreferencesKey("weather_api_key")
+        val KEY_WEATHER_API_HOST = stringPreferencesKey("weather_api_host")
+        val KEY_WEATHER_DEVELOPER_ID = stringPreferencesKey("weather_developer_id")
+        val KEY_WEATHER_PROJECT_ID = stringPreferencesKey("weather_project_id")
+        val KEY_WEATHER_KEY_ID = stringPreferencesKey("weather_key_id")
+        val KEY_WEATHER_PRIVATE_KEY = stringPreferencesKey("weather_private_key")
 
     }
 }
@@ -431,7 +456,11 @@ class InMemoryUserSettingsStore(initial: UserSettings = UserSettings()) : UserSe
         state.value = state.value.copy(weatherCity = city)
     }
 
-    override suspend fun setWeatherApiKey(key: String) {
-        state.value = state.value.copy(weatherApiKey = key)
+    override suspend fun setWeatherAuth(auth: WeatherAuthConfig) {
+        state.value = state.value.copy(weatherAuth = auth)
+    }
+
+    override suspend fun setStylePreference(style: String) {
+        state.value = state.value.copy(stylePreference = style)
     }
 }

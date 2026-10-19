@@ -21,6 +21,8 @@ data class WeatherSnapshot(
     val windScale: String? = null,
     /** 拉取成功的时间戳，用于缓存新鲜度判断 */
     val fetchedAt: Long,
+    /** 历史天气对应的日期；今天/实时天气为 null */
+    val date: String? = null,
 ) {
     val averageTemp: Double
         get() = (minTemp + maxTemp) / 2.0
@@ -43,7 +45,7 @@ enum class WeatherCondition { SUNNY, CLOUDY, RAIN, SNOW }
 
 /** 天气请求失败分型；文案在 UI 层映射，领域层不持有 Android 资源。 */
 enum class WeatherFailure {
-    /** 没有配置 API Key */
+    /** 没有配置和风天气 JWT 认证（API Host/凭据/私钥） */
     NO_KEY,
 
     /** 定位权限未授予 / 无可用定位 */

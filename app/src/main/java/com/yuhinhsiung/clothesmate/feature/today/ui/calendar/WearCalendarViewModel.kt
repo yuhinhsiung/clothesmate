@@ -8,6 +8,7 @@ import com.yuhinhsiung.clothesmate.core.model.WearFailure
 import com.yuhinhsiung.clothesmate.core.model.WearRecord
 import com.yuhinhsiung.clothesmate.feature.outfit.data.OutfitRepository
 import com.yuhinhsiung.clothesmate.feature.today.data.WearRepository
+import com.yuhinhsiung.clothesmate.feature.today.data.WearService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +30,7 @@ data class WearCalendarUiState(
     val selectedDate: LocalDate? = null,
     val outfits: List<Outfit> = emptyList(),
     val backfilling: Boolean = false,
+    val pendingBackfillOutfit: Outfit? = null,
 ) {
     val today: LocalDate get() = LocalDate.now()
     val selectedRecords: List<WearRecord>
@@ -45,6 +47,7 @@ sealed interface WearCalendarEvent {
 class WearCalendarViewModel @Inject constructor(
     private val wearRepository: WearRepository,
     private val outfitRepository: OutfitRepository,
+    private val wearService: WearService,
 ) : ViewModel() {
 
     private val month = MutableStateFlow(YearMonth.now())
@@ -89,27 +92,40 @@ class WearCalendarViewModel @Inject constructor(
         _uiState.update { it.copy(selectedDate = null) }
     }
 
-    fun backfill(outfitId: Long) {
+    fun requestBackfill(outfitId: Long) {
         val date = _uiState.value.selectedDate ?: return
         if (date.isAfter(LocalDate.now())) return
+        val outfit = _uiState.value.outfits.firstOrNull { it.id == outfitId } ?: return
+        _uiState.update { it.copy(pendingBackfillOutfit = outfit) }
+    }
+
+    fun dismissBackfillConfirm() {
         if (_uiState.value.backfilling) return
+        _uiState.update { it.copy(pendingBackfillOutfit = null) }
+    }
+
+    fun confirmBackfill(note: String) {
+        val state = _uiState.value
+        val date = state.selectedDate ?: return
+        val outfit = state.pendingBackfillOutfit ?: return
+        if (state.backfilling) return
         _uiState.update { it.copy(backfilling = true) }
         viewModelScope.launch {
             try {
-                wearRepository.confirmWear(
-                    outfitId = outfitId,
-                    date = date,
-                    scheduleTags = emptyList(),
-                    weatherJson = null,
-                    note = null,
-                )
+                wearService.backfill(outfit.id, date, note)
+                _uiState.update {
+                    it.copy(
+                        selectedDate = null,
+                        pendingBackfillOutfit = null,
+                        backfilling = false,
+                    )
+                }
                 _events.emit(WearCalendarEvent.Backfilled)
-                _uiState.update { it.copy(selectedDate = null) }
             } catch (error: WearException) {
                 _events.emit(WearCalendarEvent.BackfillFailed(error.failure))
+                _uiState.update { it.copy(backfilling = false) }
             } catch (_: Exception) {
                 _events.emit(WearCalendarEvent.BackfillFailed(null))
-            } finally {
                 _uiState.update { it.copy(backfilling = false) }
             }
         }

@@ -5,44 +5,53 @@ import kotlinx.serialization.SerializationException
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import retrofit2.HttpException
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.Url
 import java.io.IOException
 import java.net.SocketTimeoutException
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeoutException
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 和风天气 QWeather v7 端点 —— M3-01。
+ * 和风天气 API（2026 JWT 版）。
  *
- * 与 AI 一样使用 @Url 绝对地址调用，因此 baseUrl 不参与请求拼接；这样用户可配置
- * 商业版/开发版/自建代理域名。Key 只放 query（QWeather 规范），不写日志。
+ * 所有请求都使用用户自己的 API Host（控制台分配），路径：
+ * - `/geo/v2/city/lookup` 城市检索
+ * - `/v7/weather/now` 实况
+ * - `/v7/weather/3d` 今日预报
+ * - `/v7/historical/weather` 最近 10 天历史（不含今天）
+ *
+ * 认证统一用 `Authorization: Bearer <JWT>`，不再使用 `key` query；JWT 由
+ * [QWeatherJwtProvider] 生成，私钥不进入请求。
  */
 interface QWeatherApi {
 
     @GET
-    suspend fun cityLookup(@Url url: String): CityLookupResponse
+    suspend fun cityLookup(
+        @Url url: String,
+        @Header("Authorization") authorization: String,
+    ): CityLookupResponse
 
     @GET
-    suspend fun now(@Url url: String): NowResponse
+    suspend fun now(
+        @Url url: String,
+        @Header("Authorization") authorization: String,
+    ): NowResponse
 
     @GET
-    suspend fun daily(@Url url: String): DailyResponse
-}
+    suspend fun daily(
+        @Url url: String,
+        @Header("Authorization") authorization: String,
+    ): DailyResponse
 
-object WeatherEndpoints {
-    const val DEFAULT_BASE = "https://devapi.qweather.com/v7"
-    const val DEFAULT_GEO_BASE = "https://geoapi.qweather.com/v2"
-
-    fun normalizeBase(raw: String?): String {
-        val trimmed = raw?.trim().orEmpty().trimEnd('/')
-        val candidate = trimmed.ifEmpty { DEFAULT_BASE }
-        require(candidate.startsWith("http://") || candidate.startsWith("https://")) {
-            "天气 Base URL 必须以 http:// 或 https:// 开头"
-        }
-        require(candidate.toHttpUrlOrNull() != null) { "天气 Base URL 格式不正确" }
-        return candidate
-    }
+    @GET
+    suspend fun historical(
+        @Url url: String,
+        @Header("Authorization") authorization: String,
+    ): HistoricalResponse
 }
 
 @Serializable
@@ -114,6 +123,28 @@ data class DailyDto(
     val uvIndex: String? = null,
 )
 
+@Serializable
+data class HistoricalResponse(
+    val code: String,
+    val weatherDaily: HistoricalDailyDto? = null,
+    val weatherHourly: List<HistoricalHourlyDto> = emptyList(),
+)
+
+@Serializable
+data class HistoricalDailyDto(
+    val date: String? = null,
+    val tempMax: String? = null,
+    val tempMin: String? = null,
+)
+
+@Serializable
+data class HistoricalHourlyDto(
+    val time: String? = null,
+    val temp: String? = null,
+    val text: String? = null,
+    val windScale: String? = null,
+)
+
 class QWeatherException(
     val failure: WeatherFailure,
     message: String? = null,
@@ -121,35 +152,34 @@ class QWeatherException(
 ) : Exception(message, cause)
 
 /**
- * QWeather v7 客户端：先按城市/经纬度查到 locationId，再并发取实况与今日预报。
+ * QWeather 客户端：先按城市/经纬度查到 locationId，再取实况、今日预报或历史。
  *
- * - 城市检索失败（404）→ [WeatherFailure.CITY_NOT_FOUND]；
- * - 401/403 → [WeatherFailure.AUTH]；
- * - 响应 code 非 200 或 JSON 结构异常 → [WeatherFailure.UNKNOWN]；
- * - 超时/网络异常由调用方（Repository）统一映射。
+ * JWT 生成失败 / 401 / 403 → [WeatherFailure.AUTH]；城市无数据 → CITY_NOT_FOUND；
+ * 其余业务码 → UNKNOWN；超时/网络异常由 Repository 统一映射。
  */
 @Singleton
 class QWeatherClient @Inject constructor(
     private val api: QWeatherApi,
+    private val jwtProvider: QWeatherJwtProvider,
 ) {
 
     suspend fun fetch(
         locationQuery: String,
-        apiKey: String,
-        baseUrl: String? = null,
-        geoBaseUrl: String = WeatherEndpoints.DEFAULT_GEO_BASE,
+        auth: WeatherAuthConfig,
     ): WeatherSnapshot {
-        val base = WeatherEndpoints.normalizeBase(baseUrl)
-        val city = lookupCity(geoBaseUrl, locationQuery, apiKey)
+        requireAuth(auth)
+        val base = apiBase(auth)
+        val authorization = authorization(auth)
+        val city = lookupCity(base, authorization, locationQuery)
 
         val now = runCatching {
-            api.now(url(base, "/weather/now", location = city.id, apiKey = apiKey))
+            api.now(url(base, "/v7/weather/now", "location" to city.id), authorization)
         }.getOrElse { throw it.toWeatherException() }
         if (now.code != "200") throw codeException(now.code)
         val nowDto = now.now ?: throw QWeatherException(WeatherFailure.UNKNOWN, "实况为空")
 
         val daily = runCatching {
-            api.daily(url(base, "/weather/3d", location = city.id, apiKey = apiKey))
+            api.daily(url(base, "/v7/weather/3d", "location" to city.id), authorization)
         }.getOrElse { throw it.toWeatherException() }
         if (daily.code != "200") throw codeException(daily.code)
         val today = daily.daily.firstOrNull()
@@ -173,16 +203,73 @@ class QWeatherClient @Inject constructor(
             text = text,
             windScale = today.windScaleDay ?: nowDto.windScale,
             fetchedAt = System.currentTimeMillis(),
+            date = LocalDate.now().toString(),
+        )
+    }
+
+    /**
+     * 最近 10 天历史（不含今天）。QWeather 只保留 10 天，超出范围直接返回
+     * `CITY_NOT_FOUND` 之外的业务错误由 Repository 降级处理。
+     */
+    suspend fun fetchHistorical(
+        locationQuery: String,
+        auth: WeatherAuthConfig,
+        date: LocalDate,
+    ): WeatherSnapshot {
+        requireAuth(auth)
+        val base = apiBase(auth)
+        val authorization = authorization(auth)
+        val city = lookupCity(base, authorization, locationQuery)
+        val dateParam = date.format(DateTimeFormatter.BASIC_ISO_DATE)
+        val response = runCatching {
+            api.historical(
+                url(base, "/v7/historical/weather", "location" to city.id, "date" to dateParam),
+                authorization,
+            )
+        }.getOrElse { throw it.toWeatherException() }
+        if (response.code != "200") throw codeException(response.code)
+
+        val daily = response.weatherDaily
+            ?: throw QWeatherException(WeatherFailure.UNKNOWN, "历史天气为空")
+        val tempMin = daily.tempMin?.toIntOrNull()
+        val tempMax = daily.tempMax?.toIntOrNull()
+        if (tempMin == null && tempMax == null) {
+            throw QWeatherException(WeatherFailure.UNKNOWN, "历史天气温度缺失")
+        }
+        val hourly = response.weatherHourly
+        val temp = hourly.mapNotNull { it.temp?.toIntOrNull() }
+            .takeIf { it.isNotEmpty() }
+            ?.average()
+            ?.toInt()
+            ?: (((tempMin ?: 0) + (tempMax ?: 0)) / 2)
+        val text = hourly.mapNotNull { it.text?.takeIf(String::isNotBlank) }
+            .groupingBy { it }
+            .eachCount()
+            .maxByOrNull { it.value }
+            ?.key
+            ?: "历史天气"
+        val windScale = hourly.mapNotNull { it.windScale?.takeIf(String::isNotBlank) }
+            .maxByOrNull { it.toIntOrNull() ?: 0 }
+        return WeatherSnapshot(
+            city = city.name,
+            temp = temp,
+            feelsLike = temp,
+            minTemp = minOf(tempMin ?: temp, tempMax ?: temp),
+            maxTemp = maxOf(tempMin ?: temp, tempMax ?: temp),
+            text = text,
+            windScale = windScale,
+            fetchedAt = System.currentTimeMillis(),
+            date = date.toString(),
         )
     }
 
     private suspend fun lookupCity(
         base: String,
+        authorization: String,
         query: String,
-        apiKey: String,
     ): CityLocation {
         val response = runCatching {
-            api.cityLookup(url(base, "/city/lookup", location = query, apiKey = apiKey))
+            api.cityLookup(url(base, "/geo/v2/city/lookup", "location" to query), authorization)
         }.getOrElse { throw it.toWeatherException() }
 
         if (response.code == "404") {
@@ -193,20 +280,36 @@ class QWeatherClient @Inject constructor(
             ?: throw QWeatherException(WeatherFailure.CITY_NOT_FOUND, "未找到城市")
     }
 
-    private fun url(base: String, path: String, location: String, apiKey: String): String {
+    private fun apiBase(auth: WeatherAuthConfig): String {
+        val host = normalizeWeatherApiHost(auth.apiHost)
+            ?: throw QWeatherException(WeatherFailure.NO_KEY, "API Host 未配置")
+        return "https://$host"
+    }
+
+    private fun authorization(auth: WeatherAuthConfig): String = try {
+        "Bearer ${jwtProvider.token(auth)}"
+    } catch (error: QWeatherJwtException) {
+        throw QWeatherException(WeatherFailure.AUTH, "和风天气认证失败", error)
+    }
+
+    private fun requireAuth(auth: WeatherAuthConfig) {
+        if (!auth.isConfigured) throw QWeatherException(WeatherFailure.NO_KEY, "和风天气认证未配置")
+    }
+
+    private fun url(base: String, path: String, vararg params: Pair<String, String>): String {
         val root = (base + path).toHttpUrlOrNull()
             ?: throw QWeatherException(WeatherFailure.UNKNOWN, "天气地址格式错误")
         return root.newBuilder()
-            .addQueryParameter("location", location)
-            .addQueryParameter("key", apiKey)
+            .apply { params.forEach { (name, value) -> addQueryParameter(name, value) } }
             .addQueryParameter("lang", "zh")
             .build()
             .toString()
     }
 
     private fun codeException(code: String): QWeatherException = when (code) {
-        "401", "403" -> QWeatherException(WeatherFailure.AUTH, "API Key 无效")
+        "401", "403" -> QWeatherException(WeatherFailure.AUTH, "和风天气认证无效")
         "404" -> QWeatherException(WeatherFailure.CITY_NOT_FOUND, "城市无数据")
+        "429" -> QWeatherException(WeatherFailure.UNKNOWN, "请求过于频繁")
         else -> QWeatherException(WeatherFailure.UNKNOWN, "QWeather 返回 $code")
     }
 
@@ -215,7 +318,7 @@ class QWeatherClient @Inject constructor(
         if (this is QWeatherException) return this
         return when (this) {
             is HttpException -> when (code()) {
-                401, 403 -> QWeatherException(WeatherFailure.AUTH, "API Key 无效", this)
+                401, 403 -> QWeatherException(WeatherFailure.AUTH, "和风天气认证无效", this)
                 404 -> QWeatherException(WeatherFailure.CITY_NOT_FOUND, "城市无数据", this)
                 else -> QWeatherException(WeatherFailure.NETWORK, "HTTP ${code()}", this)
             }

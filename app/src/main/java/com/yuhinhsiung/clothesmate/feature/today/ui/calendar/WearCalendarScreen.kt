@@ -62,6 +62,7 @@ import com.yuhinhsiung.clothesmate.feature.today.ui.NoteDialog
 import com.yuhinhsiung.clothesmate.feature.today.ui.messageRes
 import com.yuhinhsiung.clothesmate.feature.today.ui.metaLine
 import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
+import com.yuhinhsiung.clothesmate.ui.component.WearConfirmDialog
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
 import com.yuhinhsiung.clothesmate.ui.theme.muted
@@ -149,14 +150,26 @@ fun WearCalendarRoute(
         }
     }
 
-    state.selectedDate?.let { date ->
+    state.pendingBackfillOutfit?.let { outfit ->
+        val date = state.selectedDate ?: return@let
+        WearConfirmDialog(
+            outfit = outfit,
+            date = date,
+            isBackfill = true,
+            scheduleTags = emptyList(),
+            weather = null,
+            submitting = state.backfilling,
+            onConfirm = viewModel::confirmBackfill,
+            onDismiss = viewModel::dismissBackfillConfirm,
+        )
+    } ?: state.selectedDate?.let { date ->
         if (showOutfitPicker) {
             OutfitPickerSheet(
                 outfits = state.outfits,
                 backfilling = state.backfilling,
                 onDismiss = { showOutfitPicker = false },
                 onPick = { outfitId ->
-                    viewModel.backfill(outfitId)
+                    viewModel.requestBackfill(outfitId)
                     showOutfitPicker = false
                 },
             )

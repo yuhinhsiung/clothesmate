@@ -40,6 +40,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -58,9 +59,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yuhinhsiung.clothesmate.BuildConfig
 import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.core.datastore.AiConsent
+import com.yuhinhsiung.clothesmate.core.database.TagDictionarySeeder
 import com.yuhinhsiung.clothesmate.core.datastore.AiStatus
 import com.yuhinhsiung.clothesmate.core.datastore.ThemeMode
 import com.yuhinhsiung.clothesmate.ui.component.AiPrivacyDialog
+import com.yuhinhsiung.clothesmate.ui.component.ChipGroup
+import com.yuhinhsiung.clothesmate.ui.component.ChipOption
 import com.yuhinhsiung.clothesmate.ui.component.CmTextField
 import com.yuhinhsiung.clothesmate.ui.component.privacyEndpointHost
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
@@ -81,11 +85,12 @@ import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 @Composable
 fun SettingsRoute(
     onBack: () -> Unit,
+    onOpenWeatherAuth: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showCityDialog by rememberSaveable { mutableStateOf(false) }
-    var showWeatherKeyDialog by rememberSaveable { mutableStateOf(false) }
+    var showStyleDialog by rememberSaveable { mutableStateOf(false) }
     var showConsentDialog by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
@@ -156,16 +161,34 @@ fun SettingsRoute(
                     )
                     SettingsRow(
                         title = stringResource(R.string.settings_weather_key),
-                        value = if (state.weatherApiKey.isBlank()) {
-                            stringResource(R.string.settings_weather_unconfigured)
-                        } else {
+                        value = if (state.weatherAuth.isConfigured) {
                             stringResource(R.string.settings_weather_configured)
+                        } else {
+                            stringResource(R.string.settings_weather_unconfigured)
                         },
-                        onClick = { showWeatherKeyDialog = true },
+                        onClick = onOpenWeatherAuth,
                     )
                 }
                 Text(
                     text = stringResource(R.string.settings_weather_note),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onMuted,
+                    modifier = Modifier.padding(start = Dimens.Space.s2, top = Dimens.Space.s2),
+                )
+            }
+
+            SettingsGroup(title = stringResource(R.string.settings_group_recommendation)) {
+                SettingsCard {
+                    SettingsRow(
+                        title = stringResource(R.string.settings_style_preference),
+                        value = state.stylePreference.ifBlank {
+                            stringResource(R.string.settings_style_unset)
+                        },
+                        onClick = { showStyleDialog = true },
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.settings_style_note),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onMuted,
                     modifier = Modifier.padding(start = Dimens.Space.s2, top = Dimens.Space.s2),
@@ -251,17 +274,50 @@ fun SettingsRoute(
             },
         )
     }
-    if (showWeatherKeyDialog) {
-        SettingsTextDialog(
-            title = stringResource(R.string.settings_weather_key_dialog),
-            label = stringResource(R.string.settings_weather_key),
-            initial = state.weatherApiKey,
-            isPassword = true,
-            onDismiss = { showWeatherKeyDialog = false },
-            onConfirm = { value ->
-                showWeatherKeyDialog = false
-                viewModel.onWeatherKeyChange(value)
+
+    if (showStyleDialog) {
+        var draft by remember(showStyleDialog, state.stylePreference) {
+            mutableStateOf(state.stylePreference)
+        }
+        AlertDialog(
+            onDismissRequest = { showStyleDialog = false },
+            title = { Text(stringResource(R.string.settings_style_preference)) },
+            text = {
+                Column {
+                    Text(
+                        text = stringResource(R.string.settings_style_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onMuted,
+                    )
+                    Spacer(Modifier.height(Dimens.Space.s3))
+                    ChipGroup(
+                        options = TagDictionarySeeder.STYLE_PRESETS.map {
+                            ChipOption(key = it, label = it)
+                        },
+                        selectedKeys = if (draft.isBlank()) emptySet() else setOf(draft),
+                        onToggle = { draft = it },
+                    )
+                    TextButton(onClick = { draft = "" }) {
+                        Text(stringResource(R.string.settings_style_clear))
+                    }
+                }
             },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showStyleDialog = false
+                        viewModel.onStylePreferenceChange(draft)
+                    },
+                ) {
+                    Text(stringResource(R.string.settings_save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showStyleDialog = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface,
         )
     }
 }

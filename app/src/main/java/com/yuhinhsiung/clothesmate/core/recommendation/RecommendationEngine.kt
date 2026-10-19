@@ -76,7 +76,10 @@ object RecommendationEngine {
                     val days = daysSince(lastWornAt, input.today)
                     if (days in 0 until RECENT_DAYS) {
                         score += RECENTLY_WORN_SCORE
-                        reasons += RecommendationReason.RecentlyWorn(days.toInt())
+                        // 今天已穿过：保留新鲜度扣分，但不再提示「0 天没穿」。
+                        if (days > 0) {
+                            reasons += RecommendationReason.RecentlyWorn(days.toInt())
+                        }
                     }
                 }
 
