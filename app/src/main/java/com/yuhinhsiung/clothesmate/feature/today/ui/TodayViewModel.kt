@@ -281,10 +281,13 @@ class TodayViewModel @Inject constructor(
             updateWeather(WeatherUiState.NoKey)
             return
         }
+        val today = currentDate.value
         weatherJob = viewModelScope.launch {
             val cachedLocation = weatherCacheStore.location.firstOrNull()
             if (city.isBlank()) {
+                // review R02：跨日后昨日的 30 分钟缓存仍然“新鲜”，必须按归属日期过滤。
                 val cached = weatherCacheStore.snapshot.firstOrNull()
+                    ?.takeIf { it.isForDate(today) }
                 if (!force && cached?.isFresh() == true) {
                     updateWeather(WeatherUiState.Ready(cached))
                     return@launch
@@ -302,7 +305,7 @@ class TodayViewModel @Inject constructor(
                 fetchWeather(coordinates.toQueryValue(), auth, cached, force)
             } else {
                 val cached = weatherCacheStore.snapshot.firstOrNull()
-                    ?.takeIf { it.matchesQuery(city, cachedLocation) }
+                    ?.takeIf { it.isForDate(today) && it.matchesQuery(city, cachedLocation) }
                 if (!force && cached?.isFresh() == true) {
                     updateWeather(WeatherUiState.Ready(cached))
                     return@launch
@@ -460,9 +463,12 @@ class TodayViewModel @Inject constructor(
 
     /** 用户在确认弹窗里点了「确认穿着」；备注只随本次记录保存。 */
     fun confirmPendingWear(note: String) {
-        val pending = _uiState.value.pendingWear ?: return
         if (_uiState.value.confirmingOutfitId != null) return
-        val wearDate = refreshDate()
+        // review R02：先核对日期；跨日后 refreshDate 会清空 pending，不能再拿
+        // 刷新前捕获的局部 pending 继续写入（否则会把昨日行程写进新日）。
+        refreshDate()
+        val pending = _uiState.value.pendingWear ?: return
+        val wearDate = _uiState.value.today
         _uiState.update { it.copy(confirmingOutfitId = pending.outfit.outfit.id) }
         viewModelScope.launch {
             // review R03：展示与落库必须用同一个快照；Failed.cached 也要落库。
@@ -529,7 +535,7 @@ class TodayViewModel @Inject constructor(
     }
 
     private fun weatherRequestKey(query: String, auth: WeatherAuthConfig): String =
-        "$query|${auth.apiHost}|${auth.developerId}|${auth.projectId}|${auth.keyId}"
+        "$query|${auth.apiHost}|${auth.developerId}|${auth.projectId}|${auth.keyId}|${auth.credentialFingerprint()}"
 
     private fun updateWeather(weather: WeatherUiState) {
         _uiState.update { it.copy(weather = weather) }

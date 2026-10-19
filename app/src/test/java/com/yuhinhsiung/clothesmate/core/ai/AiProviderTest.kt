@@ -41,4 +41,28 @@ class AiProviderTest {
     fun `custom default model is non blank`() {
         assertTrue(AiProvider.CUSTOM_DEFAULT_MODEL.isNotBlank())
     }
+
+    @Test
+    fun `provider requires both official url and fixed model`() {
+        assertEquals(
+            AiProvider.DeepSeek,
+            AiProvider.fromConfig(AiProvider.DEEPSEEK_BASE_URL, AiProvider.DEEPSEEK_MODEL),
+        )
+        // N01：官方 URL + 其他模型仍是自定义配置，不能隐藏真实模型。
+        assertEquals(
+            AiProvider.Custom,
+            AiProvider.fromConfig(AiProvider.DEEPSEEK_BASE_URL, "gpt-4o-mini"),
+        )
+        assertEquals(
+            AiProvider.Custom,
+            AiProvider.fromConfig("https://custom.example/v1", AiProvider.DEEPSEEK_MODEL),
+        )
+    }
+
+    @Test
+    fun `legacy preset model is identified for one-time migration`() {
+        assertTrue(AiProvider.isLegacyDeepSeekModel("deepseek-v4-flash-vision-exp"))
+        assertFalse(AiProvider.isLegacyDeepSeekModel(AiProvider.DEEPSEEK_MODEL))
+        assertFalse(AiProvider.isLegacyDeepSeekModel("gpt-4o-mini"))
+    }
 }

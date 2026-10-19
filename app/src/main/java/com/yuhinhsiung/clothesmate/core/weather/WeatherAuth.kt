@@ -27,6 +27,21 @@ data class WeatherAuthConfig(
             projectId.isNotBlank() &&
             keyId.isNotBlank() &&
             privateKeyPem.isNotBlank()
+
+    /**
+     * 凭据版本指纹：只用于隔离「同一地点、不同认证」的请求冷却。
+     *
+     * 私钥不能出现在日志/UI/请求键明文里；取 SHA-256 前 8 字节作为不可逆指纹。
+     * 私钥变化 → 指纹变化 → 新请求键，旧冷却不会吞掉新凭据。
+     */
+    fun credentialFingerprint(): String {
+        if (privateKeyPem.isBlank()) return "no-key"
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(privateKeyPem.toByteArray(Charsets.UTF_8))
+        return digest.take(8).joinToString("") { byte ->
+            (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+        }
+    }
 }
 
 /** 把用户粘贴的 API Host 统一成主机名；允许误粘贴 https:// 前缀和末尾斜杠。 */

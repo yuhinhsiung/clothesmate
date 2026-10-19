@@ -496,7 +496,7 @@ private fun AiConfigCard(
     onRequestConsent: () -> Unit,
 ) {
     var showKey by rememberSaveable { mutableStateOf(false) }
-    val provider = AiProvider.fromBaseUrl(state.baseUrl)
+    val provider = AiProvider.fromConfig(state.baseUrl, state.model)
     val statusColor = when (state.aiStatus) {
         AiStatus.NotConfigured, AiStatus.Unverified -> MaterialTheme.colorScheme.onMuted
         AiStatus.Verified -> MaterialTheme.colorScheme.statusOkText

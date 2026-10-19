@@ -89,6 +89,13 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val initial = settingsStore.settings.first()
             _uiState.update { it.copy(loaded = true).from(initial) }
+            // 旧版预设曾把 legacy 模型写进官方端点。升级时只迁移「官方端点 + 旧预设
+            // 模型」这一组合，避免隐藏一个仍会生效的模型（review N01）。
+            if (AiProvider.fromBaseUrl(initial.aiConfig.baseUrl) == AiProvider.DeepSeek &&
+                AiProvider.isLegacyDeepSeekModel(initial.aiConfig.model)
+            ) {
+                onAiProviderChange(AiProvider.DeepSeek)
+            }
         }
         // 状态点 / 授权可能被别处（首次识别弹窗）改写；主题也可能被系统设置改。
         viewModelScope.launch {
@@ -127,7 +134,15 @@ class SettingsViewModel @Inject constructor(
 
     fun onBaseUrlChange(value: String) {
         markDirty(AiConfigField.BASE_URL)
-        _uiState.update { it.copy(baseUrl = value, aiStatus = previewStatus(value, it.apiKey, it.model)) }
+        // N01：用户把地址填成 DeepSeek 官方端点时，模型必须同步成预设模型；
+        // 否则 UI 会隐藏模型框，却继续用旧模型发请求，展示与生效配置不一致。
+        val model = if (AiProvider.fromBaseUrl(value) == AiProvider.DeepSeek) {
+            AiProvider.DEEPSEEK_MODEL
+        } else {
+            _uiState.value.model
+        }
+        if (model != _uiState.value.model) markDirty(AiConfigField.MODEL)
+        _uiState.update { it.copy(baseUrl = value, model = model, aiStatus = previewStatus(value, it.apiKey, model)) }
         configChannel.trySend(dirtyPatch(_uiState.value))
     }
 
@@ -154,7 +169,7 @@ class SettingsViewModel @Inject constructor(
         val baseUrl = when (provider) {
             AiProvider.DeepSeek -> AiProvider.DEEPSEEK_BASE_URL
             AiProvider.Custom -> {
-                if (AiProvider.fromBaseUrl(current.baseUrl) == AiProvider.DeepSeek) {
+                if (AiProvider.fromConfig(current.baseUrl, current.model) == AiProvider.DeepSeek) {
                     ""
                 } else {
                     current.baseUrl
