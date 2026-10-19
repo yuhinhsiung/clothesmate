@@ -1,6 +1,7 @@
 package com.yuhinhsiung.clothesmate.core.weather
 
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withTimeout
 import java.io.IOException
 import java.time.LocalDate
@@ -23,14 +24,25 @@ interface WeatherRepository {
 
 @Singleton
 class DefaultWeatherRepository @Inject constructor(
-    private val client: QWeatherClient,
+    private val client: WeatherDataSource,
     private val cacheStore: WeatherCacheStore,
 ) : WeatherRepository {
 
     override suspend fun fetch(locationQuery: String, auth: WeatherAuthConfig): WeatherSnapshot {
         validate(locationQuery, auth)
-        val snapshot = call { client.fetch(locationQuery.trim(), auth) }
-        runCatching { cacheStore.save(snapshot) }
+        val query = locationQuery.trim()
+        val known = cacheStore.location.firstOrNull()
+            ?.takeIf { it.query == query }
+            ?.toKnownLocation()
+        val snapshot = callWithLocationFallback(query, known) { location ->
+            client.fetch(query, auth, location)
+        }
+        runCatching {
+            cacheStore.save(snapshot)
+            snapshot.locationId?.let { id ->
+                cacheStore.saveLocation(CachedWeatherLocation(query, id, snapshot.city))
+            }
+        }
         return snapshot
     }
 
@@ -40,7 +52,44 @@ class DefaultWeatherRepository @Inject constructor(
         date: LocalDate,
     ): WeatherSnapshot {
         validate(locationQuery, auth)
-        return call { client.fetchHistorical(locationQuery.trim(), auth, date) }
+        val query = locationQuery.trim()
+        // 历史天气不会变化：同城同日重复补记直接命中本地缓存，不再计费。
+        cacheStore.historical(query, date)?.let { return it }
+
+        val known = cacheStore.location.firstOrNull()
+            ?.takeIf { it.query == query }
+            ?.toKnownLocation()
+        val snapshot = callWithLocationFallback(query, known) { location ->
+            client.fetchHistorical(query, auth, date, location)
+        }
+        runCatching {
+            cacheStore.saveHistorical(query, date, snapshot)
+            snapshot.locationId?.let { id ->
+                cacheStore.saveLocation(CachedWeatherLocation(query, id, snapshot.city))
+            }
+        }
+        return snapshot
+    }
+
+    private fun CachedWeatherLocation.toKnownLocation(): KnownWeatherLocation =
+        KnownWeatherLocation(locationId = locationId, name = name)
+
+    /**
+     * 缓存 LocationID 失效（城市合并/迁移）时只回退一次重新检索；成功后再写回缓存，
+     * 以后就不再重复 GeoAPI 请求。
+     */
+    private suspend fun callWithLocationFallback(
+        query: String,
+        known: KnownWeatherLocation?,
+        block: suspend (KnownWeatherLocation?) -> WeatherSnapshot,
+    ): WeatherSnapshot {
+        if (known == null) return call { block(null) }
+        return try {
+            call { block(known) }
+        } catch (error: WeatherException) {
+            if (error.failure != WeatherFailure.CITY_NOT_FOUND) throw error
+            call { block(null) }
+        }
     }
 
     private fun validate(locationQuery: String, auth: WeatherAuthConfig) {

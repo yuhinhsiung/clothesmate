@@ -219,6 +219,12 @@ fun WeatherAuthRoute(
                     Text(stringResource(R.string.weather_auth_save))
                 }
             }
+            Spacer(Modifier.height(Dimens.Space.s2))
+            Text(
+                text = stringResource(R.string.weather_auth_cost_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onMuted,
+            )
         }
     }
 }

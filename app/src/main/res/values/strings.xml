@@ -331,6 +331,7 @@
     <string name="weather_auth_error_host">API Host 格式不正确，请填写控制台分配的域名（不要带路径）。</string>
     <string name="weather_auth_error_key">私钥无法解析或签名，请确认粘贴的是 Ed25519 的 PKCS#8 PEM。</string>
     <string name="weather_auth_error_save">保存失败，请重试。</string>
+    <string name="weather_auth_cost_note">为控制请求次数：今日天气缓存 30 分钟，同一城市只解析一次 LocationID，历史天气按城市与日期缓存；只有打开今日页、手动重试或补记时才会请求。实际用量以和风控制台为准。</string>
 
     <!-- 抠图预览页（M2-01，UI 文档 §7.3 / mockup-14） -->
     <string name="cutout_title">抠图预览</string>

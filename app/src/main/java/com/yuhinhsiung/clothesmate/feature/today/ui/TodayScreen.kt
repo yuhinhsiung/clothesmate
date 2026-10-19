@@ -112,7 +112,7 @@ fun TodayRoute(
             Manifest.permission.ACCESS_COARSE_LOCATION,
         ) == PackageManager.PERMISSION_GRANTED
         if (granted) {
-            viewModel.reloadWeather()
+            viewModel.reloadWeather(force = true)
         } else {
             locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
@@ -188,7 +188,7 @@ fun TodayRoute(
                     city = state.cityLabel,
                     onChooseCity = { showCitySheet = true },
                     onOpenSettings = onOpenSettings,
-                    onRetry = viewModel::reloadWeather,
+                    onRetry = viewModel::retryWeather,
                     onAskLocation = ::askForLocation,
                     modifier = Modifier.padding(horizontal = Dimens.pagePadding),
                 )

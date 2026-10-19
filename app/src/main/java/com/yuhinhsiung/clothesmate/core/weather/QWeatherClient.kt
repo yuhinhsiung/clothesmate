@@ -151,26 +151,46 @@ class QWeatherException(
     cause: Throwable? = null,
 ) : Exception(message, cause)
 
+/** 已缓存的 LocationID；避免每次刷新都调用一次 GeoAPI。 */
+data class KnownWeatherLocation(val locationId: String, val name: String)
+
 /**
  * QWeather 客户端：先按城市/经纬度查到 locationId，再取实况、今日预报或历史。
  *
  * JWT 生成失败 / 401 / 403 → [WeatherFailure.AUTH]；城市无数据 → CITY_NOT_FOUND；
  * 其余业务码 → UNKNOWN；超时/网络异常由 Repository 统一映射。
  */
+/** 天气数据源接口：便于对缓存/计费策略做无网络的单元测试。 */
+interface WeatherDataSource {
+    suspend fun fetch(
+        locationQuery: String,
+        auth: WeatherAuthConfig,
+        knownLocation: KnownWeatherLocation? = null,
+    ): WeatherSnapshot
+
+    suspend fun fetchHistorical(
+        locationQuery: String,
+        auth: WeatherAuthConfig,
+        date: LocalDate,
+        knownLocation: KnownWeatherLocation? = null,
+    ): WeatherSnapshot
+}
+
 @Singleton
 class QWeatherClient @Inject constructor(
     private val api: QWeatherApi,
     private val jwtProvider: QWeatherJwtProvider,
-) {
+) : WeatherDataSource {
 
-    suspend fun fetch(
+    override suspend fun fetch(
         locationQuery: String,
         auth: WeatherAuthConfig,
+        knownLocation: KnownWeatherLocation?,
     ): WeatherSnapshot {
         requireAuth(auth)
         val base = apiBase(auth)
         val authorization = authorization(auth)
-        val city = lookupCity(base, authorization, locationQuery)
+        val city = knownLocation?.asCity() ?: lookupCity(base, authorization, locationQuery)
 
         val now = runCatching {
             api.now(url(base, "/v7/weather/now", "location" to city.id), authorization)
@@ -204,8 +224,12 @@ class QWeatherClient @Inject constructor(
             windScale = today.windScaleDay ?: nowDto.windScale,
             fetchedAt = System.currentTimeMillis(),
             date = LocalDate.now().toString(),
+            locationId = city.id,
         )
     }
+
+    suspend fun fetch(locationQuery: String, auth: WeatherAuthConfig): WeatherSnapshot =
+        fetch(locationQuery, auth, null)
 
     /**
      * 最近 10 天历史（不含今天）。QWeather 只保留 10 天，超出范围直接返回
@@ -215,11 +239,18 @@ class QWeatherClient @Inject constructor(
         locationQuery: String,
         auth: WeatherAuthConfig,
         date: LocalDate,
+    ): WeatherSnapshot = fetchHistorical(locationQuery, auth, date, null)
+
+    override suspend fun fetchHistorical(
+        locationQuery: String,
+        auth: WeatherAuthConfig,
+        date: LocalDate,
+        knownLocation: KnownWeatherLocation?,
     ): WeatherSnapshot {
         requireAuth(auth)
         val base = apiBase(auth)
         val authorization = authorization(auth)
-        val city = lookupCity(base, authorization, locationQuery)
+        val city = knownLocation?.asCity() ?: lookupCity(base, authorization, locationQuery)
         val dateParam = date.format(DateTimeFormatter.BASIC_ISO_DATE)
         val response = runCatching {
             api.historical(
@@ -260,8 +291,12 @@ class QWeatherClient @Inject constructor(
             windScale = windScale,
             fetchedAt = System.currentTimeMillis(),
             date = date.toString(),
+            locationId = city.id,
         )
     }
+
+    private fun KnownWeatherLocation.asCity(): CityLocation =
+        CityLocation(name = name, id = locationId)
 
     private suspend fun lookupCity(
         base: String,

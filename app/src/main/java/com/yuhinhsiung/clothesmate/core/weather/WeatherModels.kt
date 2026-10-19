@@ -23,6 +23,8 @@ data class WeatherSnapshot(
     val fetchedAt: Long,
     /** 历史天气对应的日期；今天/实时天气为 null */
     val date: String? = null,
+    /** 和风解析后的 LocationID；用于跳过重复的城市检索，降低计费请求数 */
+    val locationId: String? = null,
 ) {
     val averageTemp: Double
         get() = (minTemp + maxTemp) / 2.0
@@ -39,6 +41,10 @@ data class WeatherSnapshot(
             text.contains("晴") -> WeatherCondition.SUNNY
             else -> WeatherCondition.CLOUDY
         }
+
+    /** 缓存是否仍在 TTL 内；FetchedAt 用系统时间，跨进程重启同样适用。 */
+    fun isFresh(now: Long = System.currentTimeMillis(), ttlMillis: Long = 30 * 60 * 1000L): Boolean =
+        fetchedAt > 0 && now - fetchedAt in 0 until ttlMillis
 }
 
 enum class WeatherCondition { SUNNY, CLOUDY, RAIN, SNOW }

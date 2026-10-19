@@ -31,6 +31,10 @@ abstract class WeatherBindModule {
 
     @Binds
     @Singleton
+    abstract fun bindWeatherDataSource(impl: QWeatherClient): WeatherDataSource
+
+    @Binds
+    @Singleton
     abstract fun bindWeatherCacheStore(impl: DataStoreWeatherCacheStore): WeatherCacheStore
 
     @Binds

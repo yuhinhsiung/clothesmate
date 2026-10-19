@@ -37,7 +37,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -146,6 +146,8 @@ class TodayViewModel @Inject constructor(
     private val selectedStyle = MutableStateFlow<String?>(null)
     private var weatherJob: Job? = null
     private var weatherLocationConfig: Pair<String, WeatherAuthConfig>? = null
+    private var lastWeatherAttemptAt: Long = 0L
+    private var lastWeatherFailure: WeatherFailure? = null
 
     init {
         observeSettings()
@@ -248,8 +250,14 @@ class TodayViewModel @Inject constructor(
         }
     }
 
-    /** 首次进入或用户点重试时拉取；缓存按城市匹配，避免把杭州天气显示在上海卡片上。 */
-    fun reloadWeather() {
+    /**
+     * 首次进入、配置变更或用户点重试时调用。
+     *
+     * 成本控制：30 分钟内的缓存直接复用，不发起任何请求；同一地点 60 秒内失败过，
+     * 自动重试（页面回到前台/配置流重放）不会再次打接口。用户主动点「重试」传
+     * `force = true`，绕过自动冷却。
+     */
+    fun reloadWeather(force: Boolean = false) {
         weatherJob?.cancel()
         val city = _uiState.value.weatherCity
         val auth = weatherAuth
@@ -259,6 +267,11 @@ class TodayViewModel @Inject constructor(
         }
         weatherJob = viewModelScope.launch {
             if (city.isBlank()) {
+                val cached = weatherCacheStore.snapshot.firstOrNull()
+                if (!force && cached?.isFresh() == true) {
+                    updateWeather(WeatherUiState.Ready(cached))
+                    return@launch
+                }
                 if (!locationProvider.hasCoarsePermission()) {
                     updateWeather(WeatherUiState.NeedCity(locationDenied = true))
                     return@launch
@@ -269,10 +282,14 @@ class TodayViewModel @Inject constructor(
                     updateWeather(WeatherUiState.NeedCity(locationDenied = true))
                     return@launch
                 }
-                fetchWeather(coordinates.toQueryValue(), auth, cached = null)
+                fetchWeather(coordinates.toQueryValue(), auth, cached, force)
             } else {
-                val cached = weatherCacheStore.snapshot.first()
+                val cached = weatherCacheStore.snapshot.firstOrNull()
                     ?.takeIf { it.matchesCity(city) }
+                if (!force && cached?.isFresh() == true) {
+                    updateWeather(WeatherUiState.Ready(cached))
+                    return@launch
+                }
                 updateWeather(
                     if (cached != null) {
                         WeatherUiState.Ready(cached, refreshing = true)
@@ -280,24 +297,47 @@ class TodayViewModel @Inject constructor(
                         WeatherUiState.Loading
                     },
                 )
-                fetchWeather(city, auth, cached)
+                fetchWeather(city, auth, cached, force)
             }
         }
     }
 
-    private suspend fun fetchWeather(query: String, auth: WeatherAuthConfig, cached: WeatherSnapshot?) {
+    /** 用户主动重试：允许立即请求，不受自动冷却限制。 */
+    fun retryWeather() = reloadWeather(force = true)
+
+    private suspend fun fetchWeather(
+        query: String,
+        auth: WeatherAuthConfig,
+        cached: WeatherSnapshot?,
+        force: Boolean,
+    ) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastWeatherAttemptAt < MIN_AUTO_RETRY_MS) {
+            // 冷却期内不重复请求；没有缓存时恢复上一次失败态，避免页面卡在 Loading。
+            val failure = lastWeatherFailure
+            if (cached != null) {
+                updateWeather(WeatherUiState.Ready(cached))
+            } else if (failure != null) {
+                updateWeather(WeatherUiState.Failed(cached = null, failure = failure))
+            }
+            return
+        }
+        lastWeatherAttemptAt = now
         try {
             val snapshot = weatherRepository.fetch(query, auth)
+            lastWeatherFailure = null
             updateWeather(WeatherUiState.Ready(snapshot))
         } catch (error: WeatherException) {
             if (error.failure == WeatherFailure.NO_LOCATION) {
                 updateWeather(WeatherUiState.NeedCity(locationDenied = true))
             } else {
+                lastWeatherFailure = error.failure
                 updateWeather(WeatherUiState.Failed(cached = cached, failure = error.failure))
             }
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
+            lastWeatherFailure = WeatherFailure.UNKNOWN
             updateWeather(
                 WeatherUiState.Failed(cached = cached, failure = WeatherFailure.UNKNOWN),
             )
@@ -310,7 +350,7 @@ class TodayViewModel @Inject constructor(
             updateWeather(WeatherUiState.NeedCity(locationDenied = true))
             return
         }
-        if (_uiState.value.hasWeatherAuth) reloadWeather()
+        if (_uiState.value.hasWeatherAuth) reloadWeather(force = true)
     }
 
     fun selectCity(city: String) {
@@ -319,14 +359,14 @@ class TodayViewModel @Inject constructor(
         viewModelScope.launch {
             settingsStore.setWeatherCity(cleaned)
             // 同一城市重复选择不会触发 settings 的 distinct 流，这里主动刷新一次。
-            reloadWeather()
+            reloadWeather(force = true)
         }
     }
 
     fun useCurrentLocation() {
         viewModelScope.launch {
             settingsStore.setWeatherCity("")
-            reloadWeather()
+            reloadWeather(force = true)
         }
     }
 
@@ -448,6 +488,7 @@ class TodayViewModel @Inject constructor(
 
     private companion object {
         const val WEATHER_STALE_MS = 30 * 60 * 1000L
+        const val MIN_AUTO_RETRY_MS = 60_000L
     }
 }
 
