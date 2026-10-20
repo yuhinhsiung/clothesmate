@@ -34,9 +34,8 @@ object DatabaseModule {
         )
             // 真迁移优先（§4.4 第 8 条）：v1→v2 无损搬迁编号历史与衣物顺序
             .addMigrations(*Migrations.ALL)
-            // 未被迁移覆盖的版本跳跃（如将来手工降版本）仍按 M1–M3 迭代期策略重建。
-            // M4 起必须补齐迁移并移除本行，以免用户丢数据（开发计划 M1-01）。
-            .fallbackToDestructiveMigration()
+            // M4 起不再允许破坏性降级：所有 schema 变更必须补 Migrations + MigrationTest；
+            // 未覆盖的版本直接失败，避免静默清空用户数据（review 附加要求）。
             .build()
 
     @Provides
