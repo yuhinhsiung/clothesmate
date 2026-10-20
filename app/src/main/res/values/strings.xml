@@ -400,6 +400,7 @@
     <string name="ai_cancel">取消识别</string>
     <string name="ai_prefilled_hint">带 ✨ 的字段由 AI 预填，可逐项修改</string>
     <string name="ai_accept_all">全部采纳</string>
+    <string name="quick_capture_ai_pending">连拍识别有建议待确认；采纳只会补空字段，不覆盖已填内容。</string>
     <string name="ai_not_configured_title">配置 API Key 后可自动识别</string>
     <string name="ai_not_configured_desc">类别、风格、季节将自动预填，随时可改</string>
     <string name="ai_go_settings">去配置</string>

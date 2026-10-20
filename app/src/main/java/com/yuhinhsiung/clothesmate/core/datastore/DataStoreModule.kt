@@ -12,7 +12,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
-private val Context.clothesMateDataStore: DataStore<Preferences> by preferencesDataStore(
+internal val Context.clothesMateDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "clothesmate_preferences",
 )
 

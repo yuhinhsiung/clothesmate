@@ -62,4 +62,8 @@ interface CodeHistoryDao {
     /** 历史占用总数（导入 / 排错用） */
     @Query("SELECT COUNT(*) FROM clothing_code_history")
     suspend fun count(): Int
+
+    /** 全部历史编号；导入编号分配用。 */
+    @Query("SELECT code FROM clothing_code_history")
+    suspend fun codes(): List<String>
 }

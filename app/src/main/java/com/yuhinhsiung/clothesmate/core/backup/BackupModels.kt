@@ -77,4 +77,4 @@ data class ImportResult(
     val skipped: Int,
 )
 
-class BackupException(message: String) : Exception(message)
+class BackupException(message: String, cause: Throwable? = null) : Exception(message, cause)

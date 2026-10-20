@@ -27,6 +27,10 @@ interface BackupDao {
     @Query("SELECT * FROM clothing_item WHERE code = :code LIMIT 1")
     suspend fun clothingByCode(code: String): ClothingItemEntity?
 
+    /** 全部编号（含软删除）；导入编号分配用。 */
+    @Query("SELECT code FROM clothing_item")
+    suspend fun clothingCodes(): List<String>
+
     @Query("SELECT * FROM clothing_code_history ORDER BY code")
     suspend fun codeHistory(): List<ClothingCodeHistoryEntity>
 

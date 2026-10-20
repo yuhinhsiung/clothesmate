@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -238,6 +238,8 @@ fun WearHeatmapCard(days: List<HeatmapDay>, legacyWearCount: Int = 0) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SeasonDistributionCard(slices: List<SeasonSlice>, total: Int) {
+    // 大字号下让百分比独占整行，避免 FlowRow 的窄列 + Text 宽度约束产生横向裁剪。
+    val largeText = LocalDensity.current.fontScale >= 1.5f
     Card(
         shape = RoundedCornerShape(Dimens.Radius.l),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -307,7 +309,7 @@ fun SeasonDistributionCard(slices: List<SeasonSlice>, total: Int) {
                             text = "${(slice.count * 100f / total).toInt()}%",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.width(100.dp),
+                            modifier = if (largeText) Modifier.fillMaxWidth() else Modifier,
                         )
                     }
                 }

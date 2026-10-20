@@ -127,7 +127,13 @@ fun ClothingFormRoute(
                     if (uiState.aiSuggestions != null) {
                         TextButton(onClick = viewModel::acceptAll) {
                             Text(
-                                text = stringResource(R.string.ai_accept_all),
+                                text = stringResource(
+                                    if (uiState.quickCaptureSuggestionPending) {
+                                        R.string.quick_capture_ai_accept
+                                    } else {
+                                        R.string.ai_accept_all
+                                    },
+                                ),
                                 style = MaterialTheme.typography.labelLarge,
                             )
                         }
@@ -712,6 +718,12 @@ private fun AiStatusBanner(
     onCancel: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
+    if (state.quickCaptureSuggestionPending) {
+        AiHintRow(
+            text = stringResource(R.string.quick_capture_ai_pending),
+            modifier = Modifier.padding(top = Dimens.Space.s3),
+        )
+    }
     when (state.aiPhase) {
         AiPhase.Running -> {
             Box(

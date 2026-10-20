@@ -28,6 +28,7 @@ import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
@@ -62,7 +63,7 @@ class DefaultBackupRepository @Inject constructor(
     private val wearRecordDao: WearRecordDao,
     private val tagDao: TagDictionaryDao,
     private val imageStorage: ImageStorage,
-    private val codeAllocator: CodeAllocator,
+    @Suppress("UNUSED_PARAMETER") codeAllocator: CodeAllocator,
     private val userSettingsStore: UserSettingsStore,
 ) : BackupRepository {
 
@@ -170,8 +171,16 @@ class DefaultBackupRepository @Inject constructor(
                     applySettings(manifest.settings, credentials)
                     db.withTransaction { importManifest(zip, manifest) }
                 } catch (failure: Throwable) {
-                    withContext(NonCancellable) { restoreSettings(previous) }
-                    throw failure
+                    // R04：补偿必须逐项进行。凭据写入失败时仍要恢复城市/风格/授权等
+                    // 已写入的字段，不能因为第一个恢复动作再次失败而跳过其余字段。
+                    val unrestored = withContext(NonCancellable) { restoreSettings(previous) }
+                    if (failure is CancellationException) throw failure
+                    if (unrestored.isEmpty()) throw failure
+                    throw BackupException(
+                        "导入失败：${failure.message ?: failure.javaClass.simpleName}；" +
+                            "以下设置未能恢复：${unrestored.joinToString("、")}",
+                        failure,
+                    )
                 }
             }
         } finally {
@@ -192,11 +201,36 @@ class DefaultBackupRepository @Inject constructor(
         credentials?.let { applyCredentials(it) }
     }
 
-    private suspend fun restoreSettings(previous: UserSettings) {
-        userSettingsStore.saveAiConfig(previous.aiConfig)
-        userSettingsStore.setWeatherAuth(previous.weatherAuth)
-        userSettingsStore.setWeatherCity(previous.weatherCity)
-        userSettingsStore.setStylePreference(previous.stylePreference)
+    /**
+     * 尽力恢复导入前的设置，返回未能恢复的字段名。
+     *
+     * 每个字段独立恢复：凭据写入失败（例如 Keystore 不可用）不能让城市/风格
+     * 停留在备份里的值。调用方在 NonCancellable 中执行本方法。
+     */
+    private suspend fun restoreSettings(previous: UserSettings): List<String> {
+        val failed = mutableListOf<String>()
+        suspend fun attempt(label: String, block: suspend () -> Unit) {
+            try {
+                block()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                failed += label
+            }
+        }
+        attempt("AI 配置") { userSettingsStore.saveAiConfig(previous.aiConfig) }
+        attempt("AI 授权") { userSettingsStore.setAiConsent(previous.aiConsent) }
+        attempt("AI 状态") {
+            userSettingsStore.setAiStatus(
+                previous.aiStatus,
+                previous.aiStatusDetail,
+                expectedConfig = null,
+            )
+        }
+        attempt("天气认证") { userSettingsStore.setWeatherAuth(previous.weatherAuth) }
+        attempt("城市") { userSettingsStore.setWeatherCity(previous.weatherCity) }
+        attempt("风格偏好") { userSettingsStore.setStylePreference(previous.stylePreference) }
+        return failed
     }
 
     private suspend fun applyCredentials(credentials: BackupCredentials) {
@@ -240,14 +274,31 @@ class DefaultBackupRepository @Inject constructor(
 
         val clothingMap = mutableMapOf<Long, Long>()
         val assignedCodes = mutableMapOf<Long, String>()
+        val reservedCodes = mutableSetOf<String>()
         val oldClothingById = manifest.clothing.associateBy { it.id }
+        // R02：备份内的当前编号与全部历史编号都属于本次导入的保留集合。
+        // 不能只依赖本机 CodeAllocator——它看不到备份里已退役/已删除的号，
+        // 冲突顺延时会把备份历史中的号再次发出去。
+        val backupCodesByItem = manifest.clothing.associate { it.id to it.code.trim() }
+        val backupHistoryHolder = manifest.codeHistory.associate { it.code.trim() to it.holderId }
+        val occupiedCodes = buildSet {
+            addAll(backupDao.clothingCodes())
+            addAll(codeHistoryDao.codes())
+        }
         manifest.clothing.forEach { old ->
             val wardrobeId = wardrobeMap[old.wardrobeId]
             if (wardrobeId == null) {
                 skipped++
                 return@forEach
             }
-            val code = availableCode(old.code, old.id, manifest.codeHistory)
+            val code = ImportCodeAllocator.allocate(
+                preferred = old.code,
+                oldItemId = old.id,
+                backupCodesByItem = backupCodesByItem,
+                backupHistoryHolder = backupHistoryHolder,
+                occupiedCodes = occupiedCodes,
+                assignedCodes = reservedCodes,
+            )
             val newId = clothingDao.insert(
                 old.copy(
                     id = 0,
@@ -259,6 +310,7 @@ class DefaultBackupRepository @Inject constructor(
             )
             clothingMap[old.id] = newId
             assignedCodes[old.id] = code
+            reservedCodes += code
             val original = copyImage(zip, old.originalImagePath, imageStorage.clothingOriginalFile(newId))
             val cutout = copyImage(zip, old.cutoutImagePath, imageStorage.clothingCutoutFile(newId))
             images += listOfNotNull(original, cutout).size
@@ -352,23 +404,19 @@ class DefaultBackupRepository @Inject constructor(
         )
     }
 
-    /** 保留原编号；被当前衣物、备份历史或本库历史占用时顺延。 */
-    private suspend fun availableCode(
-        preferred: String,
-        oldItemId: Long,
-        history: List<ClothingCodeHistoryEntity>,
-    ): String {
-        val code = preferred.trim()
-        val historicalHolder = history.firstOrNull { it.code.trim() == code }?.holderId
-        if (code.isNotEmpty() && backupDao.clothingByCode(code) == null &&
-            codeHistoryDao.countByCode(code) == 0 &&
-            (historicalHolder == null || historicalHolder == oldItemId)
-        ) {
-            return code
-        }
-        return codeAllocator.nextCode()
-    }
-
+    /**
+     * R02：导入专用的编号分配。
+     *
+     * 可用性必须同时覆盖四处，缺一不可：
+     * 1. 本机现存/软删除衣物占用的编号；
+     * 2. 本机编号历史（含已退役、持有人已物理删除的号）；
+     * 3. 备份内其他衣物当前的编号；
+     * 4. 备份内全部历史编号（持有人不是当前旧衣物时不可复用）。
+     *
+     * 旧实现只检查前三者的一部分，并直接调用只认本机库的 CodeAllocator，
+     * 于是“本机冲突 → 顺延”会重新发出备份历史里的退役号。这里用导入批次
+     * 内共享的 [assignedCodes] 做闭包分配，保证一次导入内也不重复。
+     */
     private suspend fun copyImage(zip: ZipFile, source: String?, target: File): String? {
         if (source.isNullOrBlank()) return null
         val entry = zip.getEntry(source) ?: return null

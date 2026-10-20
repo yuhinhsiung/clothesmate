@@ -10,11 +10,13 @@ import androidx.lifecycle.viewModelScope
 import androidx.navigation.toRoute
 import com.yuhinhsiung.clothesmate.core.ai.AiRecognition
 import com.yuhinhsiung.clothesmate.core.ai.ClothingRecognizer
+import com.yuhinhsiung.clothesmate.core.ai.QuickCaptureAiSuggestion
 import com.yuhinhsiung.clothesmate.core.ai.RecognitionEndpoint
 import com.yuhinhsiung.clothesmate.core.database.dao.TagDictionaryDao
 import com.yuhinhsiung.clothesmate.core.datastore.AiConfig
 import com.yuhinhsiung.clothesmate.core.datastore.AiConsent
 import com.yuhinhsiung.clothesmate.core.datastore.AiStatus
+import com.yuhinhsiung.clothesmate.core.datastore.QuickCaptureAiSuggestionStore
 import com.yuhinhsiung.clothesmate.core.datastore.UserSettingsStore
 import com.yuhinhsiung.clothesmate.core.image.BitmapLoader
 import com.yuhinhsiung.clothesmate.core.image.ImageStorage
@@ -72,12 +74,33 @@ class ClothingFormViewModel @Inject constructor(
     private val imageStorage: ImageStorage,
     private val tagDictionaryDao: TagDictionaryDao,
     private val dataStore: DataStore<Preferences>,
+    private val quickCaptureSuggestions: QuickCaptureAiSuggestionStore,
     private val settingsStore: UserSettingsStore,
     private val recognizer: ClothingRecognizer,
     private val localColorExtractor: LocalColorExtractorService,
     private val bitmapLoader: BitmapLoader,
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
+
+    /** 测试/兼容旧调用点：未显式注入建议仓库时，用同一 DataStore 构造一个读取入口。 */
+    constructor(
+        clothingRepository: ClothingRepository,
+        wardrobeRepository: WardrobeRepository,
+        codeAllocator: CodeAllocator,
+        imageStore: ImageStore,
+        imageStorage: ImageStorage,
+        tagDictionaryDao: TagDictionaryDao,
+        dataStore: DataStore<Preferences>,
+        settingsStore: UserSettingsStore,
+        recognizer: ClothingRecognizer,
+        localColorExtractor: LocalColorExtractorService,
+        bitmapLoader: BitmapLoader,
+        savedStateHandle: SavedStateHandle,
+    ) : this(
+        clothingRepository, wardrobeRepository, codeAllocator, imageStore, imageStorage,
+        tagDictionaryDao, dataStore, QuickCaptureAiSuggestionStore(dataStore), settingsStore,
+        recognizer, localColorExtractor, bitmapLoader, savedStateHandle,
+    )
 
     private val route: ClothingForm = savedStateHandle.toRoute()
     private val editingId: Long? = route.itemId
@@ -142,6 +165,18 @@ class ClothingFormViewModel @Inject constructor(
                 loadForEdit(editingId)
             } else {
                 prepareCreate()
+            }
+        }
+        if (restored != null && editingId != null) {
+            viewModelScope.launch {
+                quickCaptureSuggestions.get(editingId)?.takeIf { !it.isEmpty }?.let { pending ->
+                    _uiState.update {
+                        it.copy(
+                            aiSuggestions = pending.toAiSuggestions(),
+                            quickCaptureSuggestionPending = true,
+                        )
+                    }
+                }
             }
         }
         observeAutoFillSettings()
@@ -323,6 +358,8 @@ class ClothingFormViewModel @Inject constructor(
                 _uiState.update { it.copy(notFound = true) }
                 return@launch
             }
+            val pendingSuggestion = quickCaptureSuggestions.get(itemId)
+                ?.takeIf { !it.isEmpty }
             _uiState.update {
                 it.copy(
                     isEdit = true,
@@ -343,6 +380,8 @@ class ClothingFormViewModel @Inject constructor(
                     note = item.note.orEmpty(),
                     wardrobeId = item.wardrobeId,
                     code = item.code,
+                    aiSuggestions = pendingSuggestion?.toAiSuggestions(),
+                    quickCaptureSuggestionPending = pendingSuggestion != null,
                 )
             }
             draftReady = true
@@ -621,7 +660,20 @@ class ClothingFormViewModel @Inject constructor(
      */
     fun acceptAll() {
         val suggestions = _uiState.value.aiSuggestions ?: return
-        applySuggestions(suggestions.toRecognition(), onlyEmpty = false)
+        val pendingQuickCapture = _uiState.value.quickCaptureSuggestionPending
+        // R10：连拍建议是“待确认建议”，采纳时只能补空字段，不能覆盖用户手填。
+        applySuggestions(suggestions.toRecognition(), onlyEmpty = pendingQuickCapture)
+        if (pendingQuickCapture) {
+            _uiState.update {
+                it.copy(
+                    aiSuggestions = null,
+                    quickCaptureSuggestionPending = false,
+                )
+            }
+            editingId?.let { id ->
+                viewModelScope.launch { quickCaptureSuggestions.remove(id) }
+            }
+        }
     }
 
     private fun applySuggestions(result: AiRecognition, onlyEmpty: Boolean) {
@@ -883,6 +935,8 @@ data class ClothingFormUiState(
     // ── M2-04 AI 异步预填 ───────────────────────────────────
     val aiPhase: AiPhase = AiPhase.Idle,
     val aiSuggestions: AiSuggestions? = null,
+    /** R10：aiSuggestions 来自连拍 worker 的待确认建议，采纳时只填空字段。 */
+    val quickCaptureSuggestionPending: Boolean = false,
     val aiDegrade: AiDegradeReason? = null,
     /** 一次性隐私告知弹窗是否显示（M2-06） */
     val showPrivacyDialog: Boolean = false,
@@ -1018,6 +1072,13 @@ internal fun ClothingFormUiState.withCustomStyleTag(tag: String): ClothingFormUi
     } else {
         copy(styleTags = styleTags + tag, styleAiFilled = false)
     }
+
+private fun QuickCaptureAiSuggestion.toAiSuggestions(): AiSuggestions =
+    AiSuggestions(
+        categoryKey = categoryKey,
+        styleTags = styleTags,
+        seasonKeys = seasonTags,
+    )
 
 internal fun shouldSkipAutoAi(state: ClothingFormUiState): Boolean =
     state.aiPhase == AiPhase.Running ||
