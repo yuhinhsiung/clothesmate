@@ -124,7 +124,7 @@ fun WardrobeDetailRoute(
                         actionLabel = undoLabel,
                     )
                     if (result == SnackbarResult.ActionPerformed) {
-                        viewModel.undoSeasonChange()
+                        viewModel.undoSeasonChange(event.operationId)
                     }
                 }
                 is WardrobeDetailEvent.SeasonUndone -> {

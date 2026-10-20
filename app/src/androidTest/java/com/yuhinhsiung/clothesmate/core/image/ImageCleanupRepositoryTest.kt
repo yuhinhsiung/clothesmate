@@ -1,5 +1,6 @@
 package com.yuhinhsiung.clothesmate.core.image
 
+import android.util.Base64
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -57,7 +58,7 @@ class ImageCleanupRepositoryTest {
         }
         val cutoutOne = storage.clothingCutoutFile(1L).apply {
             parentFile?.mkdirs()
-            writeBytes(ByteArray(2))
+            writeBytes(ONE_PIXEL_PNG)
         }
         val originalTwo = storage.clothingOriginalFile(2L).apply {
             parentFile?.mkdirs()
@@ -77,6 +78,44 @@ class ImageCleanupRepositoryTest {
         assertEquals("clothing/original/2.jpg", database.clothingItemDao().findById(2L)?.originalImagePath)
     }
 
+    @Test
+    fun cutoutFileMissingPreservesOriginalAndDatabasePath() = runTest {
+        database.wardrobeDao().insert(WardrobeEntity(name = "主卧衣柜", note = null, coverImagePath = null, sortOrder = 0, createdAt = 1L))
+        database.clothingItemDao().insert(
+            item(id = 3L, original = "clothing/original/3.jpg", cutout = "clothing/cutout/3.png"),
+        )
+        val original = storage.clothingOriginalFile(3L).apply {
+            parentFile?.mkdirs()
+            writeBytes(ByteArray(8))
+        }
+
+        assertEquals(CleanupEstimate(count = 0, bytes = 0L), repository.estimate())
+        assertEquals(CleanupResult(count = 0, bytes = 0L), repository.cleanup())
+        assertTrue(original.exists())
+        assertEquals("clothing/original/3.jpg", database.clothingItemDao().findById(3L)?.originalImagePath)
+    }
+
+    @Test
+    fun undecodableCutoutPreservesOriginal() = runTest {
+        database.wardrobeDao().insert(WardrobeEntity(name = "主卧衣柜", note = null, coverImagePath = null, sortOrder = 0, createdAt = 1L))
+        database.clothingItemDao().insert(
+            item(id = 4L, original = "clothing/original/4.jpg", cutout = "clothing/cutout/4.png"),
+        )
+        val original = storage.clothingOriginalFile(4L).apply {
+            parentFile?.mkdirs()
+            writeBytes(ByteArray(8))
+        }
+        storage.clothingCutoutFile(4L).apply {
+            parentFile?.mkdirs()
+            writeBytes(ByteArray(2))
+        }
+
+        assertEquals(CleanupEstimate(count = 0, bytes = 0L), repository.estimate())
+        assertEquals(CleanupResult(count = 0, bytes = 0L), repository.cleanup())
+        assertTrue(original.exists())
+        assertEquals("clothing/original/4.jpg", database.clothingItemDao().findById(4L)?.originalImagePath)
+    }
+
     private suspend fun item(id: Long, original: String?, cutout: String?): ClothingItemEntity {
         return ClothingItemEntity(
             id = id,
@@ -93,6 +132,13 @@ class ImageCleanupRepositoryTest {
             note = null,
             createdAt = id,
             updatedAt = id,
+        )
+    }
+
+    private companion object {
+        val ONE_PIXEL_PNG: ByteArray = Base64.decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2n2QAAAAASUVORK5CYII=",
+            Base64.DEFAULT,
         )
     }
 }

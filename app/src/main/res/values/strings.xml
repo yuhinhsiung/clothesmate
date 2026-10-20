@@ -120,6 +120,8 @@
     <string name="quick_capture_count">已拍 %1$d 张</string>
     <string name="quick_capture_shot">第 %1$s 号衣物</string>
     <string name="quick_capture_delete">删除这张</string>
+    <string name="quick_capture_ai_suggestion">AI 建议：%1$s（待确认）</string>
+    <string name="quick_capture_ai_accept">采纳</string>
     <string name="quick_capture_end">完成拍摄</string>
     <string name="quick_capture_processing">保存中…</string>
     <string name="quick_capture_continue">继续拍</string>
@@ -269,6 +271,7 @@
     <string name="overview_heatmap_hint">颜色越深，当天穿得越多</string>
     <string name="overview_season_title">季节衣物占比</string>
     <string name="overview_season_legend">%1$s %2$d</string>
+    <string name="overview_season_segment_description">%1$s %2$d%%</string>
     <string name="weekday_mon">一</string>
     <string name="weekday_tue">二</string>
     <string name="weekday_wed">三</string>

@@ -40,7 +40,8 @@ class WardrobeDetailViewModel @Inject constructor(
     private val seasonMode = MutableStateFlow(SeasonModeState())
     private val _events = MutableSharedFlow<WardrobeDetailEvent>(extraBufferCapacity = 1)
     val events = _events.asSharedFlow()
-    private var lastSeasonUndo: SeasonUndo? = null
+    private var seasonOperationSeq = 0L
+    private val seasonUndos = mutableMapOf<Long, SeasonUndo>()
 
     val uiState: StateFlow<WardrobeDetailUiState> = combine(
         wardrobeRepository.observeWardrobes(),
@@ -135,9 +136,9 @@ class WardrobeDetailViewModel @Inject constructor(
         if (ids.isEmpty()) return
         viewModelScope.launch {
             clothingRepository.setStored(ids, stored)
-            lastSeasonUndo = SeasonUndo(ids = ids, stored = stored)
+            val operationId = rememberSeasonUndo(SeasonUndo(ids = ids, stored = stored))
             seasonMode.value = seasonMode.value.copy(selectedItems = emptySet())
-            _events.emit(WardrobeDetailEvent.SeasonChanged(ids.size, stored))
+            _events.emit(WardrobeDetailEvent.SeasonChanged(operationId, ids.size, stored))
         }
     }
 
@@ -151,18 +152,37 @@ class WardrobeDetailViewModel @Inject constructor(
         if (ids.isEmpty()) return
         viewModelScope.launch {
             clothingRepository.setStored(ids, stored)
-            lastSeasonUndo = SeasonUndo(ids = ids, stored = stored)
-            _events.emit(WardrobeDetailEvent.SeasonChanged(ids.size, stored))
+            _events.emit(
+                WardrobeDetailEvent.SeasonChanged(
+                    operationId = rememberSeasonUndo(SeasonUndo(ids = ids, stored = stored)),
+                    count = ids.size,
+                    stored = stored,
+                ),
+            )
         }
     }
 
-    fun undoSeasonChange() {
-        val undo = lastSeasonUndo ?: return
-        lastSeasonUndo = null
+    /** 每次批量操作一个独立快照；Snackbar 排队时也不会被下一次操作覆盖（review R06）。 */
+    private fun rememberSeasonUndo(undo: SeasonUndo): Long {
+        val id = ++seasonOperationSeq
+        seasonUndos[id] = undo
+        if (seasonUndos.size > MAX_SEASON_UNDO) {
+            seasonUndos.remove(seasonUndos.keys.first())
+        }
+        return id
+    }
+
+    fun undoSeasonChange(operationId: Long) {
+        val undo = seasonUndos.remove(operationId) ?: return
         viewModelScope.launch {
             clothingRepository.setStored(undo.ids, !undo.stored)
             _events.emit(WardrobeDetailEvent.SeasonUndone(undo.ids.size))
         }
+    }
+
+    /** 兼容旧调用：撤销最早仍待处理的一次操作（UI 正常走带 operationId 的重载）。 */
+    fun undoSeasonChange() {
+        seasonUndos.keys.minOrNull()?.let(::undoSeasonChange)
     }
 
 
@@ -206,8 +226,14 @@ private data class SeasonModeState(
 
 private data class SeasonUndo(val ids: List<Long>, val stored: Boolean)
 
+private const val MAX_SEASON_UNDO = 5
+
 sealed interface WardrobeDetailEvent {
-    data class SeasonChanged(val count: Int, val stored: Boolean) : WardrobeDetailEvent
+    data class SeasonChanged(
+        val operationId: Long,
+        val count: Int,
+        val stored: Boolean,
+    ) : WardrobeDetailEvent
     data class SeasonUndone(val count: Int) : WardrobeDetailEvent
 }
 

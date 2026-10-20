@@ -14,6 +14,7 @@ import com.yuhinhsiung.clothesmate.core.database.dao.WardrobeDao
 import com.yuhinhsiung.clothesmate.core.database.dao.WearRecordDao
 import com.yuhinhsiung.clothesmate.core.database.entity.ClothingCodeHistoryEntity
 import com.yuhinhsiung.clothesmate.core.datastore.AiConfig
+import com.yuhinhsiung.clothesmate.core.datastore.UserSettings
 import com.yuhinhsiung.clothesmate.core.datastore.UserSettingsStore
 import com.yuhinhsiung.clothesmate.core.weather.WeatherAuthConfig
 import com.yuhinhsiung.clothesmate.core.database.entity.OutfitCategoryCrossRef
@@ -28,6 +29,7 @@ import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -65,6 +67,11 @@ class DefaultBackupRepository @Inject constructor(
 ) : BackupRepository {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    private companion object {
+        /** 已物理删除的旧持有人：保留占用，但绝不指向任何新实体。 */
+        const val NO_HOLDER = -1L
+    }
 
     override suspend fun export(uri: Uri, password: String): BackupSummary = withContext(Dispatchers.IO) {
         BackupCredentialCipher.validatePassword(password)
@@ -156,13 +163,40 @@ class DefaultBackupRepository @Inject constructor(
                         json.decodeFromString(BackupCredentials.serializer(), plain)
                     }.getOrElse { throw BackupException("备份凭据格式损坏") }
                 }
-                val result = db.withTransaction { importManifest(zip, manifest) }
-                if (credentials != null) applyCredentials(credentials)
-                result
+                // 先写设置、再写实体：设置写失败时不会留下已提交的业务数据。
+                // 实体事务失败时用 NonCancellable 补偿恢复旧设置，避免“配置改了、数据没进来”。
+                val previous = userSettingsStore.settings.first()
+                try {
+                    applySettings(manifest.settings, credentials)
+                    db.withTransaction { importManifest(zip, manifest) }
+                } catch (failure: Throwable) {
+                    withContext(NonCancellable) { restoreSettings(previous) }
+                    throw failure
+                }
             }
         } finally {
             temp.delete()
         }
+    }
+
+    private suspend fun applySettings(
+        settings: BackupSettings?,
+        credentials: BackupCredentials?,
+    ) {
+        if (settings != null) {
+            if (settings.weatherCity.isNotBlank()) userSettingsStore.setWeatherCity(settings.weatherCity)
+            if (settings.stylePreference.isNotBlank()) {
+                userSettingsStore.setStylePreference(settings.stylePreference)
+            }
+        }
+        credentials?.let { applyCredentials(it) }
+    }
+
+    private suspend fun restoreSettings(previous: UserSettings) {
+        userSettingsStore.saveAiConfig(previous.aiConfig)
+        userSettingsStore.setWeatherAuth(previous.weatherAuth)
+        userSettingsStore.setWeatherCity(previous.weatherCity)
+        userSettingsStore.setStylePreference(previous.stylePreference)
     }
 
     private suspend fun applyCredentials(credentials: BackupCredentials) {
@@ -205,13 +239,15 @@ class DefaultBackupRepository @Inject constructor(
         }
 
         val clothingMap = mutableMapOf<Long, Long>()
+        val assignedCodes = mutableMapOf<Long, String>()
+        val oldClothingById = manifest.clothing.associateBy { it.id }
         manifest.clothing.forEach { old ->
             val wardrobeId = wardrobeMap[old.wardrobeId]
             if (wardrobeId == null) {
                 skipped++
                 return@forEach
             }
-            val code = availableCode(old.code)
+            val code = availableCode(old.code, old.id, manifest.codeHistory)
             val newId = clothingDao.insert(
                 old.copy(
                     id = 0,
@@ -222,6 +258,7 @@ class DefaultBackupRepository @Inject constructor(
                 ),
             )
             clothingMap[old.id] = newId
+            assignedCodes[old.id] = code
             val original = copyImage(zip, old.originalImagePath, imageStorage.clothingOriginalFile(newId))
             val cutout = copyImage(zip, old.cutoutImagePath, imageStorage.clothingCutoutFile(newId))
             images += listOfNotNull(original, cutout).size
@@ -232,13 +269,6 @@ class DefaultBackupRepository @Inject constructor(
                     wardrobeId = wardrobeId,
                     originalImagePath = original,
                     cutoutImagePath = cutout,
-                ),
-            )
-            codeHistoryDao.insertIfAbsent(
-                ClothingCodeHistoryEntity(
-                    code = code,
-                    holderId = newId,
-                    recordedAt = old.createdAt,
                 ),
             )
         }
@@ -275,11 +305,42 @@ class DefaultBackupRepository @Inject constructor(
             )
         }
         manifest.tags.forEach { tag -> tagDao.insert(tag.copy(id = 0)) }
-        manifest.settings?.let { settings ->
-            if (settings.weatherCity.isNotBlank()) userSettingsStore.setWeatherCity(settings.weatherCity)
-            if (settings.stylePreference.isNotBlank()) {
-                userSettingsStore.setStylePreference(settings.stylePreference)
+        // R02：完整恢复编号历史。仍存在的持有人重映射；已物理删除的旧持有人用 -1 占位，
+        // 既保留“这个号曾被使用”的占用语义，又不会误撞新实体 id。
+        manifest.codeHistory.forEach { history ->
+            val oldHolder = history.holderId
+            val newHolder = clothingMap[oldHolder] ?: NO_HOLDER
+            val oldCurrentCode = oldClothingById[oldHolder]?.code
+            val assigned = assignedCodes[oldHolder]
+            if (assigned != null && history.code == oldCurrentCode && assigned != history.code) {
+                // 冲突导致当前衣物改号：旧号作为退役历史保留，新号单独登记。
+                codeHistoryDao.insertIfAbsent(history.copy(holderId = newHolder))
+                codeHistoryDao.insertIfAbsent(
+                    ClothingCodeHistoryEntity(
+                        code = assigned,
+                        holderId = newHolder,
+                        recordedAt = history.recordedAt,
+                    ),
+                )
+            } else {
+                codeHistoryDao.insertIfAbsent(
+                    history.copy(holderId = newHolder),
+                )
             }
+        }
+        manifest.clothing.forEach { old ->
+            val newId = clothingMap[old.id] ?: return@forEach
+            val assigned = assignedCodes[old.id] ?: return@forEach
+            val currentHistory = manifest.codeHistory.firstOrNull {
+                it.code == old.code && it.holderId == old.id
+            }
+            codeHistoryDao.insertIfAbsent(
+                ClothingCodeHistoryEntity(
+                    code = assigned,
+                    holderId = newId,
+                    recordedAt = currentHistory?.recordedAt ?: old.createdAt,
+                ),
+            )
         }
         return ImportResult(
             wardrobes = wardrobeMap.size,
@@ -291,11 +352,17 @@ class DefaultBackupRepository @Inject constructor(
         )
     }
 
-    /** 保留原编号；被当前衣物或历史占用时顺延。 */
-    private suspend fun availableCode(preferred: String): String {
+    /** 保留原编号；被当前衣物、备份历史或本库历史占用时顺延。 */
+    private suspend fun availableCode(
+        preferred: String,
+        oldItemId: Long,
+        history: List<ClothingCodeHistoryEntity>,
+    ): String {
         val code = preferred.trim()
+        val historicalHolder = history.firstOrNull { it.code.trim() == code }?.holderId
         if (code.isNotEmpty() && backupDao.clothingByCode(code) == null &&
-            codeHistoryDao.countByCode(code) == 0
+            codeHistoryDao.countByCode(code) == 0 &&
+            (historicalHolder == null || historicalHolder == oldItemId)
         ) {
             return code
         }

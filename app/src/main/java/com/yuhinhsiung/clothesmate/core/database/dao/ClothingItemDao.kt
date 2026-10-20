@@ -82,6 +82,42 @@ interface ClothingItemDao {
     @Query("UPDATE clothing_item SET originalImagePath = NULL, updatedAt = :updatedAt WHERE id = :id")
     suspend fun clearOriginalImagePath(id: Long, updatedAt: Long)
 
+    /** 快速连拍后台只填空字段，绝不覆盖用户已经补录/改过的内容（review R03/R05）。 */
+    @Query(
+        "UPDATE clothing_item SET cutoutImagePath = :path, updatedAt = :updatedAt " +
+            "WHERE id = :id AND (cutoutImagePath IS NULL OR cutoutImagePath = '') AND deletedAt IS NULL",
+    )
+    suspend fun setCutoutIfEmpty(id: Long, path: String, updatedAt: Long)
+
+    @Query(
+        "UPDATE clothing_item SET colors = :colors, updatedAt = :updatedAt " +
+            "WHERE id = :id AND colors = :empty AND deletedAt IS NULL",
+    )
+    suspend fun setColorsIfEmpty(
+        id: Long,
+        colors: List<String>,
+        empty: List<String>,
+        updatedAt: Long,
+    )
+
+    /** 采纳连拍 AI 建议：只补空字段，绝不覆盖用户已确认的类别/风格/季节（R10）。 */
+    @Query(
+        "UPDATE clothing_item SET " +
+            "category = CASE WHEN category IS NULL AND :category IS NOT NULL THEN :category ELSE category END, " +
+            "styleTags = CASE WHEN styleTags = :empty THEN :styles ELSE styleTags END, " +
+            "seasonTags = CASE WHEN seasonTags = :empty THEN :seasons ELSE seasonTags END, " +
+            "updatedAt = :updatedAt " +
+            "WHERE id = :id AND deletedAt IS NULL",
+    )
+    suspend fun applyAiSuggestionIfEmpty(
+        id: Long,
+        category: String?,
+        styles: List<String>,
+        seasons: List<String>,
+        empty: List<String>,
+        updatedAt: Long,
+    )
+
     /**
      * 彻底删除衣物行（W-13 后半段：软删衣物在所属穿搭全被删除后物理清除）。
      * 调用方须先清理 [OutfitItemDao] 中该衣物的关联——外键为 NO_ACTION，

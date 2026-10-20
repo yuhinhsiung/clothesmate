@@ -9,6 +9,8 @@ import androidx.navigation.toRoute
 import com.yuhinhsiung.clothesmate.core.di.ApplicationScope
 import com.yuhinhsiung.clothesmate.core.di.IoDispatcher
 import com.yuhinhsiung.clothesmate.core.image.ImageStorage
+import com.yuhinhsiung.clothesmate.core.ai.QuickCaptureAiSuggestion
+import com.yuhinhsiung.clothesmate.core.datastore.QuickCaptureAiSuggestionStore
 import com.yuhinhsiung.clothesmate.core.image.ImageStore
 import com.yuhinhsiung.clothesmate.core.model.ClothingItem
 import com.yuhinhsiung.clothesmate.core.model.ClothingStatus
@@ -43,6 +45,7 @@ data class QuickCaptureShot(
     val previewPath: String,
     val processing: Boolean = true,
     val cutoutFailed: Boolean = false,
+    val aiSuggestion: QuickCaptureAiSuggestion? = null,
 )
 
 data class QuickCaptureUiState(
@@ -84,6 +87,7 @@ class QuickCaptureViewModel @Inject constructor(
     private val codeAllocator: CodeAllocator,
     private val imageStore: ImageStore,
     private val imageStorage: ImageStorage,
+    private val aiSuggestionStore: QuickCaptureAiSuggestionStore,
     @ApplicationContext private val context: Context,
     @ApplicationScope private val appScope: CoroutineScope,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
@@ -218,10 +222,50 @@ class QuickCaptureViewModel @Inject constructor(
                 val item = clothingRepository.getItem(id)
                 if (item?.cutoutImagePath != null) {
                     markProcessed(id, failed = false)
+                    pollAiSuggestion(id)
                     return@launch
                 }
             }
             markProcessed(id, failed = true)
+        }
+    }
+
+    private fun pollAiSuggestion(id: Long) {
+        viewModelScope.launch {
+            repeat(30) {
+                val suggestion = aiSuggestionStore.get(id)
+                if (suggestion != null) {
+                    _uiState.update { state ->
+                        state.copy(
+                            shots = state.shots.map {
+                                if (it.id == id) it.copy(aiSuggestion = suggestion) else it
+                            },
+                        )
+                    }
+                    return@launch
+                }
+                delay(500)
+            }
+        }
+    }
+
+    fun acceptAiSuggestion(id: Long) {
+        val suggestion = _uiState.value.shots.firstOrNull { it.id == id }?.aiSuggestion ?: return
+        viewModelScope.launch {
+            clothingRepository.applyAiSuggestionIfEmpty(
+                id = id,
+                category = suggestion.categoryKey,
+                styles = suggestion.styleTags,
+                seasons = suggestion.seasonTags,
+            )
+            aiSuggestionStore.remove(id)
+            _uiState.update { state ->
+                state.copy(
+                    shots = state.shots.map {
+                        if (it.id == id) it.copy(aiSuggestion = null) else it
+                    },
+                )
+            }
         }
     }
 
@@ -238,6 +282,7 @@ class QuickCaptureViewModel @Inject constructor(
     fun deleteShot(id: Long) {
         viewModelScope.launch {
             clothingRepository.softDelete(id)
+            aiSuggestionStore.remove(id)
             _uiState.update { state ->
                 state.copy(shots = state.shots.filterNot { it.id == id })
             }

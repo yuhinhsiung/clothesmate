@@ -27,6 +27,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -53,6 +54,7 @@ fun QuickCaptureReview(
     onResume: () -> Unit,
     onDone: () -> Unit,
     onDelete: (Long) -> Unit,
+    onAcceptAiSuggestion: (Long) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -131,7 +133,8 @@ fun QuickCaptureReview(
                     verticalArrangement = Arrangement.spacedBy(Dimens.Space.s2),
                 ) {
                     items(state.shots, key = { it.id }) { shot ->
-                        Box {
+                        Column {
+                            Box {
                             CmAsyncImage(
                                 model = shot.previewPath,
                                 contentDescription = stringResource(
@@ -191,6 +194,29 @@ fun QuickCaptureReview(
                                         strokeWidth = 2.dp,
                                         color = OnPhoto,
                                     )
+                                }
+                            }
+                            }
+                            shot.aiSuggestion?.let { ai ->
+                                val summary = listOfNotNull(
+                                    ai.categoryKey,
+                                    ai.styleTags.joinToString("/").ifBlank { null },
+                                    ai.seasonTags.joinToString("/").ifBlank { null },
+                                ).joinToString(" · ")
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.quick_capture_ai_suggestion, summary),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onMuted,
+                                        maxLines = 2,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    TextButton(onClick = { onAcceptAiSuggestion(shot.id) }) {
+                                        Text(stringResource(R.string.quick_capture_ai_accept))
+                                    }
                                 }
                             }
                         }

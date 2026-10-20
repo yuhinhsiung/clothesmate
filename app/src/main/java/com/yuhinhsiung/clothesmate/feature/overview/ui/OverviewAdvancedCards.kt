@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -25,7 +28,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
@@ -232,7 +234,8 @@ fun WearHeatmapCard(days: List<HeatmapDay>, legacyWearCount: Int = 0) {
     }
 }
 
-/** 季节衣物占比：四季堆叠横条，段内百分比。 */
+/** 季节衣物占比：四季堆叠横条，百分比独立放置。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SeasonDistributionCard(slices: List<SeasonSlice>, total: Int) {
     Card(
@@ -257,47 +260,54 @@ fun SeasonDistributionCard(slices: List<SeasonSlice>, total: Int) {
                 slices.filter { it.count > 0 }.forEach { slice ->
                     val weight = slice.count.toFloat() / total
                     val color = SeasonChartColors[slice.season] ?: MaterialTheme.colorScheme.primary
+                    val percent = (slice.count * 100f / total).toInt()
+                    val description = stringResource(
+                        R.string.overview_season_segment_description,
+                        slice.season.displayName,
+                        percent,
+                    )
                     Box(
                         modifier = Modifier
                             .weight(weight)
                             .fillMaxSize()
-                            .background(color),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        val percent = (slice.count * 100f / total).toInt()
-                        if (percent >= 10) {
-                            Text(
-                                text = "$percent%",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (color.luminance() > 0.55f) Color.Black else Color.White,
-                            )
-                        }
-                    }
+                            .background(color)
+                            .semantics { contentDescription = description },
+                    )
                 }
             }
-            Row(
+            FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = Dimens.Space.s2),
                 horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s3),
+                verticalArrangement = Arrangement.spacedBy(Dimens.Space.s1),
             ) {
                 slices.forEach { slice ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(Dimens.Icon.s)
-                                .clip(CircleShape)
-                                .background(SeasonChartColors[slice.season] ?: MaterialTheme.colorScheme.primary),
-                        )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(Dimens.Icon.s)
+                                    .clip(CircleShape)
+                                    .background(SeasonChartColors[slice.season] ?: MaterialTheme.colorScheme.primary),
+                            )
+                            Text(
+                                text = stringResource(
+                                    R.string.overview_season_legend,
+                                    slice.season.displayName,
+                                    slice.count,
+                                ),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onMuted,
+                                modifier = Modifier.padding(start = Dimens.Space.s1),
+                            )
+                        }
+                        // R08/R09：百分比独立成项、放在色块外，最大字号也不在窄色块内换行。
                         Text(
-                            text = stringResource(
-                                R.string.overview_season_legend,
-                                slice.season.displayName,
-                                slice.count,
-                            ),
+                            text = "${(slice.count * 100f / total).toInt()}%",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onMuted,
-                            modifier = Modifier.padding(start = Dimens.Space.s1),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.width(100.dp),
                         )
                     }
                 }

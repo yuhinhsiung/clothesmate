@@ -95,6 +95,20 @@ interface ClothingRepository : com.yuhinhsiung.clothesmate.feature.wardrobe.doma
 
     suspend fun updateCutoutPath(id: Long, path: String?)
 
+    /** 后台补抠图：仅当该衣物还没有抠图时写入（review R03）。 */
+    suspend fun setCutoutIfEmpty(id: Long, path: String)
+
+    /** 后台取色：仅当该衣物还没有颜色时写入（review R05）。 */
+    suspend fun setColorsIfEmpty(id: Long, colors: List<String>)
+
+    /** 采纳连拍 AI 建议；只补空字段（review R10）。 */
+    suspend fun applyAiSuggestionIfEmpty(
+        id: Long,
+        category: String?,
+        styles: List<String>,
+        seasons: List<String>,
+    )
+
     /**
      * 清掉某衣物在穿搭关联表里的行（物理删除前置步骤）。
      *
@@ -342,6 +356,31 @@ class DefaultClothingRepository @Inject constructor(
 
     override suspend fun updateCutoutPath(id: Long, path: String?) {
         dao.updateCutoutPath(id, path, System.currentTimeMillis())
+    }
+
+    override suspend fun setCutoutIfEmpty(id: Long, path: String) {
+        dao.setCutoutIfEmpty(id, path, System.currentTimeMillis())
+    }
+
+    override suspend fun setColorsIfEmpty(id: Long, colors: List<String>) {
+        if (colors.isEmpty()) return
+        dao.setColorsIfEmpty(id, colors, emptyList(), System.currentTimeMillis())
+    }
+
+    override suspend fun applyAiSuggestionIfEmpty(
+        id: Long,
+        category: String?,
+        styles: List<String>,
+        seasons: List<String>,
+    ) {
+        dao.applyAiSuggestionIfEmpty(
+            id = id,
+            category = category,
+            styles = styles,
+            seasons = seasons,
+            empty = emptyList(),
+            updatedAt = System.currentTimeMillis(),
+        )
     }
 
     override suspend fun deleteCrossRefsForItem(id: Long) {

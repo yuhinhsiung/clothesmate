@@ -95,6 +95,7 @@ fun QuickCaptureRoute(
                 onResume = viewModel::resumeCapture,
                 onDone = viewModel::complete,
                 onDelete = viewModel::deleteShot,
+                onAcceptAiSuggestion = viewModel::acceptAiSuggestion,
             )
         }
         androidx.compose.material3.SnackbarHost(

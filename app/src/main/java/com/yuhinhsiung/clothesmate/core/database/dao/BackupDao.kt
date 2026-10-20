@@ -21,7 +21,7 @@ interface BackupDao {
     @Query("SELECT * FROM wardrobe ORDER BY id")
     suspend fun wardrobes(): List<WardrobeEntity>
 
-    @Query("SELECT * FROM clothing_item ORDER BY id")
+    @Query("SELECT * FROM clothing_item WHERE deletedAt IS NULL ORDER BY id")
     suspend fun clothing(): List<ClothingItemEntity>
 
     @Query("SELECT * FROM clothing_item WHERE code = :code LIMIT 1")
