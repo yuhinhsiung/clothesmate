@@ -11,6 +11,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -38,6 +40,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -98,6 +101,8 @@ import com.yuhinhsiung.clothesmate.ui.navigation.CutoutPreview
 import com.yuhinhsiung.clothesmate.ui.navigation.ClothingDetail
 import com.yuhinhsiung.clothesmate.ui.navigation.ClothingForm
 import com.yuhinhsiung.clothesmate.ui.navigation.ClothingPicker
+import com.yuhinhsiung.clothesmate.ui.navigation.LocalAnimatedVisibilityScope
+import com.yuhinhsiung.clothesmate.ui.navigation.LocalSharedTransitionScope
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitDetailArgs
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitForm
 import com.yuhinhsiung.clothesmate.ui.navigation.WearCalendar
@@ -156,6 +161,7 @@ private fun androidx.navigation.NavOptionsBuilder.topLevelNavOptions(graph: andr
 }
 
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 fun ClothesMateNavHost(
     navController: NavHostController = rememberNavController(),
 ) {
@@ -347,6 +353,8 @@ fun ClothesMateNavHost(
             )
         },
     ) { innerPadding ->
+        SharedTransitionLayout {
+        CompositionLocalProvider(LocalSharedTransitionScope provides this) {
         NavHost(
             navController = navController,
             startDestination = TodayTab,
@@ -454,6 +462,7 @@ fun ClothesMateNavHost(
                 ClothingPickerRoute(onDone = { navController.popBackStack() })
             }
             composable<WardrobeDetail> {
+                CompositionLocalProvider(LocalAnimatedVisibilityScope provides this@composable) {
                 // review E-c：衣柜 id 由 ViewModel 从 SavedStateHandle 自取，不再经形参
                 WardrobeDetailRoute(
                     onBack = { navController.popBackStack() },
@@ -472,8 +481,10 @@ fun ClothesMateNavHost(
                         deleteTargetId = currentWardrobeId()
                     },
                 )
+                }
             }
             composable<ClothingDetail> {
+                CompositionLocalProvider(LocalAnimatedVisibilityScope provides this@composable) {
                 ClothingDetailRoute(
                     onBack = { navController.popBackStack() },
                     onWardrobeClick = { wardrobeId ->
@@ -486,6 +497,7 @@ fun ClothesMateNavHost(
                     // M4-03：从衣物详情跳到包含它的穿搭详情
                     onOutfitClick = { outfitId -> navController.navigate(OutfitDetailArgs(outfitId)) },
                 )
+                }
             }
             composable<QuickCapture> {
                 QuickCaptureRoute(
@@ -622,6 +634,8 @@ fun ClothesMateNavHost(
                     },
                 )
             }
+        }
+        }
         }
 
         // ── 衣柜相关弹层（M1-06/07/08） ──────────────────────────

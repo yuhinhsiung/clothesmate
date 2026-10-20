@@ -60,6 +60,7 @@ import com.yuhinhsiung.clothesmate.core.model.ClothingColor
 import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
 import com.yuhinhsiung.clothesmate.ui.component.ColorDot
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
+import com.yuhinhsiung.clothesmate.ui.navigation.sharedClothingImage
 import com.yuhinhsiung.clothesmate.ui.theme.ClothingColors
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
 import com.yuhinhsiung.clothesmate.ui.theme.accentText
@@ -149,6 +150,7 @@ fun ClothingDetailRoute(
                         ZoomableImage(
                             path = image,
                             contentDescription = item.displayName,
+                            clothingId = item.id,
                             modifier = Modifier.fillMaxSize(),
                         )
                     } else {
@@ -515,6 +517,7 @@ private fun formatLastWorn(millis: Long?): String {
 private fun ZoomableImage(
     path: String,
     contentDescription: String?,
+    clothingId: Long,
     modifier: Modifier = Modifier,
 ) {
     var zoom by remember(path) { mutableStateOf(ZoomState()) }
@@ -547,6 +550,7 @@ private fun ZoomableImage(
             contentScale = ContentScale.Fit,
             modifier = Modifier
                 .fillMaxSize()
+                .sharedClothingImage(clothingId)
                 .graphicsLayer {
                     scaleX = zoom.scale
                     scaleY = zoom.scale
