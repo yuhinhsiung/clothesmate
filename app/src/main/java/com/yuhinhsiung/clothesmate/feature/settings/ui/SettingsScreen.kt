@@ -87,6 +87,8 @@ import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 fun SettingsRoute(
     onBack: () -> Unit,
     onOpenWeatherAuth: () -> Unit,
+    onOpenBackup: () -> Unit,
+    onOpenCleanup: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -202,8 +204,7 @@ fun SettingsRoute(
                     SettingsRow(
                         title = stringResource(R.string.settings_backup_export),
                         value = stringResource(R.string.settings_backup_export_desc),
-                        enabled = false,
-                        onClick = {},
+                        onClick = onOpenBackup,
                     )
                     HorizontalDivider(
                         thickness = Dimens.dividerThickness,
@@ -212,8 +213,7 @@ fun SettingsRoute(
                     SettingsRow(
                         title = stringResource(R.string.settings_backup_import),
                         value = stringResource(R.string.settings_backup_import_desc),
-                        enabled = false,
-                        onClick = {},
+                        onClick = onOpenBackup,
                     )
                     HorizontalDivider(
                         thickness = Dimens.dividerThickness,
@@ -222,8 +222,7 @@ fun SettingsRoute(
                     SettingsRow(
                         title = stringResource(R.string.settings_backup_clean),
                         value = stringResource(R.string.settings_backup_clean_desc),
-                        enabled = false,
-                        onClick = {},
+                        onClick = onOpenCleanup,
                     )
                 }
             }

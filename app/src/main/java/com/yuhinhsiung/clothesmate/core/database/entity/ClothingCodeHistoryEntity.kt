@@ -1,5 +1,7 @@
 package com.yuhinhsiung.clothesmate.core.database.entity
 
+import kotlinx.serialization.Serializable
+
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -31,6 +33,7 @@ import androidx.room.PrimaryKey
         Index(value = ["holderId"]),
     ],
 )
+@Serializable
 data class ClothingCodeHistoryEntity(
     /** 纯数字编号（归一后的字符串，与 `clothing_item.code` 同口径） */
     @PrimaryKey val code: String,

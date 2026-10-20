@@ -87,6 +87,8 @@ import com.yuhinhsiung.clothesmate.ui.theme.onMuted
 fun WardrobeDetailRoute(
     onBack: () -> Unit,
     onItemClick: (Long) -> Unit = {},
+    /** M4-02：待完善衣物直接进编辑确认页补全 */
+    onIncompleteClick: (Long) -> Unit = onItemClick,
     /** 录衣服：带当前衣柜 id 作为录入确认页预选（M1-14） */
     onAddClothing: (Long?) -> Unit = {},
     onEditWardrobe: () -> Unit = {},
@@ -315,10 +317,15 @@ fun WardrobeDetailRoute(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     items(uiState.items, key = { it.id }) { item ->
-                        ClothingGridCard(
-                            item = item,
-                            onClick = { onItemClick(item.id) },
-                        )
+                        Box(Modifier.animateItem()) {
+                            ClothingGridCard(
+                                item = item,
+                                onClick = {
+                                    if (item.isIncomplete) onIncompleteClick(item.id)
+                                    else onItemClick(item.id)
+                                },
+                            )
+                        }
                     }
                 }
             }

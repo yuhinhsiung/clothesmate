@@ -172,10 +172,12 @@ fun OutfitWaterfallRoute(
                         modifier = Modifier.fillMaxSize(),
                     ) {
                         items(state.outfits, key = { it.id }) { outfit ->
-                            OutfitWaterfallCard(
-                                outfit = outfit,
-                                onClick = { onOutfitClick(outfit.id) },
-                            )
+                            Box(Modifier.animateItem()) {
+                                OutfitWaterfallCard(
+                                    outfit = outfit,
+                                    onClick = { onOutfitClick(outfit.id) },
+                                )
+                            }
                         }
                     }
                 }

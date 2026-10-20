@@ -1,5 +1,7 @@
 package com.yuhinhsiung.clothesmate.core.database.entity
 
+import kotlinx.serialization.Serializable
+
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
@@ -18,6 +20,7 @@ import androidx.room.PrimaryKey
         Index(value = ["sortOrder"]),
     ],
 )
+@Serializable
 data class WardrobeEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0L,

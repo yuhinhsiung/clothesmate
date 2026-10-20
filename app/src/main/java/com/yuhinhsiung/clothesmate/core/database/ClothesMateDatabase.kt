@@ -4,6 +4,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
+import com.yuhinhsiung.clothesmate.core.database.dao.BackupDao
 import com.yuhinhsiung.clothesmate.core.database.dao.ClothingItemDao
 import com.yuhinhsiung.clothesmate.core.database.dao.CodeHistoryDao
 import com.yuhinhsiung.clothesmate.core.database.dao.OutfitCategoryDao
@@ -55,6 +56,7 @@ abstract class ClothesMateDatabase : RoomDatabase() {
     abstract fun outfitDao(): OutfitDao
     abstract fun wearRecordDao(): WearRecordDao
     abstract fun tagDictionaryDao(): TagDictionaryDao
+    abstract fun backupDao(): BackupDao
 
     companion object {
         const val DATABASE_NAME = "clothesmate.db"

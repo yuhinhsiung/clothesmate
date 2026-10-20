@@ -71,6 +71,17 @@ interface ClothingItemDao {
     @Query("UPDATE clothing_item SET deletedAt = NULL, updatedAt = :updatedAt WHERE id = :id")
     suspend fun restore(id: Long, updatedAt: Long)
 
+    /** 清理原图（M4-06）：仅有抠图的未删除衣物可清理。 */
+    @Query(
+        "SELECT * FROM clothing_item " +
+            "WHERE deletedAt IS NULL AND originalImagePath IS NOT NULL AND cutoutImagePath IS NOT NULL " +
+            "ORDER BY id",
+    )
+    suspend fun cleanupCandidates(): List<ClothingItemEntity>
+
+    @Query("UPDATE clothing_item SET originalImagePath = NULL, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun clearOriginalImagePath(id: Long, updatedAt: Long)
+
     /**
      * 彻底删除衣物行（W-13 后半段：软删衣物在所属穿搭全被删除后物理清除）。
      * 调用方须先清理 [OutfitItemDao] 中该衣物的关联——外键为 NO_ACTION，

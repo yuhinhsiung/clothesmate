@@ -1,5 +1,7 @@
 package com.yuhinhsiung.clothesmate.core.database.entity
 
+import kotlinx.serialization.Serializable
+
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
@@ -39,6 +41,7 @@ import com.yuhinhsiung.clothesmate.core.model.ClothingStatus
         Index(value = ["category"]),
     ],
 )
+@Serializable
 data class ClothingItemEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0L,

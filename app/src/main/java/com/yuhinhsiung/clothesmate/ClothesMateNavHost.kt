@@ -58,6 +58,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.yuhinhsiung.clothesmate.feature.addclothing.ui.CaptureScreen
 import com.yuhinhsiung.clothesmate.feature.addclothing.ui.CutoutPreviewRoute
+import com.yuhinhsiung.clothesmate.feature.addclothing.ui.QuickCaptureRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.ClothingPickerRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitDetailRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitFormRoute
@@ -65,6 +66,10 @@ import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitHomeRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitWaterfallRoute
 import com.yuhinhsiung.clothesmate.feature.overview.ui.OverviewRoute
 import com.yuhinhsiung.clothesmate.feature.settings.ui.SettingsRoute
+import com.yuhinhsiung.clothesmate.feature.settings.ui.BackupRoute
+import com.yuhinhsiung.clothesmate.feature.settings.ui.CleanupOriginalsRoute
+import com.yuhinhsiung.clothesmate.ui.navigation.CleanupOriginals
+import com.yuhinhsiung.clothesmate.ui.navigation.Backup
 import com.yuhinhsiung.clothesmate.feature.settings.ui.WeatherAuthRoute
 import com.yuhinhsiung.clothesmate.feature.today.ui.TodayRoute
 import com.yuhinhsiung.clothesmate.feature.today.ui.calendar.WearCalendarRoute
@@ -91,6 +96,7 @@ import com.yuhinhsiung.clothesmate.ui.navigation.OutfitForm
 import com.yuhinhsiung.clothesmate.ui.navigation.WearCalendar
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitTab
 import com.yuhinhsiung.clothesmate.ui.navigation.OutfitWaterfall
+import com.yuhinhsiung.clothesmate.ui.navigation.QuickCapture
 import com.yuhinhsiung.clothesmate.ui.navigation.OverviewTab
 import com.yuhinhsiung.clothesmate.ui.navigation.Search
 import com.yuhinhsiung.clothesmate.ui.navigation.Settings
@@ -434,6 +440,9 @@ fun ClothesMateNavHost(
                 WardrobeDetailRoute(
                     onBack = { navController.popBackStack() },
                     onItemClick = { itemId -> navController.navigate(ClothingDetail(itemId)) },
+                    onIncompleteClick = { itemId ->
+                        navController.navigate(ClothingForm(itemId = itemId))
+                    },
                     // M1-14：详情页 FAB 带当前衣柜作为预选
                     onAddClothing = { wardrobeId ->
                         clothingPreselectWardrobeId = wardrobeId
@@ -458,6 +467,22 @@ fun ClothesMateNavHost(
                     onEdit = { itemId -> navController.navigate(ClothingForm(itemId = itemId)) },
                     // M4-03：从衣物详情跳到包含它的穿搭详情
                     onOutfitClick = { outfitId -> navController.navigate(OutfitDetailArgs(outfitId)) },
+                )
+            }
+            composable<QuickCapture> {
+                QuickCaptureRoute(
+                    onBack = { navController.popBackStack() },
+                    onDone = { wardrobeId ->
+                        val fromDetail = navController.previousBackStackEntry
+                            ?.destination
+                            ?.hasRouteAny(WardrobeDetail::class) == true
+                        navController.popBackStack()
+                        if (!fromDetail) {
+                            navController.navigate(WardrobeDetail(wardrobeId)) {
+                                launchSingleTop = true
+                            }
+                        }
+                    },
                 )
             }
             composable<Capture> { entry ->
@@ -524,11 +549,21 @@ fun ClothesMateNavHost(
                 SettingsRoute(
                     onBack = { navController.popBackStack() },
                     onOpenWeatherAuth = { navController.navigate(WeatherAuth) },
+                    onOpenBackup = { navController.navigate(Backup) },
+                    onOpenCleanup = { navController.navigate(CleanupOriginals) },
                 )
             }
 
             composable<WeatherAuth> {
                 WeatherAuthRoute(onBack = { navController.popBackStack() })
+            }
+
+            composable<Backup> {
+                BackupRoute(onBack = { navController.popBackStack() })
+            }
+
+            composable<CleanupOriginals> {
+                CleanupOriginalsRoute(onBack = { navController.popBackStack() })
             }
 
             composable<WearCalendar> {
@@ -635,6 +670,21 @@ fun ClothesMateNavHost(
                                     Capture(
                                         target = CaptureTarget.CLOTHING_NEW,
                                         wardrobeId = clothingPreselectWardrobeId,
+                                    ),
+                                )
+                            },
+                        ),
+                        FabAction(
+                            icon = AppIcons.PhotoCamera,
+                            title = stringResource(R.string.fab_panel_quick),
+                            description = stringResource(R.string.fab_panel_quick_desc),
+                            onClick = {
+                                showClothingPanel = false
+                                val fromWardrobe = currentDestination
+                                    ?.hasRouteAny(WardrobeDetail::class) == true
+                                navController.navigate(
+                                    QuickCapture(
+                                        wardrobeId = if (fromWardrobe) currentWardrobeId() else null,
                                     ),
                                 )
                             },

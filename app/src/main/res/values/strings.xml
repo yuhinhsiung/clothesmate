@@ -107,6 +107,24 @@
     <string name="fab_panel_full_desc">拍照建档，编号自动生成</string>
     <string name="fab_panel_album">从相册导入</string>
     <string name="fab_panel_album_desc">从相册选择一张照片</string>
+
+    <!-- 快速连拍（M4-02，开发文档 §2.2.4 / UI 文档 §7.2） -->
+    <string name="fab_panel_quick">快速连拍</string>
+    <string name="fab_panel_quick_desc">连续拍照，编号自动生成</string>
+    <string name="quick_capture_title">快速连拍</string>
+    <string name="quick_capture_close">关闭快速连拍</string>
+    <string name="quick_capture_choose_wardrobe">选择这批衣物的衣柜</string>
+    <string name="quick_capture_no_wardrobe">还没有衣柜，请先在衣柜页创建</string>
+    <string name="quick_capture_count">已拍 %1$d 张</string>
+    <string name="quick_capture_shot">第 %1$s 号衣物</string>
+    <string name="quick_capture_delete">删除这张</string>
+    <string name="quick_capture_end">完成拍摄</string>
+    <string name="quick_capture_processing">保存中…</string>
+    <string name="quick_capture_continue">继续拍</string>
+    <string name="quick_capture_done">完成</string>
+    <string name="quick_capture_review_title">确认这批衣物</string>
+    <string name="quick_capture_info">已为 %1$d 张照片建档 · No.%2$s–%3$s</string>
+    <string name="quick_capture_empty">还没有照片</string>
     <string name="action_confirm">确定</string>
 
     <!-- 拍照页（M1-14，UI 文档 §7.3 / mockup-13） -->
@@ -308,11 +326,11 @@
     <string name="settings_weather_unconfigured">未配置</string>
     <string name="settings_weather_note">JWT 私钥加密存储在本机；未配置时今日页会显示配置引导。</string>
     <string name="settings_backup_export">导出备份</string>
-    <string name="settings_backup_export_desc">图片 + JSON · 随 M4 交付</string>
+    <string name="settings_backup_export_desc">图片 + JSON zip，可存档</string>
     <string name="settings_backup_import">导入恢复</string>
-    <string name="settings_backup_import_desc">从 zip 恢复 · 随 M4 交付</string>
+    <string name="settings_backup_import_desc">从 zip 新增恢复</string>
     <string name="settings_backup_clean">清理原图只留抠图</string>
-    <string name="settings_backup_clean_desc">省空间 · 随 M4 交付</string>
+    <string name="settings_backup_clean_desc">只清理有抠图的衣物原图</string>
     <string name="settings_about_version">版本 %1$s</string>
     <string name="settings_about_local">数据全部存于本机 · 无云同步</string>
     <string name="settings_about_license">开源许可：Playfair Display（OFL）、U² Net（Apache 2.0）、EdDSA Java（CC0 1.0）</string>
@@ -506,4 +524,44 @@
     <string name="wardrobe_season_restored_snackbar">已恢复 %1$d 件</string>
     <string name="wardrobe_season_undo">撤销</string>
     <string name="wardrobe_season_undone">已撤销</string>
+
+    <!-- 备份与恢复（M4-05，开发文档 §2.6 / 计划 M4-05） -->
+    <string name="backup_title">备份与恢复</string>
+    <string name="backup_close">关闭</string>
+    <string name="backup_intro">备份包含全部衣柜、衣物、穿搭、穿着记录和图片；文件只保存在你选择的位置。</string>
+    <string name="backup_export_title">导出备份</string>
+    <string name="backup_export_desc">生成 zip（manifest.json + 图片），可保存到文件管理器或网盘。</string>
+    <string name="backup_export_action">导出备份</string>
+    <string name="backup_export_success">备份已导出</string>
+    <string name="backup_import_title">导入恢复</string>
+    <string name="backup_import_desc">选择 ClothesMate 导出的 zip；导入会新增数据，不覆盖当前内容。</string>
+    <string name="backup_import_pick">选择备份文件</string>
+    <string name="backup_import_reading">正在读取备份…</string>
+    <string name="backup_summary_title">备份内容</string>
+    <string name="backup_summary_line">%1$d 个衣柜 · %2$d 件衣物 · %3$d 套穿搭 · %4$d 条穿着记录</string>
+    <string name="backup_exported_at">导出时间：%1$s</string>
+    <string name="backup_import_action">导入这份备份</string>
+    <string name="backup_confirm_title">确认导入？</string>
+    <string name="backup_confirm_body">导入会把这些数据作为新记录加入当前衣柜，原编号冲突时自动顺延。</string>
+    <string name="backup_confirm_action">开始导入</string>
+    <string name="backup_cancel">取消</string>
+    <string name="backup_result_title">导入完成</string>
+    <string name="backup_result_line">新增 %1$d 个衣柜、%2$d 件衣物、%3$d 套穿搭、%4$d 条穿着记录，恢复 %5$d 张图片。</string>
+    <string name="backup_result_skipped">%1$d 件衣物因所属衣柜缺失被跳过。</string>
+    <string name="backup_import_success">备份已导入</string>
+    <string name="backup_sensitive_warning">备份文件包含 AI/天气凭据，请像密码一样妥善保管，不要公开分享。</string>
+
+    <!-- 清理原图（M4-06，开发文档 §10） -->
+    <string name="cleanup_title">清理原图</string>
+    <string name="cleanup_close">关闭</string>
+    <string name="cleanup_desc">只清理已经有抠图的衣物原图；没有抠图的衣物不会被改动，清理后列表和详情继续使用抠图。</string>
+    <string name="cleanup_estimate_label">预计可回收</string>
+    <string name="cleanup_estimate_value">%1$d 件原图 · 约 %2$s</string>
+    <string name="cleanup_action">清理原图</string>
+    <string name="cleanup_confirm_title">确认清理原图？</string>
+    <string name="cleanup_confirm_body">将删除 %1$d 张原图（约 %2$s），只保留抠图。这个操作不能撤销，但不会删除衣物和抠图。</string>
+    <string name="cleanup_confirm_action">确认清理</string>
+    <string name="cleanup_cancel">取消</string>
+    <string name="cleanup_result">已清理 %1$d 张原图，回收约 %2$s。</string>
+    <string name="cleanup_safety">没有抠图的衣物原图会保留；建议先导出备份。</string>
 </resources>

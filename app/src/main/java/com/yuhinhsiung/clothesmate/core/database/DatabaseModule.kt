@@ -2,6 +2,7 @@ package com.yuhinhsiung.clothesmate.core.database
 
 import android.content.Context
 import androidx.room.Room
+import com.yuhinhsiung.clothesmate.core.database.dao.BackupDao
 import com.yuhinhsiung.clothesmate.core.database.dao.ClothingItemDao
 import com.yuhinhsiung.clothesmate.core.database.dao.CodeHistoryDao
 import com.yuhinhsiung.clothesmate.core.database.dao.OutfitCategoryDao
@@ -37,6 +38,9 @@ object DatabaseModule {
             // M4 起必须补齐迁移并移除本行，以免用户丢数据（开发计划 M1-01）。
             .fallbackToDestructiveMigration()
             .build()
+
+    @Provides
+    fun provideBackupDao(db: ClothesMateDatabase): BackupDao = db.backupDao()
 
     @Provides
     fun provideWardrobeDao(db: ClothesMateDatabase): WardrobeDao = db.wardrobeDao()

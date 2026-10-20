@@ -1,5 +1,7 @@
 package com.yuhinhsiung.clothesmate.core.database.entity
 
+import kotlinx.serialization.Serializable
+
 import androidx.room.Entity
 import androidx.room.Index
 
@@ -17,6 +19,7 @@ import androidx.room.Index
         Index(value = ["type", "value"], unique = true),
     ],
 )
+@Serializable
 data class TagDictionaryEntity(
     @androidx.room.PrimaryKey(autoGenerate = true)
     val id: Long = 0L,

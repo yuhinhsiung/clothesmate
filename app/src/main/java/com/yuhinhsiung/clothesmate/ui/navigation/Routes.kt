@@ -88,6 +88,14 @@ data class Search(
     val autoFocus: Boolean = true,
 )
 
+/** 备份与恢复（M4-05）。二级页，无底部导航。 */
+@Serializable
+data object Backup
+
+/** 清理原图（M4-06）。二级页，无底部导航。 */
+@Serializable
+data object CleanupOriginals
+
 /** 穿着日历（M3-07）。二级页，无底部导航。 */
 @Serializable
 data object WearCalendar
@@ -114,6 +122,10 @@ data class Capture(
     /** 衣物预选衣柜（从衣柜详情页 FAB 进入时带上） */
     val wardrobeId: Long? = null,
 )
+
+/** 快速连拍（M4-02）。wardrobeId 为空时先在页内选择衣柜。 */
+@Serializable
+data class QuickCapture(val wardrobeId: Long? = null)
 
 // ── 穿搭 ───────────────────────────────────────────────────────
 

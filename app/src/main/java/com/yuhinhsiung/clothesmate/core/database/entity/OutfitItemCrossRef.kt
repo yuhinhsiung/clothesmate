@@ -1,5 +1,7 @@
 package com.yuhinhsiung.clothesmate.core.database.entity
 
+import kotlinx.serialization.Serializable
+
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
@@ -45,6 +47,7 @@ import androidx.room.Index
         Index(value = ["clothingItemId"]),
     ],
 )
+@Serializable
 data class OutfitItemCrossRef(
     val outfitId: Long,
     val clothingItemId: Long,

@@ -46,6 +46,12 @@ abstract class ImageBindModule {
 
     @Binds
     @Singleton
+    abstract fun bindImageCleanupRepository(
+        impl: DefaultImageCleanupRepository,
+    ): ImageCleanupRepository
+
+    @Binds
+    @Singleton
     abstract fun bindImageCompressor(impl: DefaultImageCompressor): ImageCompressor
 
     @Binds
