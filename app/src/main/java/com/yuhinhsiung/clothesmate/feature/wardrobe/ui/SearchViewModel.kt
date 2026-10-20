@@ -1,5 +1,6 @@
 package com.yuhinhsiung.clothesmate.feature.wardrobe.ui
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yuhinhsiung.clothesmate.core.database.dao.OutfitDao
@@ -12,6 +13,7 @@ import com.yuhinhsiung.clothesmate.core.model.Season
 import com.yuhinhsiung.clothesmate.core.model.fallbackDisplayName
 import com.yuhinhsiung.clothesmate.core.model.toDomain
 import com.yuhinhsiung.clothesmate.feature.wardrobe.data.ClothingRepository
+import com.yuhinhsiung.clothesmate.ui.navigation.Search
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -19,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
+import androidx.navigation.toRoute
 import javax.inject.Inject
 
 /**
@@ -34,10 +37,12 @@ class SearchViewModel @Inject constructor(
     private val clothingRepository: ClothingRepository,
     outfitDao: OutfitDao,
     wardrobeDao: WardrobeDao,
+    savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
+    private val route = savedStateHandle.toRoute<Search>()
     private val query = MutableStateFlow("")
-    private val categoryFilter = MutableStateFlow<String?>(null)
+    private val categoryFilter = MutableStateFlow(route.categoryKey)
     private val colorFilter = MutableStateFlow<String?>(null)
     private val styleFilter = MutableStateFlow<String?>(null)
 

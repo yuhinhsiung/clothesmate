@@ -97,6 +97,22 @@ interface OutfitDao {
     )
     fun observeItemRefsOf(outfitId: Long): Flow<List<OutfitItemCrossRef>>
 
+    /**
+     * 某衣物出现的穿搭（一衣多穿 W-10 / M4-03）。
+     *
+     * 按最近穿着倒序，没穿过的排最后；同一天再按创建时间倒序，保证列表稳定。
+     */
+    @Query(
+        """
+        SELECT outfit.* FROM outfit
+        INNER JOIN outfit_item_cross_ref ref ON ref.outfitId = outfit.id
+        WHERE ref.clothingItemId = :clothingItemId
+        ORDER BY CASE WHEN outfit.lastWornAt IS NULL THEN 1 ELSE 0 END,
+                 outfit.lastWornAt DESC, outfit.createdAt DESC
+        """,
+    )
+    fun observeOutfitsForItem(clothingItemId: Long): Flow<List<OutfitEntity>>
+
     /** 某衣物出现在哪些穿搭里（一衣多穿 W-10 / M4-03） */
     @Query("SELECT outfitId FROM outfit_item_cross_ref WHERE clothingItemId = :clothingItemId")
     suspend fun getOutfitIdsForItem(clothingItemId: Long): List<Long>

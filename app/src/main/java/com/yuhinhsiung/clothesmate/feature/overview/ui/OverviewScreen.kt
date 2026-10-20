@@ -1,6 +1,8 @@
 package com.yuhinhsiung.clothesmate.feature.overview.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -32,6 +35,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,11 +45,14 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.core.model.ClothingColor
+import com.yuhinhsiung.clothesmate.core.model.Season
+import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
 import com.yuhinhsiung.clothesmate.ui.component.EmptyStateSpec
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.ChartCategoryColors
@@ -74,6 +81,8 @@ import androidx.compose.ui.text.font.FontWeight
 fun OverviewRoute(
     onOpenSettings: () -> Unit = {},
     onAddClothing: () -> Unit = {},
+    onClothingClick: (Long) -> Unit = {},
+    onCategoryClick: (String) -> Unit = {},
     viewModel: OverviewViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -154,10 +163,32 @@ fun OverviewRoute(
                     }
 
                     if (uiState.categorySlices.isNotEmpty()) {
-                        CategoryDonutCard(uiState)
+                        CategoryDonutCard(uiState, onCategoryClick = onCategoryClick)
                     }
                     if (uiState.colorCounts.isNotEmpty()) {
                         ColorDistributionCard(uiState.colorCounts)
+                    }
+                    if (uiState.topWorn.isNotEmpty()) {
+                        RankingCard(
+                            title = stringResource(R.string.overview_top_worn),
+                            items = uiState.topWorn,
+                            onItemClick = onClothingClick,
+                            accent = false,
+                        )
+                    }
+                    if (uiState.leastWorn.isNotEmpty()) {
+                        RankingCard(
+                            title = stringResource(R.string.overview_least_worn),
+                            items = uiState.leastWorn,
+                            onItemClick = onClothingClick,
+                            accent = true,
+                        )
+                    }
+                    if (uiState.heatmap.isNotEmpty()) {
+                        WearHeatmapCard(uiState.heatmap)
+                    }
+                    if (uiState.seasonTotal > 0) {
+                        SeasonDistributionCard(uiState.seasonSlices, uiState.seasonTotal)
                     }
                 }
             }
@@ -201,7 +232,7 @@ private fun NumberCard(
 
 /** 类别分布环形图卡：Canvas donut（按 [ChartCategoryColors] 顺序取色）+ 中心总件数 + 图例。 */
 @Composable
-private fun CategoryDonutCard(uiState: OverviewUiState) {
+private fun CategoryDonutCard(uiState: OverviewUiState, onCategoryClick: (String) -> Unit) {
     Card(
         shape = RoundedCornerShape(Dimens.Radius.l),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -226,6 +257,7 @@ private fun CategoryDonutCard(uiState: OverviewUiState) {
                     Box(contentAlignment = Alignment.Center) {
                         DonutChart(
                             slices = uiState.categorySlices,
+                            onSliceClick = { topKey -> onCategoryClick(topKey) },
                             modifier = Modifier.size(Dimens.Chart.donutSize),
                         )
                         // 中心总件数（Playfair）
@@ -251,6 +283,7 @@ private fun CategoryDonutCard(uiState: OverviewUiState) {
                             color = ChartCategoryColors[index % ChartCategoryColors.size],
                             label = slice.topName,
                             count = slice.count,
+                            modifier = Modifier.clickable { onCategoryClick(slice.topKey) },
                         )
                     }
                 }
@@ -294,13 +327,36 @@ private val DonutLegendSideBySideMinWidth = 300.dp
 @Composable
 private fun DonutChart(
     slices: List<CategorySlice>,
+    onSliceClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val sliceColors = slices.mapIndexed { index, _ ->
         ChartCategoryColors[index % ChartCategoryColors.size]
     }
     val total = slices.sumOf { it.count }.coerceAtLeast(1)
-    Canvas(modifier = modifier) {
+    Canvas(
+        modifier = modifier.pointerInput(slices) {
+            detectTapGestures { tap ->
+                val center = Offset(size.width / 2f, size.height / 2f)
+                val dx = tap.x - center.x
+                val dy = tap.y - center.y
+                val radius = minOf(size.width, size.height) / 2f
+                if (dx * dx + dy * dy > radius * radius) return@detectTapGestures
+                // atan2 以 3 点钟为 0°；扇区从 -90° 起笔
+                var angle = Math.toDegrees(kotlin.math.atan2(dy, dx).toDouble()).toFloat() + 90f
+                if (angle < 0f) angle += 360f
+                var start = 0f
+                slices.forEach { slice ->
+                    val sweep = 360f * slice.count / total
+                    if (angle >= start && angle < start + sweep) {
+                        onSliceClick(slice.topKey)
+                        return@detectTapGestures
+                    }
+                    start += sweep
+                }
+            }
+        },
+    ) {
         val stroke = Dimens.Chart.ringStroke.toPx()
         val diameter = minOf(size.width, size.height) - stroke
         val topLeft = Offset((size.width - diameter) / 2, (size.height - diameter) / 2)
@@ -422,8 +478,9 @@ private fun LegendRow(
     label: String,
     count: Int,
     isMulti: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         if (isMulti) {
             MultiColorStripe(
                 colors = listOf(
@@ -467,4 +524,3 @@ private fun LegendRow(
         )
     }
 }
-

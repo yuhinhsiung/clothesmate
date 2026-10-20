@@ -69,6 +69,7 @@ fun SearchRoute(
     onBack: () -> Unit,
     onClothingClick: (Long) -> Unit,
     onOutfitClick: (Long) -> Unit,
+    autoFocus: Boolean = true,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -76,9 +77,11 @@ fun SearchRoute(
     val keyboard = LocalSoftwareKeyboardController.current
 
     // 保持焦点可改词（§7.2）
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-        keyboard?.show()
+    LaunchedEffect(autoFocus) {
+        if (autoFocus) {
+            focusRequester.requestFocus()
+            keyboard?.show()
+        }
     }
 
     Scaffold { innerPadding ->

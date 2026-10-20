@@ -363,7 +363,7 @@ fun ClothesMateNavHost(
                         showClothingPanel = true
                     },
                     // M1-16：常驻搜索框 → 搜索结果二级页
-                    onOpenSearch = { navController.navigate(Search) },
+                    onOpenSearch = { navController.navigate(Search()) },
                 )
             }
             composable<OutfitTab> {
@@ -379,6 +379,10 @@ fun ClothesMateNavHost(
                     onOpenSettings = { navController.navigate(Settings) },
                     onAddClothing = {
                         navController.navigate(Capture(target = CaptureTarget.CLOTHING_NEW))
+                    },
+                    onClothingClick = { itemId -> navController.navigate(ClothingDetail(itemId)) },
+                    onCategoryClick = { topKey ->
+                        navController.navigate(Search(categoryKey = topKey, autoFocus = false))
                     },
                 )
             }
@@ -452,6 +456,8 @@ fun ClothesMateNavHost(
                     },
                     // M1-12：衣物编辑页（复用确认页表单）
                     onEdit = { itemId -> navController.navigate(ClothingForm(itemId = itemId)) },
+                    // M4-03：从衣物详情跳到包含它的穿搭详情
+                    onOutfitClick = { outfitId -> navController.navigate(OutfitDetailArgs(outfitId)) },
                 )
             }
             composable<Capture> { entry ->
@@ -532,8 +538,10 @@ fun ClothesMateNavHost(
                 )
             }
             composable<Search> {
+                val searchRoute = it.toRoute<Search>()
                 SearchRoute(
                     onBack = { navController.popBackStack() },
+                    autoFocus = searchRoute.autoFocus,
                     onClothingClick = { itemId -> navController.navigate(ClothingDetail(itemId)) },
                     onOutfitClick = { outfitId -> navController.navigate(OutfitDetailArgs(outfitId)) },
                 )

@@ -146,6 +146,10 @@ object Dimens {
         val donutSize = 168.dp
         val ringStroke = 28.dp
         val barHeight = 20.dp
+        val rankThumb = 48.dp
+        val heatCell = 32.dp
+        val heatGap = 4.dp
+        val seasonBarHeight = 24.dp
     }
 
     /** 穿搭表单的照片块宽（4:5 横滑列，§7.4）—— review B-14 */

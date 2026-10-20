@@ -6,7 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.yuhinhsiung.clothesmate.core.model.ClothingCategory
 import com.yuhinhsiung.clothesmate.core.model.ClothingColor
 import com.yuhinhsiung.clothesmate.core.model.ClothingItem
+import com.yuhinhsiung.clothesmate.core.model.Outfit
 import com.yuhinhsiung.clothesmate.core.model.Season
+import com.yuhinhsiung.clothesmate.core.model.toDomain
+import com.yuhinhsiung.clothesmate.core.database.dao.OutfitDao
 import com.yuhinhsiung.clothesmate.feature.wardrobe.data.ClothingRepository
 import com.yuhinhsiung.clothesmate.feature.wardrobe.data.WardrobeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,6 +32,7 @@ import javax.inject.Inject
 class ClothingDetailViewModel @Inject constructor(
     private val clothingRepository: ClothingRepository,
     private val wardrobeRepository: WardrobeRepository,
+    private val outfitDao: OutfitDao,
     private val navResultBus: com.yuhinhsiung.clothesmate.ui.navigation.NavResultBus,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -67,11 +71,14 @@ class ClothingDetailViewModel @Inject constructor(
      */
     private val outfitRefCount = MutableStateFlow(0)
 
+    private val outfits = outfitDao.observeOutfitsForItem(itemId)
+
     val uiState: StateFlow<ClothingDetailUiState> = combine(
         clothingRepository.observeItem(itemId),
         wardrobeRepository.observeWardrobes(),
         outfitRefCount,
-    ) { item, wardrobes, refCount ->
+        outfits,
+    ) { item, wardrobes, refCount, outfitEntities ->
         if (item == null) {
             ClothingDetailUiState(notFound = true)
         } else {
@@ -79,6 +86,7 @@ class ClothingDetailViewModel @Inject constructor(
                 item = item,
                 wardrobeName = wardrobes.firstOrNull { it.id == item.wardrobeId }?.name,
                 outfitRefCount = refCount,
+                outfits = outfitEntities.map { it.toDomain() },
             )
         }
     }.stateIn(
@@ -119,6 +127,8 @@ data class ClothingDetailUiState(
     val notFound: Boolean = false,
     /** 被几套现存穿搭引用（删除弹窗警示，review R-10） */
     val outfitRefCount: Int = 0,
+    /** M4-03 一衣多穿：包含本衣物的穿搭，最近穿着优先。 */
+    val outfits: List<Outfit> = emptyList(),
 ) {
     val isStored: Boolean
         get() = item?.isStored == true

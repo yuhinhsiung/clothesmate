@@ -76,9 +76,17 @@ data object Settings
 @Serializable
 data object WeatherAuth
 
-/** 全局搜索结果页（M1-16，二级页无底部导航） */
+/**
+ * 全局搜索结果页（M1-16，二级页无底部导航）。
+ *
+ * M4-01：概览类别扇区可带 [categoryKey] 直达筛选结果；此时不自动弹键盘，
+ * 让用户先看到筛选结果。
+ */
 @Serializable
-data object Search
+data class Search(
+    val categoryKey: String? = null,
+    val autoFocus: Boolean = true,
+)
 
 /** 穿着日历（M3-07）。二级页，无底部导航。 */
 @Serializable

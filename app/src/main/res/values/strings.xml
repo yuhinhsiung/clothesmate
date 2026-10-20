@@ -75,6 +75,8 @@
     <string name="clothing_attr_season">季节</string>
     <string name="clothing_attr_wardrobe">所属衣柜</string>
     <string name="clothing_attr_wear">穿着</string>
+    <string name="clothing_outfits_title">出现在这些穿搭 · %1$d 套</string>
+    <string name="clothing_outfit_never">还没穿过</string>
     <string name="clothing_attr_brand">品牌</string>
     <string name="clothing_attr_note">备注</string>
     <string name="clothing_action_delete">删除</string>
@@ -237,6 +239,22 @@
     <string name="overview_total_items">总件数</string>
     <string name="overview_color_chart">颜色分布</string>
     <string name="empty_overview_title">录入衣物后，这里会有你的衣柜全貌</string>
+    <string name="overview_top_worn">穿着 Top 5</string>
+    <string name="overview_least_worn">压箱底</string>
+    <string name="overview_code">编号 %1$s</string>
+    <string name="overview_worn_times">穿过 %1$d 次</string>
+    <string name="overview_never_worn">还没穿过</string>
+    <string name="overview_heatmap_title">近 30 天穿着</string>
+    <string name="overview_heatmap_hint">颜色越深，当天穿得越多</string>
+    <string name="overview_season_title">季节衣物占比</string>
+    <string name="overview_season_legend">%1$s %2$d</string>
+    <string name="weekday_mon">一</string>
+    <string name="weekday_tue">二</string>
+    <string name="weekday_wed">三</string>
+    <string name="weekday_thu">四</string>
+    <string name="weekday_fri">五</string>
+    <string name="weekday_sat">六</string>
+    <string name="weekday_sun">日</string>
 
     <!-- 设置页（M2-05，UI 文档 §7.6 / mockup-12） -->
     <string name="settings_title">设置</string>

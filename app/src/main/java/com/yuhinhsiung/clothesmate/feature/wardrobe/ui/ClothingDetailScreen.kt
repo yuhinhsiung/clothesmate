@@ -82,6 +82,7 @@ fun ClothingDetailRoute(
     onBack: () -> Unit,
     onEdit: (Long) -> Unit = {},
     onWardrobeClick: (Long) -> Unit = {},
+    onOutfitClick: (Long) -> Unit = {},
     viewModel: ClothingDetailViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -218,6 +219,56 @@ fun ClothingDetailRoute(
                         label = stringResource(R.string.clothing_attr_note),
                         value = note,
                     )
+                }
+
+                // M4-03 一衣多穿：包含本衣物的穿搭，最近穿着优先（DAO 排序）。
+                if (uiState.outfits.isNotEmpty()) {
+                    Text(
+                        text = stringResource(R.string.clothing_outfits_title, uiState.outfits.size),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(
+                            start = Dimens.pagePadding,
+                            end = Dimens.pagePadding,
+                            top = Dimens.Space.s5,
+                            bottom = Dimens.Space.s2,
+                        ),
+                    )
+                    uiState.outfits.forEach { outfit ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onOutfitClick(outfit.id) }
+                                .padding(horizontal = Dimens.pagePadding, vertical = Dimens.Space.s2),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CmAsyncImage(
+                                model = outfit.coverPath,
+                                contentDescription = outfit.displayName,
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(Dimens.Radius.s)),
+                                contentScale = ContentScale.Crop,
+                            )
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(start = Dimens.Space.s3),
+                            ) {
+                                Text(
+                                    text = outfit.displayName,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = outfit.lastWornAt?.let { formatLastWorn(it).removePrefix(" · ") }
+                                        ?: stringResource(R.string.clothing_outfit_never),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onMuted,
+                                )
+                            }
+                        }
+                    }
                 }
 
                 // 底部操作：删除 / 收起 / 编辑
