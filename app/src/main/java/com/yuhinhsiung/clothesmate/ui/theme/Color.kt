@@ -73,7 +73,7 @@ val DarkOnSurface = Color(0xFFF2E7EC)
 val DarkMuted = Color(0xFF2A2024)
 val DarkOnMuted = Color(0xFFB69FAD)
 /** 深底下分割线必须仍可见 */
-val DarkOutline = Color(0xFF4A3941)
+val DarkOutline = Color(0xFF806874)
 val DarkError = Color(0xFFF87171)
 val DarkOnError = Color(0xFF4A0B0B)
 /** 深色下小字号琥珀文字：沿用 `DarkAccent`（对深底对比充足） */

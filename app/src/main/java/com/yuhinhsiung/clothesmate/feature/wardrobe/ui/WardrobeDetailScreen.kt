@@ -59,6 +59,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -465,13 +467,24 @@ private fun ClothingGridCard(
     item: ClothingItem,
     onClick: () -> Unit,
 ) {
+    val itemLabel = buildString {
+        append(item.displayName)
+        append("，编号 ")
+        append(item.code)
+        if (item.isStored) append("，已收起")
+        if (item.isIncomplete) append("，待完善")
+    }
+    val clickLabel = stringResource(
+        if (item.isIncomplete) R.string.clothing_card_complete_action else R.string.clothing_card_detail_action,
+    )
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
             .clip(RoundedCornerShape(Dimens.Radius.m))
             .background(MaterialTheme.colorScheme.muted)
-            .clickable(onClick = onClick),
+            .semantics(mergeDescendants = true) { contentDescription = itemLabel }
+            .clickable(onClickLabel = clickLabel, onClick = onClick),
     ) {
         // 抠图 PNG 直接铺 muted 浅底；M1 无抠图，走原图
         val image = item.displayImagePath

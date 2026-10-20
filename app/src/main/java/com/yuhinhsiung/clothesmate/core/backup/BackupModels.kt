@@ -25,17 +25,27 @@ data class BackupManifest(
     val outfitCategoryRefs: List<OutfitCategoryCrossRef> = emptyList(),
     val wearRecords: List<WearRecordEntity> = emptyList(),
     val tags: List<TagDictionaryEntity> = emptyList(),
-    /** 可选：AI/天气/风格配置；含敏感 Key，zip 需按敏感文件保管。 */
+    /** 可选：非敏感偏好 + 用户口令加密的 AI/天气凭据。 */
     val settings: BackupSettings? = null,
 ) {
     companion object {
-        const val CURRENT_VERSION = 1
+        const val CURRENT_VERSION = 2
         const val ENTRY_NAME = "manifest.json"
     }
 }
 
 @Serializable
 data class BackupSettings(
+    /** 非敏感偏好；凭据只以 encryptedCredentials 形式出现。 */
+    val weatherCity: String = "",
+    val stylePreference: String = "",
+    /** 用户口令派生的 AES-GCM 密文（Base64），未设置凭据时为 null。 */
+    val encryptedCredentials: String? = null,
+)
+
+/** 加密前的凭据载荷，绝不直接写进 manifest。 */
+@Serializable
+data class BackupCredentials(
     val aiBaseUrl: String = "",
     val aiApiKey: String = "",
     val aiModel: String = "",
@@ -44,8 +54,6 @@ data class BackupSettings(
     val weatherProjectId: String = "",
     val weatherKeyId: String = "",
     val weatherPrivateKeyPem: String = "",
-    val weatherCity: String = "",
-    val stylePreference: String = "",
 )
 
 data class BackupSummary(

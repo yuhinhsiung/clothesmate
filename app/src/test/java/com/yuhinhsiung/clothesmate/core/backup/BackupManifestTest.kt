@@ -2,6 +2,7 @@ package com.yuhinhsiung.clothesmate.core.backup
 
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -10,30 +11,26 @@ class BackupManifestTest {
     private val json = Json { ignoreUnknownKeys = true }
 
     @Test
-    fun `manifest roundtrip keeps settings and version`() {
+    fun `manifest roundtrip keeps encrypted settings and version`() {
+        val encrypted = BackupCredentialCipher.encrypt("""{"aiApiKey":"sk-test"}""", "secret123")
         val manifest = BackupManifest(
             exportedAt = 123L,
             settings = BackupSettings(
-                aiBaseUrl = "https://api.deepseek.com",
-                aiApiKey = "sk-test",
-                aiModel = "deepseek-flash",
-                weatherApiHost = "abc.qweatherapi.com",
-                weatherDeveloperId = "Q123",
-                weatherProjectId = "P1",
-                weatherKeyId = "K1",
-                weatherPrivateKeyPem = "-----BEGIN PRIVATE KEY-----",
                 weatherCity = "杭州",
                 stylePreference = "简约",
+                encryptedCredentials = encrypted,
             ),
         )
 
         val decoded = json.decodeFromString<BackupManifest>(json.encodeToString(manifest))
 
         assertEquals(BackupManifest.CURRENT_VERSION, decoded.version)
+        assertEquals(2, decoded.version)
         assertEquals(123L, decoded.exportedAt)
-        assertEquals("sk-test", decoded.settings?.aiApiKey)
-        assertEquals("K1", decoded.settings?.weatherKeyId)
         assertEquals("杭州", decoded.settings?.weatherCity)
+        assertEquals("简约", decoded.settings?.stylePreference)
+        assertEquals(encrypted, decoded.settings?.encryptedCredentials)
+        assertFalse(decoded.toString().contains("sk-test"))
     }
 
     @Test

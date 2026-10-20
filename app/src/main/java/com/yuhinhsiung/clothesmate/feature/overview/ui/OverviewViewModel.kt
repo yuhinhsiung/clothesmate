@@ -60,6 +60,8 @@ data class OverviewUiState(
     val heatmap: List<HeatmapDay> = emptyList(),
     val heatmapStart: LocalDate? = null,
     val seasonSlices: List<SeasonSlice> = emptyList(),
+    /** 旧数据只有 wearCount、没有可还原日期的穿着记录。 */
+    val legacyWearCount: Int = 0,
 ) {
     val seasonTotal: Int
         get() = seasonSlices.sumOf { it.count }

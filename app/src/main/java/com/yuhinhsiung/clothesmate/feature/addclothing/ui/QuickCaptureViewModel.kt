@@ -1,7 +1,7 @@
 package com.yuhinhsiung.clothesmate.feature.addclothing.ui
 
 import android.content.Context
-import android.net.Uri
+import androidx.core.net.toUri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -137,7 +137,7 @@ class QuickCaptureViewModel @Inject constructor(
             var createdCode: String? = null
             try {
                 captureMutex.withLock {
-                    val prepared = withContext(ioDispatcher) { imageStore.stash(Uri.parse(uri)) }
+                    val prepared = withContext(ioDispatcher) { imageStore.stash(uri.toUri()) }
                     staged = prepared
                     val code = codeAllocator.nextCode()
                     createdCode = code

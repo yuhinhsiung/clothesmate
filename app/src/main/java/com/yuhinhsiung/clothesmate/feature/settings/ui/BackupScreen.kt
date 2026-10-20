@@ -19,6 +19,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -35,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.yuhinhsiung.clothesmate.R
@@ -55,11 +57,19 @@ fun BackupRoute(
     val state by viewModel.uiState.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     var importUri by remember { mutableStateOf<android.net.Uri?>(null) }
-    var showConfirm by remember { mutableStateOf(false) }
+    var exportPassword by remember { mutableStateOf("") }
+    var exportPasswordConfirm by remember { mutableStateOf("") }
+    var showExportPassword by remember { mutableStateOf(false) }
+    var importPassword by remember { mutableStateOf("") }
+    var showImportPassword by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip"),
-    ) { uri -> uri?.let(viewModel::export) }
+    ) { uri ->
+        if (uri != null) viewModel.export(uri, exportPassword)
+        exportPassword = ""
+        exportPasswordConfirm = ""
+    }
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
@@ -124,8 +134,9 @@ fun BackupRoute(
                 Spacer(Modifier.height(Dimens.Space.s3))
                 Button(
                     onClick = {
-                        val name = "clothesmate-${LocalDate.now()}.zip"
-                        exportLauncher.launch(name)
+                        exportPassword = ""
+                        exportPasswordConfirm = ""
+                        showExportPassword = true
                     },
                     enabled = !state.busy,
                     modifier = Modifier.fillMaxWidth(),
@@ -163,7 +174,7 @@ fun BackupRoute(
                 state.summary?.let { summary ->
                     SummaryCard(
                         summary = summary,
-                        onImport = { showConfirm = true },
+                        onImport = { showImportPassword = true },
                         enabled = state.canImport,
                     )
                 }
@@ -194,21 +205,118 @@ fun BackupRoute(
         }
     }
 
-    if (showConfirm && importUri != null) {
+    if (showExportPassword) {
+        val tooShort = exportPassword.length < 6
+        val mismatch = exportPassword != exportPasswordConfirm
         AlertDialog(
-            onDismissRequest = { showConfirm = false },
-            title = { Text(stringResource(R.string.backup_confirm_title)) },
-            text = { Text(stringResource(R.string.backup_confirm_body)) },
+            onDismissRequest = {
+                showExportPassword = false
+                exportPassword = ""
+                exportPasswordConfirm = ""
+            },
+            title = { Text(stringResource(R.string.backup_password_export_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Dimens.Space.s2)) {
+                    Text(
+                        stringResource(R.string.backup_password_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onMuted,
+                    )
+                    OutlinedTextField(
+                        value = exportPassword,
+                        onValueChange = { exportPassword = it },
+                        label = { Text(stringResource(R.string.backup_password_label)) },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = exportPasswordConfirm,
+                        onValueChange = { exportPasswordConfirm = it },
+                        label = { Text(stringResource(R.string.backup_password_confirm_label)) },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (tooShort) {
+                        Text(
+                            stringResource(R.string.backup_password_too_short),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    } else if (mismatch) {
+                        Text(
+                            stringResource(R.string.backup_password_mismatch),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        showConfirm = false
-                        importUri?.let(viewModel::import)
+                        if (tooShort || mismatch) return@TextButton
+                        showExportPassword = false
+                        val name = "clothesmate-${LocalDate.now()}.zip"
+                        exportLauncher.launch(name)
+                    },
+                ) { Text(stringResource(R.string.backup_password_confirm_action)) }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showExportPassword = false
+                        exportPassword = ""
+                        exportPasswordConfirm = ""
+                    },
+                ) {
+                    Text(stringResource(R.string.backup_cancel))
+                }
+            },
+        )
+    }
+
+    if (showImportPassword && importUri != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showImportPassword = false
+                importPassword = ""
+            },
+            title = { Text(stringResource(R.string.backup_password_import_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Dimens.Space.s2)) {
+                    Text(
+                        stringResource(R.string.backup_password_import_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onMuted,
+                    )
+                    OutlinedTextField(
+                        value = importPassword,
+                        onValueChange = { importPassword = it },
+                        label = { Text(stringResource(R.string.backup_password_label)) },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showImportPassword = false
+                        importUri?.let { viewModel.import(it, importPassword) }
+                        importPassword = ""
                     },
                 ) { Text(stringResource(R.string.backup_confirm_action)) }
             },
             dismissButton = {
-                TextButton(onClick = { showConfirm = false }) {
+                TextButton(
+                    onClick = {
+                        showImportPassword = false
+                        importPassword = ""
+                    },
+                ) {
                     Text(stringResource(R.string.backup_cancel))
                 }
             },

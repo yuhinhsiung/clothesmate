@@ -63,6 +63,20 @@ class OverviewAggregationTest {
     }
 
     @Test
+    fun legacyWearCountWithoutRecordsIsSurfacedButNotPlotted() {
+        val state = OverviewAggregation.aggregate(
+            clothing = listOf(item(1, 4, 100), item(2, 2, null)),
+            wearDates = emptyList(),
+            wardrobeCount = 1,
+            outfitCount = 0,
+            today = today,
+        )
+
+        assertEquals(6, state.legacyWearCount)
+        assertTrue(state.heatmap.all { it.count == 0 })
+    }
+
+    @Test
     fun heatmapCoversThirtyDaysAndCountsMultipleRecordsPerDay() {
         val state = OverviewAggregation.aggregate(
             clothing = listOf(item(1, 0)),

@@ -97,6 +97,13 @@ object OverviewAggregation {
             )
         }
 
+        // M4-01 兼容：旧数据只有 wearCount、没有 wear_record；无法还原日期，明确提示不计入热力图。
+        val legacyWearCount = if (wearDates.isEmpty()) {
+            normal.filter { it.wearCount > 0 }.sumOf { it.wearCount }
+        } else {
+            0
+        }
+
         return OverviewUiState(
             loading = false,
             wardrobeCount = wardrobeCount,
@@ -109,6 +116,7 @@ object OverviewAggregation {
             heatmap = heatmap,
             heatmapStart = start,
             seasonSlices = seasonCounts,
+            legacyWearCount = legacyWearCount,
         )
     }
 }

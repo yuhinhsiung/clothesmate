@@ -185,7 +185,7 @@ fun OverviewRoute(
                         )
                     }
                     if (uiState.heatmap.isNotEmpty()) {
-                        WearHeatmapCard(uiState.heatmap)
+                        WearHeatmapCard(uiState.heatmap, uiState.legacyWearCount)
                     }
                     if (uiState.seasonTotal > 0) {
                         SeasonDistributionCard(uiState.seasonSlices, uiState.seasonTotal)

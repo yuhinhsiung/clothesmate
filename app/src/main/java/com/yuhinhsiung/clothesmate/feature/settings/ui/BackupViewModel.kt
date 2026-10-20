@@ -44,11 +44,11 @@ class BackupViewModel @Inject constructor(
     private val eventChannel = Channel<BackupEvent>(Channel.BUFFERED)
     val events = eventChannel.receiveAsFlow()
 
-    fun export(uri: Uri) {
+    fun export(uri: Uri, password: String) {
         if (_uiState.value.busy) return
         viewModelScope.launch {
             _uiState.update { it.copy(busy = true, error = null, importResult = null) }
-            runCatching { repository.export(uri) }
+            runCatching { repository.export(uri, password) }
                 .onSuccess { summary ->
                     _uiState.update { it.copy(busy = false) }
                     eventChannel.send(BackupEvent.Exported(summary))
@@ -82,11 +82,11 @@ class BackupViewModel @Inject constructor(
         }
     }
 
-    fun import(uri: Uri) {
+    fun import(uri: Uri, password: String) {
         if (!_uiState.value.canImport) return
         viewModelScope.launch {
             _uiState.update { it.copy(busy = true, error = null) }
-            runCatching { repository.import(uri) }
+            runCatching { repository.import(uri, password) }
                 .onSuccess { result ->
                     _uiState.update {
                         it.copy(busy = false, summary = null, importResult = result)

@@ -33,9 +33,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
 interface BackupRepository {
-    suspend fun export(uri: Uri): BackupSummary
+    /** [password] 用于加密 AI/天气凭据；不落盘。 */
+    suspend fun export(uri: Uri, password: String): BackupSummary
     suspend fun inspect(uri: Uri): BackupSummary
-    suspend fun import(uri: Uri): ImportResult
+    /** [password] 必须与导出时一致；备份无凭据时可忽略。 */
+    suspend fun import(uri: Uri, password: String): ImportResult
 }
 
 /**
@@ -64,9 +66,10 @@ class DefaultBackupRepository @Inject constructor(
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    override suspend fun export(uri: Uri): BackupSummary = withContext(Dispatchers.IO) {
+    override suspend fun export(uri: Uri, password: String): BackupSummary = withContext(Dispatchers.IO) {
+        BackupCredentialCipher.validatePassword(password)
         val settings = userSettingsStore.settings.first().let { current ->
-            BackupSettings(
+            val credentials = BackupCredentials(
                 aiBaseUrl = current.aiConfig.baseUrl,
                 aiApiKey = current.aiConfig.apiKey,
                 aiModel = current.aiConfig.model,
@@ -75,8 +78,15 @@ class DefaultBackupRepository @Inject constructor(
                 weatherProjectId = current.weatherAuth.projectId,
                 weatherKeyId = current.weatherAuth.keyId,
                 weatherPrivateKeyPem = current.weatherAuth.privateKeyPem,
+            )
+            val encrypted = BackupCredentialCipher.encrypt(
+                json.encodeToString(BackupCredentials.serializer(), credentials),
+                password,
+            )
+            BackupSettings(
                 weatherCity = current.weatherCity,
                 stylePreference = current.stylePreference,
+                encryptedCredentials = encrypted,
             )
         }
         val manifest = db.withTransaction {
@@ -130,18 +140,47 @@ class DefaultBackupRepository @Inject constructor(
         }
     }
 
-    override suspend fun import(uri: Uri): ImportResult = withContext(Dispatchers.IO) {
+    override suspend fun import(uri: Uri, password: String): ImportResult = withContext(Dispatchers.IO) {
         val temp = copyToTemp(uri)
         try {
             ZipFile(temp).use { zip ->
                 val manifest = zip.readManifest()
-                if (manifest.version != BackupManifest.CURRENT_VERSION) {
+                if (manifest.version !in 1..BackupManifest.CURRENT_VERSION) {
                     throw BackupException("备份版本 ${manifest.version} 不受支持")
                 }
-                db.withTransaction { importManifest(zip, manifest) }
+                // 在写数据库前解密；密码错误/凭据损坏时不产生半截导入。
+                val credentials = manifest.settings?.encryptedCredentials?.let { encrypted ->
+                    if (password.isBlank()) throw BackupException("这份备份的凭据已加密，请输入备份密码")
+                    val plain = BackupCredentialCipher.decrypt(encrypted, password)
+                    runCatching {
+                        json.decodeFromString(BackupCredentials.serializer(), plain)
+                    }.getOrElse { throw BackupException("备份凭据格式损坏") }
+                }
+                val result = db.withTransaction { importManifest(zip, manifest) }
+                if (credentials != null) applyCredentials(credentials)
+                result
             }
         } finally {
             temp.delete()
+        }
+    }
+
+    private suspend fun applyCredentials(credentials: BackupCredentials) {
+        if (credentials.aiBaseUrl.isNotBlank() || credentials.aiApiKey.isNotBlank() || credentials.aiModel.isNotBlank()) {
+            userSettingsStore.saveAiConfig(
+                AiConfig(credentials.aiBaseUrl, credentials.aiApiKey, credentials.aiModel),
+            )
+        }
+        if (credentials.weatherApiHost.isNotBlank() || credentials.weatherPrivateKeyPem.isNotBlank()) {
+            userSettingsStore.setWeatherAuth(
+                WeatherAuthConfig(
+                    apiHost = credentials.weatherApiHost,
+                    developerId = credentials.weatherDeveloperId,
+                    projectId = credentials.weatherProjectId,
+                    keyId = credentials.weatherKeyId,
+                    privateKeyPem = credentials.weatherPrivateKeyPem,
+                ),
+            )
         }
     }
 
@@ -237,22 +276,6 @@ class DefaultBackupRepository @Inject constructor(
         }
         manifest.tags.forEach { tag -> tagDao.insert(tag.copy(id = 0)) }
         manifest.settings?.let { settings ->
-            if (settings.aiBaseUrl.isNotBlank() || settings.aiApiKey.isNotBlank() || settings.aiModel.isNotBlank()) {
-                userSettingsStore.saveAiConfig(
-                    AiConfig(settings.aiBaseUrl, settings.aiApiKey, settings.aiModel),
-                )
-            }
-            if (settings.weatherApiHost.isNotBlank() || settings.weatherPrivateKeyPem.isNotBlank()) {
-                userSettingsStore.setWeatherAuth(
-                    WeatherAuthConfig(
-                        apiHost = settings.weatherApiHost,
-                        developerId = settings.weatherDeveloperId,
-                        projectId = settings.weatherProjectId,
-                        keyId = settings.weatherKeyId,
-                        privateKeyPem = settings.weatherPrivateKeyPem,
-                    ),
-                )
-            }
             if (settings.weatherCity.isNotBlank()) userSettingsStore.setWeatherCity(settings.weatherCity)
             if (settings.stylePreference.isNotBlank()) {
                 userSettingsStore.setStylePreference(settings.stylePreference)

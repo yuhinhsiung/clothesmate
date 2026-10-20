@@ -116,7 +116,7 @@ fun RankingCard(
 
 /** 近 30 天穿着热力图：7 列周网格，四档色阶 + 今日描边。 */
 @Composable
-fun WearHeatmapCard(days: List<HeatmapDay>) {
+fun WearHeatmapCard(days: List<HeatmapDay>, legacyWearCount: Int = 0) {
     val weekdayLabels = listOf(
         R.string.weekday_mon,
         R.string.weekday_tue,
@@ -220,6 +220,14 @@ fun WearHeatmapCard(days: List<HeatmapDay>) {
                 color = MaterialTheme.colorScheme.onMuted,
                 modifier = Modifier.padding(top = Dimens.Space.s2),
             )
+            if (legacyWearCount > 0) {
+                Text(
+                    text = stringResource(R.string.overview_heatmap_legacy_hint, legacyWearCount),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onMuted,
+                    modifier = Modifier.padding(top = Dimens.Space.s1),
+                )
+            }
         }
     }
 }
