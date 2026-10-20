@@ -84,6 +84,7 @@ import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.WardrobeRoute
 import com.yuhinhsiung.clothesmate.feature.wardrobe.ui.form.ClothingFormRoute
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.LocalIsDarkTheme
+import com.yuhinhsiung.clothesmate.ui.theme.LocalReducedMotion
 import com.yuhinhsiung.clothesmate.ui.component.LocalNavResultBus
 import com.yuhinhsiung.clothesmate.ui.navigation.Capture
 import com.yuhinhsiung.clothesmate.ui.navigation.CaptureTarget

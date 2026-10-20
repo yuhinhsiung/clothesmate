@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.LazyRow
@@ -25,6 +27,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -98,6 +101,7 @@ fun WardrobeDetailRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var menuExpanded by remember { mutableStateOf(false) }
     var pendingSeasonStore by remember { mutableStateOf<Boolean?>(null) }
+    var pendingSeasonSelected by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val storedSnack = stringResource(R.string.wardrobe_season_stored_snackbar)
     val restoredSnack = stringResource(R.string.wardrobe_season_restored_snackbar)
@@ -335,17 +339,29 @@ fun WardrobeDetailRoute(
     if (uiState.seasonModeOpen) {
         SeasonModeSheet(
             selectedSeasons = uiState.selectedSeasons,
+            items = uiState.seasonItems,
+            selectedIds = uiState.seasonSelectedIds,
             normalCount = uiState.seasonNormalCount,
             storedCount = uiState.seasonStoredCount,
+            selectedNormalCount = uiState.seasonSelectedNormalCount,
+            selectedStoredCount = uiState.seasonSelectedStoredCount,
             onToggle = viewModel::toggleSeason,
+            onToggleItem = viewModel::toggleSeasonItem,
+            onSelectAll = viewModel::setAllSeasonItemsSelected,
             onDismiss = viewModel::dismissSeasonMode,
-            onRequestStore = { pendingSeasonStore = true },
-            onRequestRestore = { pendingSeasonStore = false },
+            onRequestStore = { pendingSeasonSelected = false; pendingSeasonStore = true },
+            onRequestRestore = { pendingSeasonSelected = false; pendingSeasonStore = false },
+            onRequestSelectedStore = { pendingSeasonSelected = true; pendingSeasonStore = true },
+            onRequestSelectedRestore = { pendingSeasonSelected = true; pendingSeasonStore = false },
         )
     }
 
     pendingSeasonStore?.let { store ->
-        val count = if (store) uiState.seasonNormalCount else uiState.seasonStoredCount
+        val count = if (pendingSeasonSelected) {
+            if (store) uiState.seasonSelectedNormalCount else uiState.seasonSelectedStoredCount
+        } else {
+            if (store) uiState.seasonNormalCount else uiState.seasonStoredCount
+        }
         AlertDialog(
             onDismissRequest = { pendingSeasonStore = null },
             title = {
@@ -374,8 +390,12 @@ fun WardrobeDetailRoute(
             confirmButton = {
                 TextButton(onClick = {
                     pendingSeasonStore = null
-                    viewModel.applySeasonStored(store)
-                    viewModel.dismissSeasonMode()
+                    if (pendingSeasonSelected) {
+                        viewModel.applySelectedSeasonStored(store)
+                    } else {
+                        viewModel.applySeasonStored(store)
+                        viewModel.dismissSeasonMode()
+                    }
                 }) { Text(stringResource(R.string.wardrobe_season_confirm)) }
             },
             dismissButton = {
@@ -383,6 +403,57 @@ fun WardrobeDetailRoute(
                     Text(stringResource(R.string.action_cancel))
                 }
             },
+        )
+    }
+}
+
+@Composable
+private fun SeasonItemRow(
+    item: ClothingItem,
+    checked: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Dimens.Radius.s))
+            .clickable(onClick = onToggle)
+            .padding(vertical = Dimens.Space.s1),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s2),
+    ) {
+        Checkbox(checked = checked, onCheckedChange = { onToggle() })
+        val image = item.displayImagePath
+        if (image != null) {
+            CmAsyncImage(
+                model = image,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(Dimens.Radius.s))
+                    .background(MaterialTheme.colorScheme.muted),
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.displayName,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = stringResource(
+                    if (item.isStored) R.string.wardrobe_season_item_stored else R.string.wardrobe_season_item_normal,
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onMuted,
+            )
+        }
+        Text(
+            text = item.code,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onMuted,
         )
     }
 }
@@ -515,12 +586,20 @@ private fun WardrobeItemFilter.count(counts: WardrobeCounts): Int = when (this) 
 @Composable
 private fun SeasonModeSheet(
     selectedSeasons: Set<String>,
+    items: List<ClothingItem>,
+    selectedIds: Set<Long>,
     normalCount: Int,
     storedCount: Int,
+    selectedNormalCount: Int,
+    selectedStoredCount: Int,
     onToggle: (String) -> Unit,
+    onToggleItem: (Long) -> Unit,
+    onSelectAll: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     onRequestStore: () -> Unit,
     onRequestRestore: () -> Unit,
+    onRequestSelectedStore: () -> Unit,
+    onRequestSelectedRestore: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -550,12 +629,62 @@ private fun SeasonModeSheet(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onMuted,
                 )
-            } else if (normalCount == 0 && storedCount == 0) {
+            } else if (items.isEmpty()) {
                 Text(
                     text = stringResource(R.string.wardrobe_season_empty),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onMuted,
                 )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = items.all { it.id in selectedIds },
+                        onCheckedChange = { checked -> onSelectAll(checked) },
+                    )
+                    Text(
+                        text = stringResource(R.string.wardrobe_season_select_all, items.size),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 280.dp),
+                    verticalArrangement = Arrangement.spacedBy(Dimens.Space.s1),
+                ) {
+                    items(items, key = { it.id }) { item ->
+                        SeasonItemRow(
+                            item = item,
+                            checked = item.id in selectedIds,
+                            onToggle = { onToggleItem(item.id) },
+                        )
+                    }
+                }
+            }
+            if (selectedNormalCount + selectedStoredCount > 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s3),
+                ) {
+                    Button(
+                        onClick = onRequestSelectedStore,
+                        enabled = selectedNormalCount > 0,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(stringResource(R.string.wardrobe_season_store_selected, selectedNormalCount))
+                    }
+                    OutlinedButton(
+                        onClick = onRequestSelectedRestore,
+                        enabled = selectedStoredCount > 0,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(stringResource(R.string.wardrobe_season_restore_selected, selectedStoredCount))
+                    }
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),

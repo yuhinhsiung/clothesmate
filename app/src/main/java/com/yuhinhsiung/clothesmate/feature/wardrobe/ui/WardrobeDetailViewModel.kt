@@ -66,8 +66,12 @@ class WardrobeDetailViewModel @Inject constructor(
             ),
             seasonModeOpen = season.open,
             selectedSeasons = season.selectedSeasons,
+            seasonItems = matched,
+            seasonSelectedIds = season.selectedItems,
             seasonNormalCount = matched.count { !it.isStored },
             seasonStoredCount = matched.count { it.isStored },
+            seasonSelectedNormalCount = matched.count { it.id in season.selectedItems && !it.isStored },
+            seasonSelectedStoredCount = matched.count { it.id in season.selectedItems && it.isStored },
         )
     }.stateIn(
         scope = viewModelScope,
@@ -88,13 +92,53 @@ class WardrobeDetailViewModel @Inject constructor(
     }
 
     fun dismissSeasonMode() {
-        seasonMode.value = seasonMode.value.copy(open = false)
+        seasonMode.value = seasonMode.value.copy(open = false, selectedItems = emptySet())
     }
 
     fun toggleSeason(key: String) {
         val current = seasonMode.value.selectedSeasons
         val next = if (key in current) current - key else current + key
-        seasonMode.value = seasonMode.value.copy(selectedSeasons = next)
+        val matchedIds = uiState.value.allItems
+            .filter { item -> next.containsSeason(item) }
+            .map { it.id }
+            .toSet()
+        seasonMode.value = seasonMode.value.copy(
+            selectedSeasons = next,
+            // 季节切换后只保留仍匹配的选择，避免隐藏项被误操作。
+            selectedItems = seasonMode.value.selectedItems.intersect(matchedIds),
+        )
+    }
+
+    fun toggleSeasonItem(itemId: Long) {
+        val current = seasonMode.value.selectedItems
+        seasonMode.value = seasonMode.value.copy(
+            selectedItems = if (itemId in current) current - itemId else current + itemId,
+        )
+    }
+
+    fun setAllSeasonItemsSelected(selected: Boolean) {
+        val ids = if (selected) {
+            uiState.value.seasonItems.map { it.id }.toSet()
+        } else {
+            emptySet()
+        }
+        seasonMode.value = seasonMode.value.copy(selectedItems = ids)
+    }
+
+    /** 对勾选的项目执行批量收起/恢复；由 UI 二次确认后调用。 */
+    fun applySelectedSeasonStored(stored: Boolean) {
+        val state = uiState.value
+        val ids = state.seasonItems
+            .filter { it.id in state.seasonSelectedIds }
+            .filter { if (stored) !it.isStored else it.isStored }
+            .map { it.id }
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            clothingRepository.setStored(ids, stored)
+            lastSeasonUndo = SeasonUndo(ids = ids, stored = stored)
+            seasonMode.value = seasonMode.value.copy(selectedItems = emptySet())
+            _events.emit(WardrobeDetailEvent.SeasonChanged(ids.size, stored))
+        }
     }
 
     /** M4-04：按当前季节选择批量收起 / 恢复；由 UI 二次确认后调用。 */
@@ -144,13 +188,18 @@ data class WardrobeDetailUiState(
     val counts: WardrobeCounts = WardrobeCounts(),
     val seasonModeOpen: Boolean = false,
     val selectedSeasons: Set<String> = emptySet(),
+    val seasonItems: List<ClothingItem> = emptyList(),
+    val seasonSelectedIds: Set<Long> = emptySet(),
     val seasonNormalCount: Int = 0,
     val seasonStoredCount: Int = 0,
+    val seasonSelectedNormalCount: Int = 0,
+    val seasonSelectedStoredCount: Int = 0,
 )
 
 private data class SeasonModeState(
     val open: Boolean = false,
     val selectedSeasons: Set<String> = emptySet(),
+    val selectedItems: Set<Long> = emptySet(),
 ) {
     fun matches(item: ClothingItem): Boolean = selectedSeasons.containsSeason(item)
 }

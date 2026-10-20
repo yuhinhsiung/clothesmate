@@ -515,6 +515,11 @@
     <string name="wardrobe_season_empty">选中的季节还没有衣物</string>
     <string name="wardrobe_season_store_count">收起全部 %1$d 件</string>
     <string name="wardrobe_season_restore_count">恢复全部 %1$d 件</string>
+    <string name="wardrobe_season_select_all">全选（%1$d 件）</string>
+    <string name="wardrobe_season_store_selected">收起选中 %1$d 件</string>
+    <string name="wardrobe_season_restore_selected">恢复选中 %1$d 件</string>
+    <string name="wardrobe_season_item_normal">正常</string>
+    <string name="wardrobe_season_item_stored">已收起</string>
     <string name="wardrobe_season_confirm_store_title">确认收起？</string>
     <string name="wardrobe_season_confirm_restore_title">确认恢复？</string>
     <string name="wardrobe_season_confirm_store_text">将收起 %1$d 件衣物，之后可在「已收起」中找回。</string>

@@ -182,12 +182,14 @@ fun SearchRoute(
                                 )
                             }
                             items(uiState.items, key = { "item_${it.id}" }) { item ->
-                                ClothingResultRow(
-                                    item = item,
-                                    wardrobeName = uiState.wardrobeNames[item.wardrobeId],
-                                    tokens = uiState.tokens,
-                                    onClick = { onClothingClick(item.id) },
-                                )
+                                androidx.compose.foundation.layout.Box(Modifier.animateItem()) {
+                                    ClothingResultRow(
+                                        item = item,
+                                        wardrobeName = uiState.wardrobeNames[item.wardrobeId],
+                                        tokens = uiState.tokens,
+                                        onClick = { onClothingClick(item.id) },
+                                    )
+                                }
                             }
                         }
                         if (uiState.outfits.isNotEmpty()) {
