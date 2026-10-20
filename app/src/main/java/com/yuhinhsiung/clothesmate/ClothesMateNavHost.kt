@@ -10,6 +10,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -164,6 +170,7 @@ fun ClothesMateNavHost(
     // 放在 NavHost 外层（而不是相机页 DisposableEffect 与 MainActivity 各写一次），
     // 旋转/进程重建后由目的地重新计算，不会出现根主题晚到覆盖相机的问题。
     val isCameraDestination = currentDestination?.hasRouteAny(Capture::class) == true
+    val reducedMotion = LocalReducedMotion.current
     val darkSystemBars = LocalIsDarkTheme.current || isCameraDestination
     val hostActivity = LocalContext.current.findComponentActivity()
     LaunchedEffect(hostActivity, darkSystemBars) {
@@ -344,6 +351,16 @@ fun ClothesMateNavHost(
             navController = navController,
             startDestination = TodayTab,
             modifier = Modifier.padding(innerPadding),
+            enterTransition = {
+                if (reducedMotion) {
+                    EnterTransition.None
+                } else {
+                    fadeIn(tween(180)) + slideInVertically(tween(180)) { it / 80 }
+                }
+            },
+            exitTransition = {
+                if (reducedMotion) ExitTransition.None else fadeOut(tween(120))
+            },
         ) {
             composable<TodayTab> {
                 TodayRoute(
