@@ -427,4 +427,24 @@ class ClothingRepositoryTest {
         )
         assertEquals("持有人仍应是本件", id, database.codeHistoryDao().holderOf("9"))
     }
+    // ── M4-04：换季模式批量收起 / 恢复 ───────────────────────────
+
+    @Test
+    fun `批量收起恢复只影响指定衣物`() = runTest {
+        val one = repository.createItem(item("21", seasonTags = listOf("春")))
+        val two = repository.createItem(item("22", seasonTags = listOf("春")))
+        val three = repository.createItem(item("23", seasonTags = listOf("秋")))
+
+        repository.setStored(listOf(one, two), stored = true)
+        val afterStore = repository.getItemsByIds(listOf(one, two, three)).associateBy { it.id }
+        assertEquals(ClothingStatus.STORED, afterStore.getValue(one).status)
+        assertEquals(ClothingStatus.STORED, afterStore.getValue(two).status)
+        assertEquals(ClothingStatus.NORMAL, afterStore.getValue(three).status)
+
+        repository.setStored(listOf(one, two), stored = false)
+        val afterRestore = repository.getItemsByIds(listOf(one, two)).associateBy { it.id }
+        assertEquals(ClothingStatus.NORMAL, afterRestore.getValue(one).status)
+        assertEquals(ClothingStatus.NORMAL, afterRestore.getValue(two).status)
+    }
+
 }

@@ -88,6 +88,9 @@ interface ClothingRepository : com.yuhinhsiung.clothesmate.feature.wardrobe.doma
 
     suspend fun setStored(id: Long, stored: Boolean)
 
+    /** 批量收起/恢复（M4-04 换季模式）；空列表为 no-op。 */
+    suspend fun setStored(ids: List<Long>, stored: Boolean)
+
     suspend fun moveToWardrobe(id: Long, wardrobeId: Long)
 
     suspend fun updateCutoutPath(id: Long, path: String?)
@@ -323,6 +326,14 @@ class DefaultClothingRepository @Inject constructor(
     override suspend fun setStored(id: Long, stored: Boolean) {
         val target = if (stored) ClothingStatus.STORED else ClothingStatus.NORMAL
         dao.updateStatus(id, target, System.currentTimeMillis())
+    }
+
+    override suspend fun setStored(ids: List<Long>, stored: Boolean) {
+        if (ids.isEmpty()) return
+        val target = if (stored) ClothingStatus.STORED else ClothingStatus.NORMAL
+        db.withTransaction {
+            dao.updateStatusByIds(ids, target, System.currentTimeMillis())
+        }
     }
 
     override suspend fun moveToWardrobe(id: Long, wardrobeId: Long) {

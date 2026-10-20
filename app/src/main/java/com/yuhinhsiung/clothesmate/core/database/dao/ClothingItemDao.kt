@@ -33,6 +33,9 @@ interface ClothingItemDao {
     @Query("UPDATE clothing_item SET status = :status, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateStatus(id: Long, status: String, updatedAt: Long)
 
+    @Query("UPDATE clothing_item SET status = :status, updatedAt = :updatedAt WHERE id IN (:ids) AND deletedAt IS NULL")
+    suspend fun updateStatusByIds(ids: List<Long>, status: String, updatedAt: Long)
+
     @Query("UPDATE clothing_item SET wardrobeId = :wardrobeId, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateWardrobe(id: Long, wardrobeId: Long, updatedAt: Long)
 

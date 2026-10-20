@@ -5,13 +5,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yuhinhsiung.clothesmate.core.database.dao.ClothingItemDao
 import com.yuhinhsiung.clothesmate.core.model.ClothingItem
+import com.yuhinhsiung.clothesmate.core.model.Season
 import com.yuhinhsiung.clothesmate.core.model.toDomain
 import com.yuhinhsiung.clothesmate.feature.wardrobe.data.ClothingRepository
 import com.yuhinhsiung.clothesmate.feature.wardrobe.data.WardrobeItemFilter
 import com.yuhinhsiung.clothesmate.feature.wardrobe.data.WardrobeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -33,26 +37,37 @@ class WardrobeDetailViewModel @Inject constructor(
     val wardrobeId: Long = savedStateHandle["wardrobeId"] ?: 0L
 
     private val selectedFilter = kotlinx.coroutines.flow.MutableStateFlow(WardrobeItemFilter.All)
+    private val seasonMode = MutableStateFlow(SeasonModeState())
+    private val _events = MutableSharedFlow<WardrobeDetailEvent>(extraBufferCapacity = 1)
+    val events = _events.asSharedFlow()
+    private var lastSeasonUndo: SeasonUndo? = null
 
     val uiState: StateFlow<WardrobeDetailUiState> = combine(
         wardrobeRepository.observeWardrobes(),
         clothingRepository.observeItemsInWardrobe(wardrobeId),
         selectedFilter,
-    ) { wardrobes, items, filter ->
+        seasonMode,
+    ) { wardrobes, allItems, filter, season ->
         val wardrobe = wardrobes.firstOrNull { it.id == wardrobeId }
+        val matched = allItems.filter { item -> season.matches(item) }
         WardrobeDetailUiState(
             loading = false,
             wardrobeId = wardrobeId,
             wardrobeName = wardrobe?.name.orEmpty(),
             wardrobeNote = wardrobe?.note,
             filter = filter,
-            items = items.filter { filter.matches(it) },
+            items = allItems.filter { filter.matches(it) },
+            allItems = allItems,
             counts = WardrobeCounts(
-                total = items.size,
-                normal = items.count { !it.isStored },
-                stored = items.count { it.isStored },
-                incomplete = items.count { it.isIncomplete },
+                total = allItems.size,
+                normal = allItems.count { !it.isStored },
+                stored = allItems.count { it.isStored },
+                incomplete = allItems.count { it.isIncomplete },
             ),
+            seasonModeOpen = season.open,
+            selectedSeasons = season.selectedSeasons,
+            seasonNormalCount = matched.count { !it.isStored },
+            seasonStoredCount = matched.count { it.isStored },
         )
     }.stateIn(
         scope = viewModelScope,
@@ -67,6 +82,45 @@ class WardrobeDetailViewModel @Inject constructor(
     fun toggleStored(itemId: Long) {
         viewModelScope.launch { clothingRepository.toggleStored(itemId) }
     }
+
+    fun openSeasonMode() {
+        seasonMode.value = seasonMode.value.copy(open = true)
+    }
+
+    fun dismissSeasonMode() {
+        seasonMode.value = seasonMode.value.copy(open = false)
+    }
+
+    fun toggleSeason(key: String) {
+        val current = seasonMode.value.selectedSeasons
+        val next = if (key in current) current - key else current + key
+        seasonMode.value = seasonMode.value.copy(selectedSeasons = next)
+    }
+
+    /** M4-04：按当前季节选择批量收起 / 恢复；由 UI 二次确认后调用。 */
+    fun applySeasonStored(stored: Boolean) {
+        val state = uiState.value
+        val ids = state.allItems
+            .filter { state.selectedSeasons.containsSeason(it) }
+            .filter { if (stored) !it.isStored else it.isStored }
+            .map { it.id }
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            clothingRepository.setStored(ids, stored)
+            lastSeasonUndo = SeasonUndo(ids = ids, stored = stored)
+            _events.emit(WardrobeDetailEvent.SeasonChanged(ids.size, stored))
+        }
+    }
+
+    fun undoSeasonChange() {
+        val undo = lastSeasonUndo ?: return
+        lastSeasonUndo = null
+        viewModelScope.launch {
+            clothingRepository.setStored(undo.ids, !undo.stored)
+            _events.emit(WardrobeDetailEvent.SeasonUndone(undo.ids.size))
+        }
+    }
+
 
     private fun WardrobeItemFilter.matches(item: ClothingItem): Boolean = when (this) {
         WardrobeItemFilter.All -> true
@@ -86,8 +140,27 @@ data class WardrobeDetailUiState(
     val wardrobeNote: String? = null,
     val filter: WardrobeItemFilter = WardrobeItemFilter.All,
     val items: List<ClothingItem> = emptyList(),
+    val allItems: List<ClothingItem> = emptyList(),
     val counts: WardrobeCounts = WardrobeCounts(),
+    val seasonModeOpen: Boolean = false,
+    val selectedSeasons: Set<String> = emptySet(),
+    val seasonNormalCount: Int = 0,
+    val seasonStoredCount: Int = 0,
 )
+
+private data class SeasonModeState(
+    val open: Boolean = false,
+    val selectedSeasons: Set<String> = emptySet(),
+) {
+    fun matches(item: ClothingItem): Boolean = selectedSeasons.containsSeason(item)
+}
+
+private data class SeasonUndo(val ids: List<Long>, val stored: Boolean)
+
+sealed interface WardrobeDetailEvent {
+    data class SeasonChanged(val count: Int, val stored: Boolean) : WardrobeDetailEvent
+    data class SeasonUndone(val count: Int) : WardrobeDetailEvent
+}
 
 data class WardrobeCounts(
     val total: Int = 0,
@@ -95,3 +168,13 @@ data class WardrobeCounts(
     val stored: Int = 0,
     val incomplete: Int = 0,
 )
+
+/** 季节匹配：兼容表单写入的中文 displayName 与旧数据的英文 key。 */
+private fun Set<String>.containsSeason(item: ClothingItem): Boolean =
+    item.seasonTags.any { tag ->
+        any { selected ->
+            selected == tag ||
+                Season.fromKey(selected)?.displayName == tag ||
+                Season.fromKey(tag)?.key == selected
+        }
+    }

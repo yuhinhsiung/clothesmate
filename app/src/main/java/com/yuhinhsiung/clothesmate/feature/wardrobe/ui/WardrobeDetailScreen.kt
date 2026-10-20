@@ -21,8 +21,10 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,11 +33,18 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,7 +61,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.core.model.ClothingItem
+import com.yuhinhsiung.clothesmate.core.model.Season
 import com.yuhinhsiung.clothesmate.feature.wardrobe.data.WardrobeItemFilter
+import com.yuhinhsiung.clothesmate.ui.component.ChipGroup
+import com.yuhinhsiung.clothesmate.ui.component.ChipOption
 import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
 import com.yuhinhsiung.clothesmate.ui.component.EmptyStateSpec
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
@@ -83,8 +95,38 @@ fun WardrobeDetailRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var menuExpanded by remember { mutableStateOf(false) }
+    var pendingSeasonStore by remember { mutableStateOf<Boolean?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val storedSnack = stringResource(R.string.wardrobe_season_stored_snackbar)
+    val restoredSnack = stringResource(R.string.wardrobe_season_restored_snackbar)
+    val undoLabel = stringResource(R.string.wardrobe_season_undo)
+    val undoneText = stringResource(R.string.wardrobe_season_undone)
+
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is WardrobeDetailEvent.SeasonChanged -> {
+                    val result = snackbarHostState.showSnackbar(
+                        message = if (event.stored) {
+                            storedSnack.format(event.count)
+                        } else {
+                            restoredSnack.format(event.count)
+                        },
+                        actionLabel = undoLabel,
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        viewModel.undoSeasonChange()
+                    }
+                }
+                is WardrobeDetailEvent.SeasonUndone -> {
+                    snackbarHostState.showSnackbar(undoneText)
+                }
+            }
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(uiState.wardrobeName, style = MaterialTheme.typography.titleLarge) },
@@ -112,6 +154,14 @@ fun WardrobeDetailRoute(
                             expanded = menuExpanded,
                             onDismissRequest = { menuExpanded = false },
                         ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.wardrobe_season_mode)) },
+                                leadingIcon = { Icon(AppIcons.Store, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    viewModel.openSeasonMode()
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.wardrobe_menu_edit)) },
                                 leadingIcon = { Icon(AppIcons.Edit, contentDescription = null) },
@@ -274,6 +324,60 @@ fun WardrobeDetailRoute(
             }
         }
     }
+
+    if (uiState.seasonModeOpen) {
+        SeasonModeSheet(
+            selectedSeasons = uiState.selectedSeasons,
+            normalCount = uiState.seasonNormalCount,
+            storedCount = uiState.seasonStoredCount,
+            onToggle = viewModel::toggleSeason,
+            onDismiss = viewModel::dismissSeasonMode,
+            onRequestStore = { pendingSeasonStore = true },
+            onRequestRestore = { pendingSeasonStore = false },
+        )
+    }
+
+    pendingSeasonStore?.let { store ->
+        val count = if (store) uiState.seasonNormalCount else uiState.seasonStoredCount
+        AlertDialog(
+            onDismissRequest = { pendingSeasonStore = null },
+            title = {
+                Text(
+                    stringResource(
+                        if (store) {
+                            R.string.wardrobe_season_confirm_store_title
+                        } else {
+                            R.string.wardrobe_season_confirm_restore_title
+                        },
+                    ),
+                )
+            },
+            text = {
+                Text(
+                    stringResource(
+                        if (store) {
+                            R.string.wardrobe_season_confirm_store_text
+                        } else {
+                            R.string.wardrobe_season_confirm_restore_text
+                        },
+                        count,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingSeasonStore = null
+                    viewModel.applySeasonStored(store)
+                    viewModel.dismissSeasonMode()
+                }) { Text(stringResource(R.string.wardrobe_season_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingSeasonStore = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
 }
 
 /** 衣物网格卡：抠图/原图铺 muted 底、左上编号 chip、「待完善」琥珀虚线 + ✨、「已收起」压暗 + 底条。 */
@@ -397,4 +501,74 @@ private fun WardrobeItemFilter.count(counts: WardrobeCounts): Int = when (this) 
     WardrobeItemFilter.Normal -> counts.normal
     WardrobeItemFilter.Stored -> counts.stored
     WardrobeItemFilter.Incomplete -> counts.incomplete
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SeasonModeSheet(
+    selectedSeasons: Set<String>,
+    normalCount: Int,
+    storedCount: Int,
+    onToggle: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onRequestStore: () -> Unit,
+    onRequestRestore: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Dimens.pagePadding)
+                .padding(bottom = Dimens.Space.s6),
+            verticalArrangement = Arrangement.spacedBy(Dimens.Space.s3),
+        ) {
+            Text(
+                text = stringResource(R.string.wardrobe_season_title),
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Text(
+                text = stringResource(R.string.wardrobe_season_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onMuted,
+            )
+            ChipGroup(
+                options = Season.entries.map { ChipOption(it.key, it.displayName) },
+                selectedKeys = selectedSeasons,
+                onToggle = onToggle,
+            )
+            if (selectedSeasons.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.wardrobe_season_select_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onMuted,
+                )
+            } else if (normalCount == 0 && storedCount == 0) {
+                Text(
+                    text = stringResource(R.string.wardrobe_season_empty),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onMuted,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s3),
+            ) {
+                Button(
+                    onClick = onRequestStore,
+                    enabled = normalCount > 0,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(stringResource(R.string.wardrobe_season_store_count, normalCount))
+                }
+                OutlinedButton(
+                    onClick = onRequestRestore,
+                    enabled = storedCount > 0,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(stringResource(R.string.wardrobe_season_restore_count, storedCount))
+                }
+            }
+        }
+    }
 }
