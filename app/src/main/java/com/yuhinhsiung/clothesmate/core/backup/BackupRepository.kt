@@ -15,6 +15,7 @@ import com.yuhinhsiung.clothesmate.core.database.dao.WearRecordDao
 import com.yuhinhsiung.clothesmate.core.database.entity.ClothingCodeHistoryEntity
 import com.yuhinhsiung.clothesmate.core.datastore.AiConfig
 import com.yuhinhsiung.clothesmate.core.datastore.AiConsent
+import com.yuhinhsiung.clothesmate.core.datastore.AiConsentExpectation
 import com.yuhinhsiung.clothesmate.core.datastore.AiStatus
 import com.yuhinhsiung.clothesmate.core.datastore.UserSettings
 import com.yuhinhsiung.clothesmate.core.datastore.UserSettingsStore
@@ -225,16 +226,32 @@ class DefaultBackupRepository @Inject constructor(
         // 新配置仍是导入时写入的 B，不能把 A 的 Granted/Verified 移交给 B。
         val actualAiConfig = runCatching { userSettingsStore.settings.first().aiConfig }.getOrNull()
         if (actualAiConfig == previous.aiConfig) {
-            attempt("AI 授权") { userSettingsStore.setAiConsent(previous.aiConsent) }
-            attempt("AI 状态") {
-                userSettingsStore.setAiStatus(
-                    previous.aiStatus,
-                    previous.aiStatusDetail,
-                    expectedConfig = previous.aiConfig,
-                )
+            withContext(AiConsentExpectation(previous.aiConfig)) {
+                attempt("AI 授权") { userSettingsStore.setAiConsent(previous.aiConsent) }
+                attempt("AI 状态") {
+                    userSettingsStore.setAiStatus(
+                        previous.aiStatus,
+                        previous.aiStatusDetail,
+                        expectedConfig = previous.aiConfig,
+                    )
+                }
             }
         } else {
             // 配置未恢复：撤销授权，避免后台把照片发往新端点；验证状态重置为未验证。
+            attempt("AI 授权") { userSettingsStore.setAiConsent(AiConsent.Unasked) }
+            attempt("AI 状态") {
+                userSettingsStore.setAiStatus(
+                    AiStatus.Unverified,
+                    "导入未完成，请重新配置并测试连接",
+                    expectedConfig = null,
+                )
+            }
+            if ("AI 配置" !in failed) failed += "AI 配置"
+        }
+        // 授权写与状态写之间仍可能插入普通配置保存（saveAiConfig 会重置授权），
+        // 因此补偿收尾时再做一次基于实际配置的收敛；这一步只允许把状态收紧。
+        val actualAfter = runCatching { userSettingsStore.settings.first().aiConfig }.getOrNull()
+        if (actualAfter != previous.aiConfig) {
             attempt("AI 授权") { userSettingsStore.setAiConsent(AiConsent.Unasked) }
             attempt("AI 状态") {
                 userSettingsStore.setAiStatus(

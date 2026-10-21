@@ -9,6 +9,7 @@ import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -303,7 +304,15 @@ class DataStoreUserSettingsStore @Inject constructor(
     }
 
     override suspend fun setAiConsent(consent: AiConsent) {
-        dataStore.edit { it[KEY_AI_CONSENT] = consent.name }
+        dataStore.edit { prefs ->
+            // 补偿写的“配置-授权”绑定必须在同一个 DataStore 事务内完成：
+            // 若等待期间配置被并发保存，预期配置不再匹配，即使调用方传 Granted
+            // 也只能落 Unasked，不能把旧端点的授权移交给新端点。
+            val expected = currentCoroutineContext()[AiConsentExpectation]?.config?.normalized()
+            val actual = prefs.readAiConfig()
+            val effective = if (expected != null && actual != expected) AiConsent.Unasked else consent
+            prefs[KEY_AI_CONSENT] = effective.name
+        }
     }
 
     override suspend fun setAiStatus(

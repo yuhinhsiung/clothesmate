@@ -124,4 +124,58 @@ class BackupSettingsBindingTest {
             assertNotEquals("Old endpoint verification must not be transferred to the new endpoint", AiStatus.Verified, current.aiStatus)
         } finally { scope.coroutineContext[Job]!!.cancelAndJoin() }
     }
+
+    @Test fun concurrentConfigChangeBeforeConsentCommitMustNotReceiveOldGrant() = runBlocking {
+        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        val raw = androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(scope = scope,
+            produceFile = { File(root, "concurrent-${System.nanoTime()}.preferences_pb") })
+        val cipher = object : SecretCipher {
+            override fun encrypt(plainText: String) = "test-cipher:" + plainText
+            override fun decrypt(cipherText: String) = cipherText.removePrefix("test-cipher:")
+        }
+        val real = DataStoreUserSettingsStore(raw, cipher)
+        val oldAi = AiConfig("https://trusted-old.example.invalid", "old-key", "old-model")
+        val importedAi = AiConfig("https://backup-new.example.invalid", "new-key", "new-model")
+        val concurrentAi = AiConfig("https://edited-third.example.invalid", "third-key", "third-model")
+        val atConsentWrite = CompletableDeferred<Unit>()
+        val continueConsent = CompletableDeferred<Unit>()
+        try {
+            real.saveAiConfig(oldAi)
+            real.setAiConsent(AiConsent.Granted)
+            real.setAiStatus(AiStatus.Verified, "old-verified", oldAi)
+            val failing = object : UserSettingsStore by real {
+                override suspend fun setWeatherAuth(auth: com.yuhinhsiung.clothesmate.core.weather.WeatherAuthConfig) {
+                    if (auth.apiHost == "weather-new.example.invalid") throw java.io.IOException("review injected import weather failure")
+                    real.setWeatherAuth(auth)
+                }
+                override suspend fun setAiConsent(consent: AiConsent) {
+                    if (consent == AiConsent.Granted) {
+                        atConsentWrite.complete(Unit)
+                        continueConsent.await()
+                    }
+                    real.setAiConsent(consent)
+                }
+            }
+            val credentials = BackupCredentials(importedAi.baseUrl, importedAi.apiKey, importedAi.model,
+                weatherApiHost = "weather-new.example.invalid")
+            val encrypted = BackupCredentialCipher.encrypt(
+                json.encodeToString(BackupCredentials.serializer(), credentials), password)
+            val manifest = BackupManifest(exportedAt = 1, wardrobes = listOf(wardrobe()),
+                settings = BackupSettings(weatherCity = "备份城市", stylePreference = "备份风格",
+                    encryptedCredentials = encrypted))
+            val importing = async(Dispatchers.IO) { runCatching { repo(failing).import(zip(manifest), password) } }
+            try {
+                withTimeout(10_000) { atConsentWrite.await() }
+                real.saveAiConfig(concurrentAi)
+            } finally {
+                continueConsent.complete(Unit)
+            }
+            assertTrue(withTimeout(10_000) { importing.await() }.isFailure)
+            assertEquals(0, db.backupDao().wardrobes().size)
+            val current = real.settings.first()
+            assertEquals(concurrentAi, current.aiConfig)
+            assertNotEquals("concurrent config must not inherit old Granted", AiConsent.Granted, current.aiConsent)
+            assertEquals(AiStatus.Unverified, current.aiStatus)
+        } finally { scope.coroutineContext[Job]!!.cancelAndJoin() }
+    }
 }
