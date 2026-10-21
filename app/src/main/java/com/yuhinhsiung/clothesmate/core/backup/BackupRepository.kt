@@ -14,6 +14,8 @@ import com.yuhinhsiung.clothesmate.core.database.dao.WardrobeDao
 import com.yuhinhsiung.clothesmate.core.database.dao.WearRecordDao
 import com.yuhinhsiung.clothesmate.core.database.entity.ClothingCodeHistoryEntity
 import com.yuhinhsiung.clothesmate.core.datastore.AiConfig
+import com.yuhinhsiung.clothesmate.core.datastore.AiConsent
+import com.yuhinhsiung.clothesmate.core.datastore.AiStatus
 import com.yuhinhsiung.clothesmate.core.datastore.UserSettings
 import com.yuhinhsiung.clothesmate.core.datastore.UserSettingsStore
 import com.yuhinhsiung.clothesmate.core.weather.WeatherAuthConfig
@@ -219,13 +221,29 @@ class DefaultBackupRepository @Inject constructor(
             }
         }
         attempt("AI 配置") { userSettingsStore.saveAiConfig(previous.aiConfig) }
-        attempt("AI 授权") { userSettingsStore.setAiConsent(previous.aiConsent) }
-        attempt("AI 状态") {
-            userSettingsStore.setAiStatus(
-                previous.aiStatus,
-                previous.aiStatusDetail,
-                expectedConfig = null,
-            )
+        // 授权/验证状态必须绑定到“实际保留下来的配置”。若旧配置没能恢复，
+        // 新配置仍是导入时写入的 B，不能把 A 的 Granted/Verified 移交给 B。
+        val actualAiConfig = runCatching { userSettingsStore.settings.first().aiConfig }.getOrNull()
+        if (actualAiConfig == previous.aiConfig) {
+            attempt("AI 授权") { userSettingsStore.setAiConsent(previous.aiConsent) }
+            attempt("AI 状态") {
+                userSettingsStore.setAiStatus(
+                    previous.aiStatus,
+                    previous.aiStatusDetail,
+                    expectedConfig = previous.aiConfig,
+                )
+            }
+        } else {
+            // 配置未恢复：撤销授权，避免后台把照片发往新端点；验证状态重置为未验证。
+            attempt("AI 授权") { userSettingsStore.setAiConsent(AiConsent.Unasked) }
+            attempt("AI 状态") {
+                userSettingsStore.setAiStatus(
+                    AiStatus.Unverified,
+                    "导入未完成，请重新配置并测试连接",
+                    expectedConfig = null,
+                )
+            }
+            if ("AI 配置" !in failed) failed += "AI 配置"
         }
         attempt("天气认证") { userSettingsStore.setWeatherAuth(previous.weatherAuth) }
         attempt("城市") { userSettingsStore.setWeatherCity(previous.weatherCity) }
