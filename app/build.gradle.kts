@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -10,18 +13,67 @@ android {
     namespace = "com.yuhinhsiung.clothesmate"
     compileSdk = 37
 
+    // M5-10: versionCode = major * 10000 + minor * 100 + patch.
+    // Release 1.0.0 => 10000; minor/patch each 0..99, avoiding 1.0.100 == 1.1.0.
+    val appVersionMajor = 1
+    val appVersionMinor = 0
+    val appVersionPatch = 0
+    require(appVersionMinor in 0..99 && appVersionPatch in 0..99) {
+        "minor/patch must be 0..99 so versionCode stays injective (1.0.100 == 1.1.0 is forbidden)"
+    }
+    val appVersionCode = appVersionMajor * 10000 + appVersionMinor * 100 + appVersionPatch
+    val appVersionName = "$appVersionMajor.$appVersionMinor.$appVersionPatch"
+
     defaultConfig {
         applicationId = "com.yuhinhsiung.clothesmate"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
         testInstrumentationRunner = "com.yuhinhsiung.clothesmate.HiltTestRunner"
 
         // 裁剪三方库的多余 locale 资源（Application 自身的 label 仍取默认 values/）。
         // 工程当前只有默认 values/（中文），无 values-en/；将来做英文 UI 时再补那份目录。
         androidResources {
             localeFilters += listOf("zh", "en")
+        }
+    }
+
+    // M5-10: release keystore is user-held. Properties.load restores Java
+    // unicode escapes in storeFile (the path contains Chinese characters).
+    val keystorePropertiesFile = rootProject.file("keystore.properties")
+    val keystoreProperties = Properties().apply {
+        if (keystorePropertiesFile.isFile) {
+            FileInputStream(keystorePropertiesFile).use { load(it) }
+        }
+    }
+    val releaseStorePath = keystoreProperties.getProperty("storeFile")
+    val releaseStoreFile = releaseStorePath?.let { rootProject.file(it) }
+    val releaseSigningReady =
+        releaseStoreFile?.isFile == true &&
+            !keystoreProperties.getProperty("storePassword").isNullOrBlank() &&
+            !keystoreProperties.getProperty("keyAlias").isNullOrBlank() &&
+            !keystoreProperties.getProperty("keyPassword").isNullOrBlank()
+
+    val requestedReleaseTask = gradle.startParameter.taskNames.any {
+        it.contains("Release", ignoreCase = true)
+    }
+    if (requestedReleaseTask && !releaseSigningReady) {
+        throw GradleException(
+            "Release build requires a local keystore.properties with storeFile/storePassword/" +
+                "keyAlias/keyPassword. Refusing to fall back to the debug signing key.",
+        )
+    }
+
+    signingConfigs {
+        create("release") {
+            if (releaseSigningReady) {
+                storeFile = releaseStoreFile
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeType = "PKCS12"
+            }
         }
     }
 
@@ -36,8 +88,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // 个人开源项目，暂不配签名；发布时在 local 配置或 CI 注入
-            signingConfig = signingConfigs.getByName("debug")
+            // M5-10: never fall back to the debug signing key.
+            signingConfig = if (releaseSigningReady) signingConfigs.getByName("release") else null
         }
     }
 
