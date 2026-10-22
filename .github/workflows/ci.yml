@@ -6,9 +6,6 @@ on:
   pull_request:
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -60,17 +57,6 @@ jobs:
             app/build/reports/tests
             app/build/reports/lint-results-debug.html
             app/build/reports/lint-results-debug.txt
-
-      - name: Capture build diagnostics
-        if: failure()
-        run: |
-          ./gradlew assembleDebug --stacktrace > ci-build.log 2>&1 || true
-          git config user.name "ci-diagnostics"
-          git config user.email "ci-diagnostics@users.noreply.github.com"
-          git checkout -B ci-diagnostics
-          git add ci-build.log
-          git commit -m "ci: capture build diagnostics" || true
-          git push origin ci-diagnostics --force
 
       - name: Upload debug APK
         if: success()
