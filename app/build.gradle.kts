@@ -125,6 +125,8 @@ android {
     // assets 里按「数据库全限定名/版本.json」读取期望 schema 来校验迁移结果。
     sourceSets {
         getByName("androidTest").assets.srcDir("${rootDir}/app/schemas")
+        // M5-13: ship third-party license notices inside the APK.
+        getByName("main").assets.srcDir("${rootDir}/licenses")
     }
 }
 
