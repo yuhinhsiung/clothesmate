@@ -165,7 +165,7 @@ fun OutfitWaterfallRoute(
 
                 else -> {
                     LazyVerticalStaggeredGrid(
-                        columns = StaggeredGridCells.Fixed(2),
+                        columns = StaggeredGridCells.Adaptive(160.dp),
                         contentPadding = PaddingValues(Dimens.pagePadding),
                         horizontalArrangement = Arrangement.spacedBy(Dimens.waterfallColumnSpacing),
                         verticalItemSpacing = Dimens.waterfallColumnSpacing,
