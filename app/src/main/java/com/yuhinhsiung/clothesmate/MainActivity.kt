@@ -17,6 +17,7 @@ import com.yuhinhsiung.clothesmate.core.datastore.ThemeMode
 import com.yuhinhsiung.clothesmate.core.datastore.UserSettingsStore
 import com.yuhinhsiung.clothesmate.core.datastore.isDark
 import com.yuhinhsiung.clothesmate.core.image.ImageStorage
+import com.yuhinhsiung.clothesmate.core.update.UpdateManager
 import com.yuhinhsiung.clothesmate.ui.component.LocalImageStorage
 import com.yuhinhsiung.clothesmate.ui.component.LocalNavResultBus
 import com.yuhinhsiung.clothesmate.ui.navigation.NavResultBus
@@ -49,9 +50,14 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var userSettingsStore: UserSettingsStore
 
+    /** M5-16：启动静默检查一次（24h 缓存由 UpdateCheckStore 负责）。 */
+    @Inject
+    lateinit var updateManager: UpdateManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        updateManager.checkSilently()
         setContent {
             // 初始值取「跟随系统」= 与旧行为一致；DataStore 首帧到达后按用户选择切换。
             // map 放在 remember 里：在 composition 中直接建 Flow 每次重组都会换实例

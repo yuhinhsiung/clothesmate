@@ -26,6 +26,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,6 +64,7 @@ import com.yuhinhsiung.clothesmate.core.datastore.AiConsent
 import com.yuhinhsiung.clothesmate.core.database.TagDictionarySeeder
 import com.yuhinhsiung.clothesmate.core.datastore.AiStatus
 import com.yuhinhsiung.clothesmate.core.datastore.ThemeMode
+import com.yuhinhsiung.clothesmate.core.update.UpdateUiState
 import com.yuhinhsiung.clothesmate.ui.component.AiPrivacyDialog
 import com.yuhinhsiung.clothesmate.ui.component.ChipGroup
 import com.yuhinhsiung.clothesmate.ui.component.ChipOption
@@ -238,6 +240,11 @@ fun SettingsRoute(
                         enabled = false,
                         onClick = {},
                     )
+                    HorizontalDivider(
+                        thickness = Dimens.dividerThickness,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                    UpdateSection()
                     HorizontalDivider(
                         thickness = Dimens.dividerThickness,
                         color = MaterialTheme.colorScheme.outline,
@@ -755,6 +762,93 @@ private fun InfoRow(text: String) {
         color = MaterialTheme.colorScheme.onMuted,
         modifier = Modifier.padding(horizontal = Dimens.Space.s4, vertical = Dimens.Space.s3),
     )
+}
+
+@Composable
+private fun UpdateSection(viewModel: UpdateViewModel = hiltViewModel()) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val busy = state is UpdateUiState.Checking || state is UpdateUiState.Downloading
+    val status = when (val current = state) {
+        UpdateUiState.Idle -> stringResource(R.string.update_idle)
+        UpdateUiState.Checking -> stringResource(R.string.update_checking)
+        is UpdateUiState.UpToDate -> stringResource(R.string.update_up_to_date, current.version)
+        is UpdateUiState.Available -> stringResource(R.string.update_available, current.info.versionName)
+        is UpdateUiState.Downloading -> stringResource(
+            R.string.update_downloading,
+            ((current.downloaded * 100) / current.total.coerceAtLeast(1L)).toInt(),
+        )
+        is UpdateUiState.ReadyToInstall -> stringResource(R.string.update_ready)
+        is UpdateUiState.NeedsInstallPermission -> stringResource(R.string.update_needs_permission)
+        is UpdateUiState.Failed -> stringResource(R.string.update_failed)
+    }
+    SettingsRow(
+        title = stringResource(R.string.update_title),
+        value = status,
+        enabled = !busy,
+        onClick = viewModel::check,
+    )
+    when (val current = state) {
+        is UpdateUiState.Available -> Button(
+            onClick = viewModel::download,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Dimens.Space.s4, vertical = Dimens.Space.s2),
+        ) { Text(stringResource(R.string.update_download)) }
+
+        is UpdateUiState.Downloading -> Column(
+            modifier = Modifier.padding(horizontal = Dimens.Space.s4, vertical = Dimens.Space.s2),
+        ) {
+            LinearProgressIndicator(
+                progress = { current.downloaded.toFloat() / current.total.coerceAtLeast(1L) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            TextButton(onClick = viewModel::cancelDownload) {
+                Text(stringResource(R.string.update_cancel))
+            }
+        }
+
+        is UpdateUiState.ReadyToInstall -> Button(
+            onClick = viewModel::install,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Dimens.Space.s4, vertical = Dimens.Space.s2),
+        ) { Text(stringResource(R.string.update_install)) }
+
+        is UpdateUiState.NeedsInstallPermission -> Column(
+            modifier = Modifier.padding(horizontal = Dimens.Space.s4, vertical = Dimens.Space.s2),
+        ) {
+            Text(
+                text = stringResource(R.string.update_needs_permission),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Button(onClick = viewModel::openUnknownSourcesSettings) {
+                Text(stringResource(R.string.update_open_permission))
+            }
+            TextButton(onClick = viewModel::install) {
+                Text(stringResource(R.string.update_install))
+            }
+        }
+
+        is UpdateUiState.Failed -> Column(
+            modifier = Modifier.padding(horizontal = Dimens.Space.s4, vertical = Dimens.Space.s2),
+        ) {
+            Text(
+                text = current.message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Row {
+                TextButton(onClick = viewModel::check) {
+                    Text(stringResource(R.string.update_retry))
+                }
+                TextButton(onClick = viewModel::openReleasePage) {
+                    Text(stringResource(R.string.update_browser))
+                }
+            }
+        }
+
+        else -> Unit
+    }
 }
 
 @Composable

@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 天气定位：粗略精度即可，用系统 LocationManager，不引入 GMS -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- 应用内更新：只在用户确认安装时拉起系统安装器；未授权时引导浏览器下载。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- 相册导入：一律走 Photo Picker（Android 13+ 免权限，低版本由系统 UI 代选），
          应用从不直读媒体库——review B-24：READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE

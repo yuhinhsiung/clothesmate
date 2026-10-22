@@ -4,4 +4,8 @@
     <cache-path
         name="camera_images"
         path="camera/" />
+    <!-- M5-16：应用内更新下载的 APK，安装时通过 FileProvider 授权给系统安装器 -->
+    <cache-path
+        name="updates"
+        path="updates/" />
 </paths>

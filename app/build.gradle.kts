@@ -32,6 +32,17 @@ android {
         versionName = appVersionName
         testInstrumentationRunner = "com.yuhinhsiung.clothesmate.HiltTestRunner"
 
+        // M5-16：GitHub Releases 更新源（可通过 -Pgithub.owner=... 覆盖，默认公开仓库）。
+        val githubOwner = providers.gradleProperty("github.owner").orElse("yuhinhsiung").get()
+        val githubRepo = providers.gradleProperty("github.repo").orElse("clothesmate").get()
+        buildConfigField("String", "GITHUB_OWNER", "\"$githubOwner\"")
+        buildConfigField("String", "GITHUB_REPO", "\"$githubRepo\"")
+        // 与 docs/update-release-checklist.md §7.1 记录的正式证书 SHA-256 保持一致。
+        val releaseCertSha256 = providers.gradleProperty("release.cert.sha256")
+            .orElse("35B37099BE2F52760E49B536AFF4A24116E88DD6655C72353F32854C698C9809")
+            .get()
+        buildConfigField("String", "RELEASE_CERT_SHA256", "\"$releaseCertSha256\"")
+
         // 裁剪三方库的多余 locale 资源（Application 自身的 label 仍取默认 values/）。
         // 工程当前只有默认 values/（中文），无 values-en/；将来做英文 UI 时再补那份目录。
         androidResources {
