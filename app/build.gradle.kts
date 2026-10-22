@@ -42,6 +42,12 @@ android {
             .orElse("35B37099BE2F52760E49B536AFF4A24116E88DD6655C72353F32854C698C9809")
             .get()
         buildConfigField("String", "RELEASE_CERT_SHA256", "\"$releaseCertSha256\"")
+        // M5-11：仅用于演练正式包堆栈还原；默认关闭，不能出现在正常发布包。
+        buildConfigField(
+            "boolean",
+            "CRASH_INJECTION_ENABLED",
+            providers.gradleProperty("crashInjection").orElse("false").get(),
+        )
 
         // 裁剪三方库的多余 locale 资源（Application 自身的 label 仍取默认 values/）。
         // 工程当前只有默认 values/（中文），无 values-en/；将来做英文 UI 时再补那份目录。

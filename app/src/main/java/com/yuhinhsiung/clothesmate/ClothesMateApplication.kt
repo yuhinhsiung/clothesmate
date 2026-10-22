@@ -2,6 +2,7 @@ package com.yuhinhsiung.clothesmate
 
 import android.app.Application
 import com.yuhinhsiung.clothesmate.core.database.TagDictionarySeeder
+import com.yuhinhsiung.clothesmate.core.diagnostics.CrashLogStore
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -18,8 +19,13 @@ class ClothesMateApplication : Application() {
     @Inject
     lateinit var tagDictionarySeeder: TagDictionarySeeder
 
+    /** M5-11：未捕获异常只写本地私有目录，不联网、不引入崩溃 SDK。 */
+    @Inject
+    lateinit var crashLogStore: CrashLogStore
+
     override fun onCreate() {
         super.onCreate()
+        crashLogStore.install()
         tagDictionarySeeder.seedOnStart()
     }
 }

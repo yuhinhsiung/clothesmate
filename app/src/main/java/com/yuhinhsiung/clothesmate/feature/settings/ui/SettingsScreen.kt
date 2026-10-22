@@ -91,6 +91,7 @@ fun SettingsRoute(
     onOpenWeatherAuth: () -> Unit,
     onOpenBackup: () -> Unit,
     onOpenCleanup: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -245,6 +246,15 @@ fun SettingsRoute(
                         color = MaterialTheme.colorScheme.outline,
                     )
                     UpdateSection()
+                    HorizontalDivider(
+                        thickness = Dimens.dividerThickness,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                    SettingsRow(
+                        title = stringResource(R.string.settings_diagnostics),
+                        value = stringResource(R.string.settings_diagnostics_desc),
+                        onClick = onOpenDiagnostics,
+                    )
                     HorizontalDivider(
                         thickness = Dimens.dividerThickness,
                         color = MaterialTheme.colorScheme.outline,

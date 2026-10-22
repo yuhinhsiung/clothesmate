@@ -75,9 +75,11 @@ import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitHomeRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitWaterfallRoute
 import com.yuhinhsiung.clothesmate.feature.overview.ui.OverviewRoute
 import com.yuhinhsiung.clothesmate.feature.settings.ui.SettingsRoute
+import com.yuhinhsiung.clothesmate.feature.settings.ui.diagnostics.DiagnosticsRoute
 import com.yuhinhsiung.clothesmate.feature.settings.ui.BackupRoute
 import com.yuhinhsiung.clothesmate.feature.settings.ui.CleanupOriginalsRoute
 import com.yuhinhsiung.clothesmate.ui.navigation.CleanupOriginals
+import com.yuhinhsiung.clothesmate.ui.navigation.Diagnostics
 import com.yuhinhsiung.clothesmate.ui.navigation.Backup
 import com.yuhinhsiung.clothesmate.feature.settings.ui.WeatherAuthRoute
 import com.yuhinhsiung.clothesmate.feature.today.ui.TodayRoute
@@ -581,6 +583,7 @@ fun ClothesMateNavHost(
                     onOpenWeatherAuth = { navController.navigate(WeatherAuth) },
                     onOpenBackup = { navController.navigate(Backup) },
                     onOpenCleanup = { navController.navigate(CleanupOriginals) },
+                    onOpenDiagnostics = { navController.navigate(Diagnostics) },
                 )
             }
 
@@ -594,6 +597,10 @@ fun ClothesMateNavHost(
 
             composable<CleanupOriginals> {
                 CleanupOriginalsRoute(onBack = { navController.popBackStack() })
+            }
+
+            composable<Diagnostics> {
+                DiagnosticsRoute(onBack = { navController.popBackStack() })
             }
 
             composable<WearCalendar> {

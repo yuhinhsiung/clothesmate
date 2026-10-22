@@ -96,6 +96,10 @@ data object Backup
 @Serializable
 data object CleanupOriginals
 
+/** 本地诊断日志（M5-11）。二级页，无底部导航。 */
+@Serializable
+data object Diagnostics
+
 /** 穿着日历（M3-07）。二级页，无底部导航。 */
 @Serializable
 data object WearCalendar

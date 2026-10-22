@@ -5,6 +5,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AcUnit
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronLeft
@@ -80,6 +81,7 @@ object AppIcons {
     val Ai: ImageVector = Icons.Rounded.AutoAwesome // ✨ AI 标识，配 accent 琥珀金
     val Tag: ImageVector = Icons.Rounded.Sell
     val Settings: ImageVector = Icons.Rounded.Settings
+    val Diagnostics: ImageVector = Icons.Rounded.BugReport
     val Close: ImageVector = Icons.Rounded.Close
     val Flash: ImageVector = Icons.Rounded.FlashOn
     val CameraSwitch: ImageVector = Icons.Rounded.Cameraswitch
