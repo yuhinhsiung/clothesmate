@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
@@ -413,7 +414,7 @@ private fun ThemeModeRow(
                             },
                             shape = RoundedCornerShape(Dimens.Radius.s),
                         )
-                        .semantics(mergeDescendants = true) {}
+                        .semantics { contentDescription = label }
                         .selectable(
                             selected = selected,
                             onClick = { onChange(mode) },
@@ -480,7 +481,7 @@ private fun AiProviderRow(
                             },
                             shape = RoundedCornerShape(Dimens.Radius.s),
                         )
-                        .semantics(mergeDescendants = true) {}
+                        .semantics { contentDescription = label }
                         .selectable(
                             selected = selected,
                             onClick = { onChange(provider) },
