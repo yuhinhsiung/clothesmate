@@ -111,7 +111,6 @@ fun OverviewRoute(
             )
         },
     ) { innerPadding ->
-        com.yuhinhsiung.clothesmate.ui.component.AdaptiveContent {
         when {
             uiState.loading -> {
                 Column(modifier = Modifier.padding(innerPadding).padding(Dimens.pagePadding)) {
@@ -136,54 +135,63 @@ fun OverviewRoute(
             }
 
             else -> {
-                BoxWithConstraints(
+                Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(innerPadding),
+                        .padding(innerPadding)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = Dimens.pagePadding),
+                    verticalArrangement = Arrangement.spacedBy(Dimens.Space.s4),
                 ) {
-                    val statsRow: @Composable () -> Unit = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s2)) {
-                            NumberCard(label = stringResource(R.string.overview_wardrobes), count = uiState.wardrobeCount, modifier = Modifier.weight(1f))
-                            NumberCard(label = stringResource(R.string.overview_clothes), count = uiState.clothingCount, modifier = Modifier.weight(1f))
-                            NumberCard(label = stringResource(R.string.overview_outfits), count = uiState.outfitCount, modifier = Modifier.weight(1f))
-                        }
+                    // ── 3 个数字卡 ─────────────────────────────
+                    Row(horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s2)) {
+                        NumberCard(
+                            label = stringResource(R.string.overview_wardrobes),
+                            count = uiState.wardrobeCount,
+                            modifier = Modifier.weight(1f),
+                        )
+                        NumberCard(
+                            label = stringResource(R.string.overview_clothes),
+                            count = uiState.clothingCount,
+                            modifier = Modifier.weight(1f),
+                        )
+                        NumberCard(
+                            label = stringResource(R.string.overview_outfits),
+                            count = uiState.outfitCount,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
-                    if (maxWidth >= 600.dp) {
-                        Column(
-                            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Dimens.pagePadding),
-                            verticalArrangement = Arrangement.spacedBy(Dimens.Space.s4),
-                        ) {
-                            statsRow()
-                            Row(horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s4)) {
-                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Dimens.Space.s4)) {
-                                    if (uiState.categorySlices.isNotEmpty()) CategoryDonutCard(uiState, onCategoryClick = onCategoryClick)
-                                    if (uiState.colorCounts.isNotEmpty()) ColorDistributionCard(uiState.colorCounts)
-                                }
-                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Dimens.Space.s4)) {
-                                    if (uiState.topWorn.isNotEmpty()) RankingCard(title = stringResource(R.string.overview_top_worn), items = uiState.topWorn, onItemClick = onClothingClick, accent = false)
-                                    if (uiState.leastWorn.isNotEmpty()) RankingCard(title = stringResource(R.string.overview_least_worn), items = uiState.leastWorn, onItemClick = onClothingClick, accent = true)
-                                    if (uiState.heatmap.isNotEmpty()) WearHeatmapCard(uiState.heatmap, uiState.legacyWearCount)
-                                    if (uiState.seasonTotal > 0) SeasonDistributionCard(uiState.seasonSlices, uiState.seasonTotal)
-                                }
-                            }
-                        }
-                    } else {
-                        Column(
-                            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Dimens.pagePadding),
-                            verticalArrangement = Arrangement.spacedBy(Dimens.Space.s4),
-                        ) {
-                            statsRow()
-                            if (uiState.categorySlices.isNotEmpty()) CategoryDonutCard(uiState, onCategoryClick = onCategoryClick)
-                            if (uiState.colorCounts.isNotEmpty()) ColorDistributionCard(uiState.colorCounts)
-                            if (uiState.topWorn.isNotEmpty()) RankingCard(title = stringResource(R.string.overview_top_worn), items = uiState.topWorn, onItemClick = onClothingClick, accent = false)
-                            if (uiState.leastWorn.isNotEmpty()) RankingCard(title = stringResource(R.string.overview_least_worn), items = uiState.leastWorn, onItemClick = onClothingClick, accent = true)
-                            if (uiState.heatmap.isNotEmpty()) WearHeatmapCard(uiState.heatmap, uiState.legacyWearCount)
-                            if (uiState.seasonTotal > 0) SeasonDistributionCard(uiState.seasonSlices, uiState.seasonTotal)
-                        }
+
+                    if (uiState.categorySlices.isNotEmpty()) {
+                        CategoryDonutCard(uiState, onCategoryClick = onCategoryClick)
+                    }
+                    if (uiState.colorCounts.isNotEmpty()) {
+                        ColorDistributionCard(uiState.colorCounts)
+                    }
+                    if (uiState.topWorn.isNotEmpty()) {
+                        RankingCard(
+                            title = stringResource(R.string.overview_top_worn),
+                            items = uiState.topWorn,
+                            onItemClick = onClothingClick,
+                            accent = false,
+                        )
+                    }
+                    if (uiState.leastWorn.isNotEmpty()) {
+                        RankingCard(
+                            title = stringResource(R.string.overview_least_worn),
+                            items = uiState.leastWorn,
+                            onItemClick = onClothingClick,
+                            accent = true,
+                        )
+                    }
+                    if (uiState.heatmap.isNotEmpty()) {
+                        WearHeatmapCard(uiState.heatmap)
+                    }
+                    if (uiState.seasonTotal > 0) {
+                        SeasonDistributionCard(uiState.seasonSlices, uiState.seasonTotal)
                     }
                 }
             }
-        }
         }
     }
 }
