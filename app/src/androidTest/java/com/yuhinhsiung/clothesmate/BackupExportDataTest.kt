@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -130,5 +131,52 @@ class BackupExportDataTest {
         assertEquals(1, db.backupDao().wearRecords().size)
         assertEquals("杭州", settings.settings.first().weatherCity)
         assertEquals("简约", settings.settings.first().stylePreference)
+    }
+
+    @Test fun exportClearImportRestoresClothingImagesByteForByte() = runBlocking {
+        val storage = DefaultImageStorage(File(root, "images"), Dispatchers.IO)
+        val original = storage.clothingOriginalFile(60).apply { parentFile?.mkdirs() }
+        original.writeBytes(byteArrayOf(1, 2, 3, 4, 5))
+        val cutout = storage.clothingCutoutFile(60).apply { parentFile?.mkdirs() }
+        cutout.writeBytes(byteArrayOf(9, 8, 7))
+        val originalPath = requireNotNull(storage.toRelative(original))
+        val cutoutPath = requireNotNull(storage.toRelative(cutout))
+        val wardrobeId = db.wardrobeDao().insert(
+            WardrobeEntity(id = 70, name = "图片衣柜", note = null, coverImagePath = null, sortOrder = 0, createdAt = 1),
+        )
+        db.clothingItemDao().insert(
+            ClothingItemEntity(
+                id = 60, code = "7", wardrobeId = wardrobeId, category = "shirt", colors = listOf("red"),
+                styleTags = emptyList(), seasonTags = listOf("spring"), originalImagePath = originalPath,
+                cutoutImagePath = cutoutPath, brand = null, name = "图片衣物", note = null, wearCount = 0,
+                deletedAt = null, createdAt = 1, updatedAt = 1,
+            ),
+        )
+        val clothingRepo = DefaultClothingRepository(db, db.clothingItemDao(), db.outfitDao(), db.codeHistoryDao())
+        val settings = InMemoryUserSettingsStore()
+        val repo = DefaultBackupRepository(
+            context, db, db.backupDao(), db.wardrobeDao(), db.clothingItemDao(), db.codeHistoryDao(),
+            db.outfitDao(), db.outfitCategoryDao(), db.wearRecordDao(), db.tagDictionaryDao(),
+            storage, CodeAllocator(Counter(), clothingRepo), settings,
+        )
+        val file = File(root, "images.zip")
+        repo.export(Uri.fromFile(file), "password123")
+        ZipFile(file).use { zip ->
+            val originalEntry = requireNotNull(zip.getEntry(originalPath))
+            val cutoutEntry = requireNotNull(zip.getEntry(cutoutPath))
+            assertTrue(zip.getInputStream(originalEntry).readBytes().contentEquals(byteArrayOf(1, 2, 3, 4, 5)))
+            assertTrue(zip.getInputStream(cutoutEntry).readBytes().contentEquals(byteArrayOf(9, 8, 7)))
+        }
+        db.clearAllTables()
+        storage.clothingOriginalFile(60).delete()
+        storage.clothingCutoutFile(60).delete()
+        repo.import(Uri.fromFile(file), "password123")
+        val imported = db.clothingItemDao().getByStatus("normal").first()
+        val importedOriginal = requireNotNull(storage.toFile(imported.originalImagePath))
+        val importedCutout = requireNotNull(storage.toFile(imported.cutoutImagePath))
+        assertTrue(importedOriginal.isFile)
+        assertTrue(importedCutout.isFile)
+        assertTrue(importedOriginal.readBytes().contentEquals(byteArrayOf(1, 2, 3, 4, 5)))
+        assertTrue(importedCutout.readBytes().contentEquals(byteArrayOf(9, 8, 7)))
     }
 }
