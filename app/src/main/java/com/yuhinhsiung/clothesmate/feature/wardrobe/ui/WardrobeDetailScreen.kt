@@ -317,7 +317,7 @@ fun WardrobeDetailRoute(
 
             if (uiState.items.isNotEmpty()) {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(Dimens.ClothingGridColumns),
+                    columns = GridCells.Adaptive(160.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(Dimens.pagePadding),
                     horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s2),
                     verticalArrangement = Arrangement.spacedBy(Dimens.Space.s2),

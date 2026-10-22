@@ -178,6 +178,7 @@ fun TodayRoute(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
+        com.yuhinhsiung.clothesmate.ui.component.AdaptiveContent {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -283,6 +284,7 @@ fun TodayRoute(
                     )
                 }
             }
+        }
         }
     }
 

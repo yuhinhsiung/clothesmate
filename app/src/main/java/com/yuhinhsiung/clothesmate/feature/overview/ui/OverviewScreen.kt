@@ -111,6 +111,7 @@ fun OverviewRoute(
             )
         },
     ) { innerPadding ->
+        com.yuhinhsiung.clothesmate.ui.component.AdaptiveContent {
         when {
             uiState.loading -> {
                 Column(modifier = Modifier.padding(innerPadding).padding(Dimens.pagePadding)) {
@@ -192,6 +193,7 @@ fun OverviewRoute(
                     }
                 }
             }
+        }
         }
     }
 }
