@@ -78,12 +78,13 @@ class AccessibilitySemanticsTest {
             ClothesMateTheme(darkTheme = false) {
                 DonutChart(
                     slices = listOf(CategorySlice(topKey = "top", topName = "上衣", count = 3)),
+                    totalItems = 4,
                     onSliceClick = {},
                     modifier = Modifier.size(168.dp),
                 )
             }
         }
 
-        rule.onNodeWithContentDescription("类别分布图：上衣 3 件，共 3 件").assertExists()
+        rule.onNodeWithContentDescription("类别分布图：上衣 3 件，共 4 件").assertExists()
     }
 }

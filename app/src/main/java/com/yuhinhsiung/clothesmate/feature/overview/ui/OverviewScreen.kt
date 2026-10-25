@@ -55,6 +55,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.core.model.ClothingColor
 import com.yuhinhsiung.clothesmate.core.model.Season
+import com.yuhinhsiung.clothesmate.ui.component.AdaptiveContent
 import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
 import com.yuhinhsiung.clothesmate.ui.component.EmptyStateSpec
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
@@ -138,12 +139,14 @@ fun OverviewRoute(
             }
 
             else -> {
+                AdaptiveContent {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = Dimens.pagePadding),
+                        .padding(horizontal = Dimens.pagePadding)
+                        .padding(top = Dimens.Space.s4),
                     verticalArrangement = Arrangement.spacedBy(Dimens.Space.s4),
                 ) {
                     // ── 3 个数字卡 ─────────────────────────────
@@ -165,34 +168,78 @@ fun OverviewRoute(
                         )
                     }
 
-                    if (uiState.categorySlices.isNotEmpty()) {
-                        CategoryDonutCard(uiState, onCategoryClick = onCategoryClick)
+                    val categoryCard: @Composable () -> Unit = {
+                        if (uiState.categorySlices.isNotEmpty()) {
+                            CategoryDonutCard(uiState, onCategoryClick = onCategoryClick)
+                        }
                     }
-                    if (uiState.colorCounts.isNotEmpty()) {
-                        ColorDistributionCard(uiState.colorCounts)
+                    val colorCard: @Composable () -> Unit = {
+                        if (uiState.colorCounts.isNotEmpty()) {
+                            ColorDistributionCard(uiState.colorCounts)
+                        }
                     }
-                    if (uiState.topWorn.isNotEmpty()) {
-                        RankingCard(
-                            title = stringResource(R.string.overview_top_worn),
-                            items = uiState.topWorn,
-                            onItemClick = onClothingClick,
-                            accent = false,
-                        )
+                    val topWornCard: @Composable () -> Unit = {
+                        if (uiState.topWorn.isNotEmpty()) {
+                            RankingCard(
+                                title = stringResource(R.string.overview_top_worn),
+                                items = uiState.topWorn,
+                                onItemClick = onClothingClick,
+                                accent = false,
+                            )
+                        }
                     }
-                    if (uiState.leastWorn.isNotEmpty()) {
-                        RankingCard(
-                            title = stringResource(R.string.overview_least_worn),
-                            items = uiState.leastWorn,
-                            onItemClick = onClothingClick,
-                            accent = true,
-                        )
+                    val leastWornCard: @Composable () -> Unit = {
+                        if (uiState.leastWorn.isNotEmpty()) {
+                            RankingCard(
+                                title = stringResource(R.string.overview_least_worn),
+                                items = uiState.leastWorn,
+                                onItemClick = onClothingClick,
+                                accent = true,
+                            )
+                        }
                     }
-                    if (uiState.heatmap.isNotEmpty()) {
-                        WearHeatmapCard(uiState.heatmap)
+                    val heatmapCard: @Composable () -> Unit = {
+                        if (uiState.heatmap.isNotEmpty()) {
+                            WearHeatmapCard(uiState.heatmap)
+                        }
                     }
-                    if (uiState.seasonTotal > 0) {
-                        SeasonDistributionCard(uiState.seasonSlices, uiState.seasonTotal)
+                    val seasonCard: @Composable () -> Unit = {
+                        if (uiState.seasonTotal > 0) {
+                            SeasonDistributionCard(uiState.seasonSlices, uiState.seasonTotal)
+                        }
                     }
+                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                        if (maxWidth >= 560.dp) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s4)) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(Dimens.Space.s4),
+                                ) {
+                                    categoryCard()
+                                    colorCard()
+                                    heatmapCard()
+                                }
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(Dimens.Space.s4),
+                                ) {
+                                    topWornCard()
+                                    leastWornCard()
+                                    seasonCard()
+                                }
+                            }
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(Dimens.Space.s4)) {
+                                categoryCard()
+                                colorCard()
+                                topWornCard()
+                                leastWornCard()
+                                heatmapCard()
+                                seasonCard()
+                            }
+                        }
+                    }
+                }
                 }
             }
         }
@@ -260,6 +307,7 @@ private fun CategoryDonutCard(uiState: OverviewUiState, onCategoryClick: (String
                     Box(contentAlignment = Alignment.Center) {
                         DonutChart(
                             slices = uiState.categorySlices,
+                            totalItems = uiState.clothingCount,
                             onSliceClick = { topKey -> onCategoryClick(topKey) },
                             modifier = Modifier.size(Dimens.Chart.donutSize),
                         )
@@ -330,6 +378,7 @@ private val DonutLegendSideBySideMinWidth = 300.dp
 @Composable
 internal fun DonutChart(
     slices: List<CategorySlice>,
+    totalItems: Int,
     onSliceClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -340,7 +389,7 @@ internal fun DonutChart(
     val description = stringResource(
         R.string.overview_category_chart_description,
         slices.joinToString("，") { "${it.topName} ${it.count} 件" },
-        slices.sumOf { it.count },
+        totalItems,
     )
     Canvas(
         modifier = modifier

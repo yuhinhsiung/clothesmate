@@ -12,20 +12,22 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * 宽屏保护：手机竖屏保持全宽；平板/横屏把页面内容限制在可读宽度并居中，
- * 避免单列卡片被拉伸成巨幅留白（M5-07）。
+ * 宽屏保护：手机竖屏保持全宽；medium（600–840dp）限制到 600dp，expanded（≥840dp）
+ * 限制到 [maxContentWidth] 并居中，避免单列卡片被拉伸成巨幅留白（M5-07）。
  */
 @Composable
 fun AdaptiveContent(
     modifier: Modifier = Modifier,
     maxContentWidth: Dp = 840.dp,
+    mediumContentWidth: Dp = 600.dp,
     content: @Composable () -> Unit,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        if (maxWidth > maxContentWidth) {
+        val contentWidth = adaptiveContentWidth(maxWidth, maxContentWidth, mediumContentWidth)
+        if (contentWidth < maxWidth) {
             Box(
                 modifier = Modifier
-                    .width(maxContentWidth)
+                    .width(contentWidth)
                     .fillMaxHeight()
                     .align(Alignment.TopCenter),
             ) { content() }
@@ -33,4 +35,14 @@ fun AdaptiveContent(
             content()
         }
     }
+}
+
+/** 按断点选择实际内容宽度；抽成纯函数便于 JVM 单测（M5-07）。 */
+internal fun adaptiveContentWidth(
+    maxWidth: Dp,
+    maxContentWidth: Dp = 840.dp,
+    mediumContentWidth: Dp = 600.dp,
+): Dp {
+    val cap = if (maxWidth >= 840.dp) maxContentWidth else mediumContentWidth
+    return if (maxWidth > cap) cap else maxWidth
 }

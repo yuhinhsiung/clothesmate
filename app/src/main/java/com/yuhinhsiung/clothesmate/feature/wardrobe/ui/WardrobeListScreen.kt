@@ -271,7 +271,7 @@ fun WardrobeListScreen(
 
                     is WardrobeListUiState.Content -> {
                         LazyVerticalGrid(
-                            columns = GridCells.Adaptive(160.dp),
+                            columns = GridCells.Fixed(2),
                             state = gridState,
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(Dimens.pagePadding),
                             horizontalArrangement = Arrangement.spacedBy(Dimens.waterfallColumnSpacing),
