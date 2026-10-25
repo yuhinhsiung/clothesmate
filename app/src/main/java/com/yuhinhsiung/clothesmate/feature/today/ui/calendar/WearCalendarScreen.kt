@@ -49,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -242,7 +243,7 @@ private fun WeekdayHeader() {
 }
 
 @Composable
-private fun MonthGrid(
+internal fun MonthGrid(
     month: YearMonth,
     today: LocalDate,
     recordsByDate: Map<LocalDate, List<WearRecord>>,
@@ -287,19 +288,32 @@ private fun DayCell(
     onClick: () -> Unit,
 ) {
     val isToday = date == today
+    val dateText = stringResource(
+        R.string.calendar_day_a11y_date,
+        date.year,
+        date.monthValue,
+        date.dayOfMonth,
+    )
+    val description = when {
+        isToday && record != null -> stringResource(R.string.calendar_day_a11y_today_worn, dateText)
+        isToday -> stringResource(R.string.calendar_day_a11y_today, dateText)
+        record != null -> stringResource(R.string.calendar_day_a11y_worn, dateText)
+        else -> dateText
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .height(66.dp)
             .clip(RoundedCornerShape(Dimens.Radius.s))
             .clickable(onClick = onClick)
-            .semantics { contentDescription = date.toString() },
+            .semantics(mergeDescendants = true) { contentDescription = description },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
             text = date.dayOfMonth.toString(),
             style = MaterialTheme.typography.labelSmall,
             color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onMuted,
+            modifier = Modifier.clearAndSetSemantics { },
         )
         Spacer(Modifier.height(Dimens.Space.s1))
         Box(

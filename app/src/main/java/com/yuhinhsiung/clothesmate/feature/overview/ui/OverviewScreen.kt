@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -44,6 +45,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -325,7 +328,7 @@ private val DonutLegendSideBySideMinWidth = 300.dp
 
 /** 环形图：等宽圆环逐扇区绘制（-90° 起笔，无间隙即首尾相接）。 */
 @Composable
-private fun DonutChart(
+internal fun DonutChart(
     slices: List<CategorySlice>,
     onSliceClick: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -334,8 +337,15 @@ private fun DonutChart(
         ChartCategoryColors[index % ChartCategoryColors.size]
     }
     val total = slices.sumOf { it.count }.coerceAtLeast(1)
+    val description = stringResource(
+        R.string.overview_category_chart_description,
+        slices.joinToString("，") { "${it.topName} ${it.count} 件" },
+        slices.sumOf { it.count },
+    )
     Canvas(
-        modifier = modifier.pointerInput(slices) {
+        modifier = modifier
+            .semantics { contentDescription = description }
+            .pointerInput(slices) {
             detectTapGestures { tap ->
                 val center = Offset(size.width / 2f, size.height / 2f)
                 val dx = tap.x - center.x
@@ -477,10 +487,13 @@ private fun LegendRow(
     color: Color,
     label: String,
     count: Int,
-    isMulti: Boolean = false,
     modifier: Modifier = Modifier,
+    isMulti: Boolean = false,
 ) {
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = modifier.heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         if (isMulti) {
             MultiColorStripe(
                 colors = listOf(

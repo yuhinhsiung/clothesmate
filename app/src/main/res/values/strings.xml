@@ -258,6 +258,7 @@
     <string name="overview_clothes">衣物</string>
     <string name="overview_outfits">穿搭</string>
     <string name="overview_category_chart">类别分布</string>
+    <string name="overview_category_chart_description">类别分布图：%1$s，共 %2$d 件</string>
     <string name="overview_total_items">总件数</string>
     <string name="overview_color_chart">颜色分布</string>
     <string name="empty_overview_title">录入衣物后，这里会有你的衣柜全貌</string>
@@ -513,6 +514,10 @@
     <string name="calendar_backfilled">已补记</string>
     <string name="calendar_month_format">%1$d年%2$d月</string>
     <string name="calendar_day_format">%1$d月%2$d日</string>
+    <string name="calendar_day_a11y_date">%1$d年%2$d月%3$d日</string>
+    <string name="calendar_day_a11y_today">今天，%1$s</string>
+    <string name="calendar_day_a11y_worn">%1$s，有穿着记录</string>
+    <string name="calendar_day_a11y_today_worn">今天，%1$s，有穿着记录</string>
 
     <!-- 换季模式（M4-04，开发文档 §2.7 / UI 文档 §7.2） -->
     <string name="wardrobe_season_mode">换季模式</string>

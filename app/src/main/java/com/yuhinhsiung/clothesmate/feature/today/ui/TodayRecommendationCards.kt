@@ -32,6 +32,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.yuhinhsiung.clothesmate.R
@@ -72,11 +74,12 @@ internal fun RecommendationCard(
                     .width(168.dp)
                     .fillMaxHeight()
                     .background(MaterialTheme.colorScheme.muted)
+                    .semantics { contentDescription = outfit.displayName }
                     .clickable(onClick = onOpen),
             ) {
                 CmAsyncImage(
                     model = outfit.coverPath,
-                    contentDescription = outfit.displayName,
+                    contentDescription = null,
                     modifier = Modifier.fillMaxWidth().fillMaxHeight(),
                 )
             }
