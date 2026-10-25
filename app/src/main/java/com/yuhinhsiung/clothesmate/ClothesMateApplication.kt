@@ -3,6 +3,7 @@ package com.yuhinhsiung.clothesmate
 import android.app.Application
 import com.yuhinhsiung.clothesmate.core.database.TagDictionarySeeder
 import com.yuhinhsiung.clothesmate.core.diagnostics.CrashLogStore
+import com.yuhinhsiung.clothesmate.feature.addclothing.data.QuickCaptureRecovery
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -23,9 +24,14 @@ class ClothesMateApplication : Application() {
     @Inject
     lateinit var crashLogStore: CrashLogStore
 
+    /** M5-06：进程被杀后重排未完成的连拍任务。 */
+    @Inject
+    lateinit var quickCaptureRecovery: QuickCaptureRecovery
+
     override fun onCreate() {
         super.onCreate()
         crashLogStore.install()
         tagDictionarySeeder.seedOnStart()
+        quickCaptureRecovery.recover()
     }
 }

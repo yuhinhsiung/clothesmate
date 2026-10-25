@@ -34,8 +34,11 @@ object CutoutSpec {
     /** 解码上限：模型只要 320，取 1024 保留重采样余量、又不至于内存过大 */
     const val DECODE_MAX_EDGE = 1024
 
-    /** 单次抠图超时（与 AI 的 15s 同口径） */
-    const val TIMEOUT_MILLIS = 15_000L
+    /**
+     * 单次抠图超时。首次推理要加载 4.4MB 模型并初始化 GPU delegate；模拟器冷启动实测约 34s。
+     * 15s 会让每次冷启动的第一张必然兜底为原图，故放宽到 60s。超时仍可取消。
+     */
+    const val TIMEOUT_MILLIS = 60_000L
 
     /** U²-Net 官方预处理：ImageNet mean / std */
     val MEAN = floatArrayOf(0.485f, 0.456f, 0.406f)

@@ -40,6 +40,27 @@ class QuickCaptureAiSuggestionStoreTest {
     }
 
     @Test
+    fun pendingIdsSurviveNewStoreInstanceAndClearOneByOne() = runTest {
+        val dataStore = FakePreferencesDataStore()
+        val first = QuickCaptureAiSuggestionStore(dataStore)
+        first.markPending(11L)
+        first.markPending(12L)
+        first.clearPending(11L)
+
+        assertEquals(setOf(12L), QuickCaptureAiSuggestionStore(dataStore).pendingIds())
+    }
+
+    @Test
+    fun clearingAllPendingReturnsEmptySet() = runTest {
+        val dataStore = FakePreferencesDataStore()
+        val store = QuickCaptureAiSuggestionStore(dataStore)
+        store.markPending(21L)
+        store.clearPending(21L)
+
+        assertEquals(emptySet<Long>(), store.pendingIds())
+    }
+
+    @Test
     fun removalIsVisibleToAnotherStoreInstance() = runTest {
         val dataStore = FakePreferencesDataStore()
         val first = QuickCaptureAiSuggestionStore(dataStore)

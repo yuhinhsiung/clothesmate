@@ -213,7 +213,10 @@ class QuickCaptureViewModel @Inject constructor(
     }
 
     private fun launchProcessing(id: Long) {
-        QuickCaptureWorker.enqueue(context, id)
+        appScope.launch {
+            aiSuggestionStore.markPending(id)
+            QuickCaptureWorker.enqueue(context, id)
+        }
         // UI 的「处理中」跟随 WorkManager 的最终结果；最多等 20 秒，
         // 超时后仍可进入补录，避免后台失败把连拍页卡死。
         viewModelScope.launch {

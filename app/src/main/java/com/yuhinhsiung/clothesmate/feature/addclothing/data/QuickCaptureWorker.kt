@@ -96,6 +96,7 @@ class QuickCaptureWorker(
             repository.setColorsIfEmpty(id, colors)
         }
         runCatching { applyAiSuggestion(id) }
+        if (cutoutPath != null) entry.aiSuggestionStore().clearPending(id)
     }
 
     private suspend fun applyAiSuggestion(id: Long) {
@@ -126,18 +127,25 @@ class QuickCaptureWorker(
     companion object {
         private const val KEY_ITEM_ID = "item_id"
 
-        fun uniqueName(itemId: Long): String = "quick-capture-cutout-$itemId"
+        /**
+         * 连拍处理队列名。
+         *
+         * 串行而非并行：u2netp 的 GPU 解释器在同一进程内共享且初始化较重，
+         * 十张连拍同时起四个 Worker 时，模拟器/低端机容易卡在 delegate 初始化。
+         * 串行只影响后台完成时间，不影响拍摄与建档。
+         */
+        const val QUEUE_NAME = "quick-capture-queue"
 
         fun enqueue(context: Context, itemId: Long) {
             val request = OneTimeWorkRequestBuilder<QuickCaptureWorker>()
                 .setInputData(workDataOf(KEY_ITEM_ID to itemId))
                 .addTag("quick-capture")
                 .build()
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                uniqueName(itemId),
-                ExistingWorkPolicy.KEEP,
+            WorkManager.getInstance(context).beginUniqueWork(
+                QUEUE_NAME,
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
                 request,
-            )
+            ).enqueue()
         }
     }
 }

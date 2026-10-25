@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.yuhinhsiung.clothesmate.core.ai.QuickCaptureAiSuggestion
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -48,6 +49,26 @@ class QuickCaptureAiSuggestionStore @Inject constructor(
         if (current.remove(itemId.toString()) != null) write(current)
     }
 
+    /**
+     * 连拍待处理标记：入队前写入，Worker 成功裁图/取色后移除。
+     *
+     * 进程在 Worker 执行中被杀时 WorkManager 可能留下 RUNNING 的 WorkSpec，
+     * 只靠 WorkManager 自身无法可靠重跑。下次启动时据此集合重排缺失的裁图。
+     */
+    suspend fun markPending(itemId: Long) = mutex.withLock {
+        val current = dataStore.data.first()[PENDING_KEY].orEmpty().toMutableSet()
+        if (current.add(itemId.toString())) dataStore.edit { it[PENDING_KEY] = current }
+    }
+
+    suspend fun clearPending(itemId: Long) = mutex.withLock {
+        val current = dataStore.data.first()[PENDING_KEY].orEmpty().toMutableSet()
+        if (current.remove(itemId.toString())) dataStore.edit { it[PENDING_KEY] = current }
+    }
+
+    suspend fun pendingIds(): Set<Long> = mutex.withLock {
+        dataStore.data.first()[PENDING_KEY].orEmpty().mapNotNull { it.toLongOrNull() }.toSet()
+    }
+
     private suspend fun read(): Map<String, QuickCaptureAiSuggestion> {
         val raw = dataStore.data.first()[KEY] ?: return emptyMap()
         return runCatching { json.decodeFromString(serializer, raw) }.getOrDefault(emptyMap())
@@ -65,6 +86,7 @@ class QuickCaptureAiSuggestionStore @Inject constructor(
 
     private companion object {
         val KEY = stringPreferencesKey("quick_capture_ai_suggestions")
+        val PENDING_KEY = stringSetPreferencesKey("quick_capture_pending_ids")
         const val MAX_ENTRIES = 100
     }
 }
