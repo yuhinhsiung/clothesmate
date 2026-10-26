@@ -14,10 +14,10 @@ android {
     compileSdk = 37
 
     // M5-10: versionCode = major * 10000 + minor * 100 + patch.
-    // Release 1.0.0 => 10000; 1.0.1 => 10001. minor/patch each 0..99.
+    // Release 1.0.0 => 10000; 1.0.2 => 10002. minor/patch each 0..99.
     val appVersionMajor = 1
     val appVersionMinor = 0
-    val appVersionPatch = 1
+    val appVersionPatch = 2
     require(appVersionMinor in 0..99 && appVersionPatch in 0..99) {
         "minor/patch must be 0..99 so versionCode stays injective (1.0.100 == 1.1.0 is forbidden)"
     }
