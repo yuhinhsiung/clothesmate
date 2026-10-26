@@ -209,6 +209,14 @@ class UpdateManager @Inject constructor(
 
     fun openUnknownSourcesSettings() = installer.openUnknownSourcesSettings()
 
+    /** 用户从系统「安装未知应用」页返回后，把已授权的状态从 NeedsInstallPermission 推进到可安装。 */
+    fun refreshInstallPermission() {
+        val current = _state.value as? UpdateUiState.NeedsInstallPermission ?: return
+        if (installer.canRequestPackageInstalls()) {
+            _state.value = UpdateUiState.ReadyToInstall(current.info, current.file)
+        }
+    }
+
     private fun releasePage(): String =
         "https://github.com/${BuildConfig.GITHUB_OWNER}/${BuildConfig.GITHUB_REPO}/releases/latest"
 }

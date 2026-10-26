@@ -172,7 +172,10 @@ class DefaultBackupRepository @Inject constructor(
                 val previous = userSettingsStore.settings.first()
                 try {
                     applySettings(manifest.settings, credentials)
-                    db.withTransaction { importManifest(zip, manifest) }
+                    ImportSyncGate.pause(context, "AFTER_SETTINGS")
+                    val result = db.withTransaction { importManifest(zip, manifest) }
+                    ImportSyncGate.pause(context, "AFTER_COMMIT")
+                    result
                 } catch (failure: Throwable) {
                     // R04：补偿必须逐项进行。凭据写入失败时仍要恢复城市/风格/授权等
                     // 已写入的字段，不能因为第一个恢复动作再次失败而跳过其余字段。
@@ -349,6 +352,7 @@ class DefaultBackupRepository @Inject constructor(
             val original = copyImage(zip, old.originalImagePath, imageStorage.clothingOriginalFile(newId))
             val cutout = copyImage(zip, old.cutoutImagePath, imageStorage.clothingCutoutFile(newId))
             images += listOfNotNull(original, cutout).size
+            if (images >= 10) ImportSyncGate.pause(context, "DURING_IMAGES")
             clothingDao.update(
                 old.copy(
                     id = newId,
@@ -391,6 +395,7 @@ class DefaultBackupRepository @Inject constructor(
                 old.copy(id = 0, outfitId = old.outfitId?.let(outfitMap::get)),
             )
         }
+        ImportSyncGate.pause(context, "BEFORE_COMMIT")
         manifest.tags.forEach { tag -> tagDao.insert(tag.copy(id = 0)) }
         // R02：完整恢复编号历史。仍存在的持有人重映射；已物理删除的旧持有人用 -1 占位，
         // 既保留“这个号曾被使用”的占用语义，又不会误撞新实体 id。

@@ -19,4 +19,5 @@ class UpdateViewModel @Inject constructor(
     fun install() = manager.install()
     fun openReleasePage() = manager.openReleasePage()
     fun openUnknownSourcesSettings() = manager.openUnknownSourcesSettings()
+    fun refreshInstallPermission() = manager.refreshInstallPermission()
 }
