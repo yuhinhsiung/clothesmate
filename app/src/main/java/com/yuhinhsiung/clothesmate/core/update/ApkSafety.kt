@@ -44,16 +44,19 @@ class ApkMetadataReader(private val packageManager: PackageManager) {
     @Suppress("DEPRECATION")
     fun read(file: File): ApkMetadata? {
         if (!file.isFile || file.length() == 0L) return null
+        // API 28/29 do not populate signingInfo for archive APKs; keep GET_SIGNATURES as
+        // a fallback so signed APKs are not misclassified as MissingSignature.
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            PackageManager.GET_SIGNING_CERTIFICATES
+            PackageManager.GET_SIGNING_CERTIFICATES or PackageManager.GET_SIGNATURES
         } else {
             PackageManager.GET_SIGNATURES
         }
         val info: PackageInfo = packageManager.getPackageArchiveInfo(file.absolutePath, flags) ?: return null
-        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            info.signingInfo?.apkContentsSigners.orEmpty()
-        } else {
-            info.signatures.orEmpty()
+        val signatures = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                addAll(info.signingInfo?.apkContentsSigners.orEmpty())
+            }
+            if (isEmpty()) addAll(info.signatures.orEmpty())
         }
         val certs = signatures.mapNotNull { signature ->
             runCatching {
