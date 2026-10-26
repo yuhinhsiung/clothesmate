@@ -66,6 +66,7 @@ import com.yuhinhsiung.clothesmate.core.datastore.AiConsent
 import com.yuhinhsiung.clothesmate.core.database.TagDictionarySeeder
 import com.yuhinhsiung.clothesmate.core.datastore.AiStatus
 import com.yuhinhsiung.clothesmate.core.datastore.ThemeMode
+import com.yuhinhsiung.clothesmate.core.update.UpdateFailureStage
 import com.yuhinhsiung.clothesmate.core.update.UpdateUiState
 import com.yuhinhsiung.clothesmate.ui.component.AiPrivacyDialog
 import com.yuhinhsiung.clothesmate.ui.component.ChipGroup
@@ -793,7 +794,13 @@ private fun UpdateSection(viewModel: UpdateViewModel = hiltViewModel()) {
         )
         is UpdateUiState.ReadyToInstall -> stringResource(R.string.update_ready)
         is UpdateUiState.NeedsInstallPermission -> stringResource(R.string.update_needs_permission)
-        is UpdateUiState.Failed -> stringResource(R.string.update_failed)
+        is UpdateUiState.Failed -> stringResource(
+            when (current.stage) {
+                UpdateFailureStage.CHECK -> R.string.update_check_failed
+                UpdateFailureStage.DOWNLOAD -> R.string.update_download_failed
+                UpdateFailureStage.VERIFY -> R.string.update_verify_failed
+            },
+        )
     }
     SettingsRow(
         title = stringResource(R.string.update_title),

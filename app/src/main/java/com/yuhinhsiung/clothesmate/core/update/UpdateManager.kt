@@ -1,5 +1,6 @@
 package com.yuhinhsiung.clothesmate.core.update
 
+import android.util.Log
 import com.yuhinhsiung.clothesmate.BuildConfig
 import com.yuhinhsiung.clothesmate.core.di.ApplicationScope
 import java.io.File
@@ -14,6 +15,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+enum class UpdateFailureStage {
+    CHECK,
+    DOWNLOAD,
+    VERIFY,
+}
+
 sealed interface UpdateUiState {
     data object Idle : UpdateUiState
     data object Checking : UpdateUiState
@@ -22,7 +29,11 @@ sealed interface UpdateUiState {
     data class Downloading(val info: UpdateInfo, val downloaded: Long, val total: Long) : UpdateUiState
     data class ReadyToInstall(val info: UpdateInfo, val file: File) : UpdateUiState
     data class NeedsInstallPermission(val info: UpdateInfo, val file: File) : UpdateUiState
-    data class Failed(val message: String, val releasePageUrl: String) : UpdateUiState
+    data class Failed(
+        val stage: UpdateFailureStage,
+        val message: String,
+        val releasePageUrl: String,
+    ) : UpdateUiState
 }
 
 /**
@@ -79,8 +90,13 @@ class UpdateManager @Inject constructor(
             _state.value = when (result) {
                 is UpdateCheckResult.UpToDate -> UpdateUiState.UpToDate(result.latest.toString())
                 is UpdateCheckResult.Available -> UpdateUiState.Available(result.info)
-                is UpdateCheckResult.NoApk -> UpdateUiState.Failed("当前版本没有可用的 APK", releasePage())
+                is UpdateCheckResult.NoApk -> UpdateUiState.Failed(
+                    UpdateFailureStage.CHECK,
+                    "当前版本没有可用的 APK",
+                    releasePage(),
+                )
                 is UpdateCheckResult.Failure -> UpdateUiState.Failed(
+                    UpdateFailureStage.CHECK,
                     when (result.reason) {
                         UpdateFailure.HTTP -> "更新服务暂时不可用"
                         UpdateFailure.NETWORK -> "网络不可用，请稍后重试"
@@ -110,6 +126,7 @@ class UpdateManager @Inject constructor(
                         } else {
                             downloader.delete(job.file)
                             _state.value = UpdateUiState.Failed(
+                                UpdateFailureStage.VERIFY,
                                 "下载包校验未通过，已删除",
                                 info.releasePageUrl,
                             )
@@ -117,17 +134,23 @@ class UpdateManager @Inject constructor(
                     }
                     DownloadResult.Cancelled -> _state.value = UpdateUiState.Available(info)
                     DownloadResult.NoTrustedDigest -> _state.value = UpdateUiState.Failed(
+                        UpdateFailureStage.DOWNLOAD,
                         "发布资产没有可信校验值，请用浏览器下载",
                         info.releasePageUrl,
                     )
                     DownloadResult.RejectedUrl -> _state.value = UpdateUiState.Failed(
+                        UpdateFailureStage.DOWNLOAD,
                         "更新下载地址不在白名单内",
                         info.releasePageUrl,
                     )
-                    is DownloadResult.Failed -> _state.value = UpdateUiState.Failed(
-                        "下载失败：${job.reason}",
-                        info.releasePageUrl,
-                    )
+                    is DownloadResult.Failed -> {
+                        Log.w("UpdateManager", "download failed: ${job.reason}")
+                        _state.value = UpdateUiState.Failed(
+                            UpdateFailureStage.DOWNLOAD,
+                            downloadFailureText(job.reason),
+                            info.releasePageUrl,
+                        )
+                    }
                 }
             }
         }
@@ -163,11 +186,19 @@ class UpdateManager @Inject constructor(
             }
             InstallLaunchResult.FileMissing -> {
                 downloader.delete(file)
-                _state.value = UpdateUiState.Failed("安装包已被清理，请重新下载", info.releasePageUrl)
+                _state.value = UpdateUiState.Failed(
+                    UpdateFailureStage.DOWNLOAD,
+                    "安装包已被清理，请重新下载",
+                    info.releasePageUrl,
+                )
             }
             InstallLaunchResult.VerificationFailed -> {
                 downloader.delete(file)
-                _state.value = UpdateUiState.Failed("安装包校验未通过，已删除", info.releasePageUrl)
+                _state.value = UpdateUiState.Failed(
+                    UpdateFailureStage.VERIFY,
+                    "安装包校验未通过，已删除",
+                    info.releasePageUrl,
+                )
             }
         }
     }

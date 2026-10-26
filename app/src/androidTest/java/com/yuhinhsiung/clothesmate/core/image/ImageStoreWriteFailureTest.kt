@@ -40,10 +40,11 @@ class ImageStoreWriteFailureTest {
         try {
             store.promote(StagedImage(stagedFile, stagedFile.length()), destination)
             fail("写入不可写目录应失败")
-        } catch (expected: Exception) {
-            // 保存流程 catch Throwable 后显示 error.message；这里只要求失败可观察，
-            // 不把异常类型写死（Android 文件系统在不同 API 上抛出的具体类型不同）。
+        } catch (expected: ImageProcessException) {
+            // G14：归位链路的 IO 失败必须统一成 ImageProcessException，
+            // 调用方只按这一种类型兜底。
             assertTrue("失败必须带可读信息", !expected.message.isNullOrBlank())
+            assertTrue("原始 IO 异常必须保留为 cause", expected.cause != null)
         } finally {
             lockedDir.setWritable(true)
         }

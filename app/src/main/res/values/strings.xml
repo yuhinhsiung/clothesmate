@@ -602,7 +602,9 @@
     <string name="update_install">安装更新</string>
     <string name="update_needs_permission">需要允许安装未知应用</string>
     <string name="update_open_permission">去授权</string>
-    <string name="update_failed">更新检查失败</string>
+    <string name="update_check_failed">更新检查失败</string>
+    <string name="update_download_failed">更新下载失败</string>
+    <string name="update_verify_failed">更新校验失败</string>
     <string name="update_retry">重试</string>
     <string name="update_browser">浏览器下载</string>
     <string name="update_browser_hint">无法应用内安装时，请到 GitHub Releases 手动下载。</string>

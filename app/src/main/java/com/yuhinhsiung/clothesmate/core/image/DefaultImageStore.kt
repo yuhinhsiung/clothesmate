@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import com.yuhinhsiung.clothesmate.core.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
@@ -129,7 +130,11 @@ class DefaultImageStore @Inject constructor(
             }
         } catch (failure: Throwable) {
             temp.delete()
-            throw failure
+            if (failure is ImageProcessException || failure is CancellationException) throw failure
+            throw ImageProcessException(
+                "无法归位图片（旧文件保持原样）：${target.name}",
+                failure,
+            )
         }
         if (!temp.renameTo(target)) {
             temp.delete()
