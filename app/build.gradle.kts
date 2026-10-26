@@ -17,7 +17,7 @@ android {
     // Release 1.0.0 => 10000; 1.0.2 => 10002. minor/patch each 0..99.
     val appVersionMajor = 1
     val appVersionMinor = 0
-    val appVersionPatch = 2
+    val appVersionPatch = 3
     require(appVersionMinor in 0..99 && appVersionPatch in 0..99) {
         "minor/patch must be 0..99 so versionCode stays injective (1.0.100 == 1.1.0 is forbidden)"
     }

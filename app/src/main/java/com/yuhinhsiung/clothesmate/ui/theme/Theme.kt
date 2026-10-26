@@ -77,14 +77,23 @@ private val DarkColors = darkColorScheme(
 fun rememberReducedMotion(): Boolean {
     val context = LocalContext.current
     return remember(context) {
-        val scale = Settings.Global.getFloat(
+        val transitionScale = Settings.Global.getFloat(
             context.contentResolver,
             Settings.Global.TRANSITION_ANIMATION_SCALE,
             1f,
         )
-        scale == 0f
+        val animatorScale = Settings.Global.getFloat(
+            context.contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE,
+            1f,
+        )
+        isReducedMotion(transitionScale, animatorScale)
     }
 }
+
+/** 系统把任一动画缩放设为 0（含「移除动画」/「减弱动态效果」）即视为减弱动态。 */
+internal fun isReducedMotion(transitionScale: Float, animatorScale: Float): Boolean =
+    transitionScale == 0f || animatorScale == 0f
 
 /**
  * App 主题。
