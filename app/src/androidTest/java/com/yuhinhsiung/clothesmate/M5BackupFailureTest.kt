@@ -21,7 +21,10 @@ import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -117,6 +120,32 @@ class M5BackupFailureTest {
             val leftovers = images.walkTopDown().filter { it.isFile }.map { it.relativeTo(root).path }.toList()
             assertTrue("rolled-back import leaked final image files: $leftovers", leftovers.isEmpty())
         } finally { db.close() }
+    }
+
+    @Test fun cancelAfterCommitMustKeepRowsAndImages() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, ClothesMateDatabase::class.java).build()
+        val gate = File(context.filesDir, "import-sync-gate")
+        try {
+            val images = File(root, "images")
+            gate.writeText("AFTER_COMMIT")
+            val job = async(Dispatchers.IO) {
+                runCatching { repo(db, DefaultImageStorage(images, Dispatchers.IO)).import(zip(), "review-password") }
+            }
+            val committed = withTimeoutOrNull(10_000) {
+                while (db.backupDao().clothing().isEmpty()) delay(50)
+                true
+            }
+            assertTrue("import did not reach commit", committed == true)
+            job.cancel()
+            gate.delete()
+            job.join()
+            assertEquals("committed rows were rolled back by cancellation", 1, db.backupDao().clothing().size)
+            val copied = images.walkTopDown().filter { it.isFile }.toList()
+            assertTrue("committed image was deleted by cancellation: $copied", copied.isNotEmpty())
+        } finally {
+            gate.delete()
+            db.close()
+        }
     }
 
     @Test fun healthyImportControlStillCopiesImage() = runBlocking {

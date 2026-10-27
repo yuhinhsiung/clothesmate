@@ -78,6 +78,39 @@ class CrashRedactorTest {
     }
 
     @Test
+    fun `redacts quoted secret values with spaces and commas`() {
+        val out = CrashRedactor.redact(
+            """{"password":"prefix review-synthetic-password-tail","apiKey":"prefix,review-synthetic-api-tail"}""",
+        )
+        assertFalse(out.contains("review-synthetic-password-tail"))
+        assertFalse(out.contains("review-synthetic-api-tail"))
+        assertTrue(out.contains("[REDACTED]"))
+    }
+
+    @Test
+    fun `redacts nested response body through matching brace`() {
+        val out = CrashRedactor.redact(
+            """
+            responseBody={
+              "nested": {},
+              "message": "review-synthetic-private-response-tail"
+            }
+            Authorization: Bearer abc.def.ghi
+            """.trimIndent(),
+        )
+        assertFalse(out.contains("review-synthetic-private-response-tail"))
+        assertFalse(out.contains("abc.def.ghi"))
+        assertTrue(out.contains("[REDACTED_BODY]"))
+    }
+
+    @Test
+    fun `redacts truncated response body conservatively`() {
+        val out = CrashRedactor.redact("responseBody={\"message\":\"review-truncated-tail")
+        assertFalse(out.contains("review-truncated-tail"))
+        assertTrue(out.contains("[REDACTED_BODY]"))
+    }
+
+    @Test
     fun `keeps ordinary diagnostics readable`() {
         val text = "java.lang.IllegalStateException: empty wardrobe\n\tat com.example.Foo.bar(Foo.kt:12)"
         val out = CrashRedactor.redact(text)

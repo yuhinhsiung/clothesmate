@@ -160,33 +160,43 @@ class M5UpdateFailureRegressionTest {
         assertNull("auxiliary update cache exception reached uncaught handler: $unhandled", unhandled)
     }
 
+    @Test fun silentDuringManualMustNotIssueSecondRequest() = runBlocking {
+        val count = AtomicInteger()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val m = manager(repository {
+            count.incrementAndGet()
+            entered.complete(Unit)
+            release.await()
+            UpdateCheckResult.UpToDate(SemanticVersion(1, 0, 4))
+        })
+        m.checkManually()
+        withTimeout(5000) { entered.await() }
+        m.checkSilently()
+        delay(200)
+        release.complete(Unit)
+        withTimeout(5000) { m.state.first { it is UpdateUiState.UpToDate } }
+        delay(250)
+        assertEquals("silent check during manual issued a second request", 1, count.get())
+    }
+
     @Test fun overlappingSilentChecksMustShareOneRequest() = runBlocking {
         val count = AtomicInteger()
         val firstEntered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
-        val readCount = AtomicInteger()
-        val secondPassed = CompletableDeferred<Unit>()
-        val prefs = MutableStateFlow<Preferences>(emptyPreferences())
-        val raw = object : DataStore<Preferences> {
-            override val data: Flow<Preferences> = flow {
-                if (readCount.incrementAndGet() == 2) secondPassed.complete(Unit)
-                emit(prefs.value)
-            }
-            override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
-                transform(prefs.value).also { prefs.value = it }
-        }
         val m = manager(repository {
-            if (count.incrementAndGet() == 1) { firstEntered.complete(Unit); release.await() }
+            count.incrementAndGet()
+            if (count.get() == 1) { firstEntered.complete(Unit); release.await() }
             UpdateCheckResult.UpToDate(SemanticVersion(1, 0, 4))
-        }, UpdateCheckStore(raw))
+        })
         m.checkSilently()
         withTimeout(5000) { firstEntered.await() }
         m.checkSilently()
-        withTimeout(5000) { secondPassed.await() }
-        delay(150)
+        delay(200)
         release.complete(Unit)
         withTimeout(5000) { m.state.first { it is UpdateUiState.UpToDate } }
         delay(250)
         assertEquals("overlapping silent checks issued duplicate requests", 1, count.get())
     }
+
 }

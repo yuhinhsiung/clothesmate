@@ -34,6 +34,8 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -171,14 +173,28 @@ class DefaultBackupRepository @Inject constructor(
                 // 实体事务失败时用 NonCancellable 补偿恢复旧设置，避免“配置改了、数据没进来”。
                 val previous = userSettingsStore.settings.first()
                 val importedFiles = ImportFileJournal()
+                val commitMarker = ImportCommitMarker()
                 try {
                     applySettings(manifest.settings, credentials)
                     ImportSyncGate.pause(context, "AFTER_SETTINGS")
-                    val result = db.withTransaction { importManifest(zip, manifest, importedFiles) }
+                    val result = db.withTransaction {
+                        importManifest(zip, manifest, importedFiles, commitMarker)
+                    }
                     ImportSyncGate.pause(context, "AFTER_COMMIT")
+                    // 提交后、结果返回前也是一个可取消窗口；ensureActive 让取消在此
+                    // 立即抛出，交给 catch 的“已提交”判定保留数据与图片。
+                    currentCoroutineContext().ensureActive()
                     result
                 } catch (failure: Throwable) {
-                    // R05：文件复制不属于 Room 事务。事务回滚/取消后，本批次已落到
+                    // R05：取消可能发生在 SQLite 已提交、withTransaction 尚未把结果
+                    // 交回 IO continuation 的窗口。此时不能把“调用取消”当成“事务回滚”。
+                    // 先查本批次写入的 id 是否真实可见：可见 = 已提交，保留图片/设置；
+                    // 不可见 = 已回滚，才清理文件并恢复设置。
+                    val committed = withContext(NonCancellable) {
+                        commitMarker.isCommitted(wardrobeDao, clothingDao)
+                    }
+                    if (committed) throw failure
+                    // 文件复制不属于 Room 事务。事务回滚/取消后，本批次已落到
                     // 正式路径的图片必须一并删除，否则会留下无 DB 引用的孤儿。
                     withContext(NonCancellable) { importedFiles.cleanup() }
                     // R04：补偿必须逐项进行。凭据写入失败时仍要恢复城市/风格/授权等
@@ -298,12 +314,14 @@ class DefaultBackupRepository @Inject constructor(
         zip: ZipFile,
         manifest: BackupManifest,
         journal: ImportFileJournal,
+        commitMarker: ImportCommitMarker,
     ): ImportResult {
         var images = 0
         var skipped = 0
         val wardrobeMap = mutableMapOf<Long, Long>()
         manifest.wardrobes.forEach { old ->
             val newId = wardrobeDao.insert(old.copy(id = 0, coverImagePath = null))
+            commitMarker.wardrobes += newId
             wardrobeMap[old.id] = newId
             val cover = journal.copy(zip, old.coverImagePath, imageStorage.wardrobeCoverFile(newId))
             if (cover != null) {
@@ -354,6 +372,7 @@ class DefaultBackupRepository @Inject constructor(
                     cutoutImagePath = null,
                 ),
             )
+            commitMarker.clothing += newId
             clothingMap[old.id] = newId
             assignedCodes[old.id] = code
             reservedCodes += code
@@ -465,6 +484,28 @@ class DefaultBackupRepository @Inject constructor(
      * 于是“本机冲突 → 顺延”会重新发出备份历史里的退役号。这里用导入批次
      * 内共享的 [assignedCodes] 做闭包分配，保证一次导入内也不重复。
      */
+    /**
+     * R05：记录本次导入实际插入的行 id，用于取消后判断事务是否真的提交。
+     * 事务提交后这些 id 在 Room 中可见；回滚后不可见。
+     */
+    private class ImportCommitMarker {
+        val wardrobes = java.util.concurrent.CopyOnWriteArrayList<Long>()
+        val clothing = java.util.concurrent.CopyOnWriteArrayList<Long>()
+
+        suspend fun isCommitted(
+            wardrobeDao: WardrobeDao,
+            clothingDao: ClothingItemDao,
+        ): Boolean {
+            if (wardrobes.isNotEmpty() && wardrobes.all { wardrobeDao.findById(it) != null }) {
+                return true
+            }
+            if (clothing.isNotEmpty() && clothing.all { clothingDao.findById(it) != null }) {
+                return true
+            }
+            return false
+        }
+    }
+
     /**
      * R01/R05：本次导入的图片产物日志。
      *

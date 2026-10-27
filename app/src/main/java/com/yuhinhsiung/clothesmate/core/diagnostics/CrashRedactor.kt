@@ -20,9 +20,9 @@ object CrashRedactor {
 
     private val skKey = Regex("""\bsk-[A-Za-z0-9_-]{8,}\b""")
 
-    /** key=value / "apiKey":"..." / Authorization: ... 等字段。 */
+    /** key=value / "apiKey":"..." / Authorization: ... 等字段（值由下方按引号边界消费）。 */
     private val secretField = Regex(
-        """(?i)\b(api[_-]?key|apikey|access[_-]?token|refresh[_-]?token|token|secret|password|passwd|authorization|private[_-]?key)\b(["']?\s*[:=]\s*)(["']?)[^"'\s,;&}]+""",
+        """(?i)\b(api[_-]?key|apikey|access[_-]?token|refresh[_-]?token|token|secret|password|passwd|authorization|private[_-]?key)\b(["']?\s*[:=]\s*)(["']?)""",
     )
 
     private val urlQuery = Regex("""([?&](?:key|api[_-]?key|token|access_token|sig|signature|secret)=)[^&#\s]+""", RegexOption.IGNORE_CASE)
@@ -34,8 +34,8 @@ object CrashRedactor {
         """(?i)\b(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|PRAGMA)\b[^\n]*""",
     )
 
-    private val httpBody = Regex(
-        """(?is)\b(body|responseBody|response_body)\s*[=:]\s*(\{.*?\}|\[.*?\]|[^\n]{4,})""",
+    private val httpBodyHeader = Regex(
+        """(?i)\b(body|responseBody|response_body)\b\s*[=:]\s*""",
     )
 
     fun redact(input: String): String {
@@ -43,13 +43,124 @@ object CrashRedactor {
         output = pemBlock.replace(output, "[REDACTED_PRIVATE_KEY]")
         output = bearer.replace(output, "Bearer [REDACTED]")
         output = skKey.replace(output, "sk-[REDACTED]")
-        output = secretField.replace(output) { match ->
-            "${match.groupValues[1]}${match.groupValues[2]}[REDACTED]"
-        }
+        output = redactSecretFields(output)
         output = urlQuery.replace(output) { match -> "${match.groupValues[1]}[REDACTED]" }
-        output = httpBody.replace(output) { match -> "${match.groupValues[1]}=[REDACTED_BODY]" }
+        output = redactHttpBodies(output)
         output = filePath.replace(output, "[REDACTED_PATH]")
         output = sqlText.replace(output, "[REDACTED_SQL]")
         return output
+    }
+
+    /**
+     * 按字段值的真实边界消费，而不是在第一个空格/逗号/右括号处截止。
+     *
+     * - 带引号的值一直消费到未转义的闭引号，内部空格、逗号、&、; 都不泄漏；
+     * - 无引号的值仍按空白/分隔符截止，避免吞掉整行普通日志；
+     * - 截断的引号值消费到文本末尾（保守）。
+     */
+    private fun redactSecretFields(input: String): String {
+        val output = StringBuilder(input.length)
+        var cursor = 0
+        while (true) {
+            val match = secretField.find(input, cursor) ?: break
+            output.append(input, cursor, match.range.first)
+            val quote = match.groupValues[3].firstOrNull()
+            output.append(match.groupValues[1])
+            output.append(match.groupValues[2])
+            if (quote != null) output.append(quote)
+            output.append("[REDACTED]")
+
+            var value = match.range.last + 1
+            if (quote != null) {
+                value = consumeQuoted(input, value, quote)
+                if (value < input.length && input[value] == quote) {
+                    value++
+                    output.append(quote)
+                }
+            } else {
+                while (value < input.length) {
+                    val ch = input[value]
+                    if (ch.isWhitespace() || ch in ",;&}") break
+                    value++
+                }
+            }
+            cursor = value
+        }
+        output.append(input, cursor, input.length)
+        return output.toString()
+    }
+
+    /**
+     * 响应体无法可靠地按最小括号匹配；一旦识别到 body 字段，就整段消费：
+     * 结构完整时消费到配对的闭括号/闭引号，截断或解析失败时消费到文本末尾。
+     */
+    private fun redactHttpBodies(input: String): String {
+        val output = StringBuilder(input.length)
+        var cursor = 0
+        while (true) {
+            val match = httpBodyHeader.find(input, cursor) ?: break
+            output.append(input, cursor, match.range.first)
+            output.append(match.groupValues[1]).append("=[REDACTED_BODY]")
+            cursor = consumeBody(input, match.range.last + 1)
+        }
+        output.append(input, cursor, input.length)
+        return output.toString()
+    }
+
+    private fun consumeBody(input: String, start: Int): Int {
+        var index = start
+        while (index < input.length && input[index].isWhitespace()) index++
+        if (index >= input.length) return index
+        return when (input[index]) {
+            '{', '[' -> consumeBalanced(input, index)
+            '"', '\'' -> consumeQuoted(input, index + 1, input[index]).let { end ->
+                if (end < input.length && input[end] == input[index]) end + 1 else end
+            }
+            else -> {
+                while (index < input.length && input[index] != '\n') index++
+                index
+            }
+        }
+    }
+
+    private fun consumeBalanced(input: String, start: Int): Int {
+        var depth = 0
+        var index = start
+        var quote: Char? = null
+        while (index < input.length) {
+            val ch = input[index]
+            if (quote != null) {
+                if (ch == '\\') {
+                    index += 2
+                    continue
+                }
+                if (ch == quote) quote = null
+            } else {
+                when (ch) {
+                    '{', '[' -> depth++
+                    '}', ']' -> {
+                        depth--
+                        if (depth == 0) return index + 1
+                    }
+                    '"', '\'' -> quote = ch
+                }
+            }
+            index++
+        }
+        return input.length
+    }
+
+    private fun consumeQuoted(input: String, start: Int, quote: Char): Int {
+        var index = start
+        while (index < input.length) {
+            val ch = input[index]
+            if (ch == '\\') {
+                index += 2
+                continue
+            }
+            if (ch == quote) return index
+            index++
+        }
+        return input.length
     }
 }

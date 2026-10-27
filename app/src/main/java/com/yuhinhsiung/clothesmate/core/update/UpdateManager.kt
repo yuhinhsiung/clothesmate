@@ -4,7 +4,6 @@ import android.util.Log
 import com.yuhinhsiung.clothesmate.BuildConfig
 import com.yuhinhsiung.clothesmate.core.di.ApplicationScope
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -56,7 +55,6 @@ class UpdateManager @Inject constructor(
     val state: StateFlow<UpdateUiState> = _state.asStateFlow()
 
     private val checkMutex = Mutex()
-    private val silentGate = AtomicBoolean(false)
     private val downloadMutex = Mutex()
     private var downloadJob: Job? = null
     private var downloadSession: Any? = null
@@ -68,21 +66,7 @@ class UpdateManager @Inject constructor(
     }
 
     fun checkSilently() {
-        appScope.launch {
-            val now = System.currentTimeMillis()
-            val shouldCheck = runCatching {
-                checkStore.shouldCheckSilently(now, BuildConfig.VERSION_NAME)
-            }.getOrDefault(false)
-            if (!shouldCheck) return@launch
-            // R06：TTL 读取在锁外，但用 CAS 抢占，旋转/重建不会把同一轮静默检查
-            // 排成第二次网络请求。抢占失败说明已有静默检查在途，直接复用其结果。
-            if (!silentGate.compareAndSet(false, true)) return@launch
-            try {
-                checkInternal(manual = false)
-            } finally {
-                silentGate.set(false)
-            }
-        }
+        appScope.launch { checkInternal(manual = false) }
     }
 
     fun checkManually() {
@@ -92,6 +76,17 @@ class UpdateManager @Inject constructor(
     private suspend fun checkInternal(manual: Boolean) {
         checkMutex.withLock {
             if (_state.value is UpdateUiState.Downloading) return
+            if (!manual) {
+                // R06：TTL 必须在真正发请求的同一把锁内重新判断。锁外预检只省一次
+                // 排队，不能作为节流依据；旋转/双 silent/手动在途都要看到最新缓存。
+                val shouldCheck = runCatching {
+                    checkStore.shouldCheckSilently(
+                        now = System.currentTimeMillis(),
+                        currentVersion = BuildConfig.VERSION_NAME,
+                    )
+                }.getOrDefault(false)
+                if (!shouldCheck) return
+            }
             _state.value = UpdateUiState.Checking
             val result = try {
                 repository.check(BuildConfig.VERSION_NAME)
