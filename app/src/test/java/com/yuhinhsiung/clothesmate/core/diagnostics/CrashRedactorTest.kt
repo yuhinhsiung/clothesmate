@@ -50,6 +50,34 @@ class CrashRedactorTest {
     }
 
     @Test
+    fun `redacts quoted json secret fields`() {
+        val out = CrashRedactor.redact(
+            """{"apiKey":"sk-live-12345678","password":"p@ss word","Authorization":"Bearer abc.def"}""",
+        )
+        assertFalse(out.contains("sk-live-12345678"))
+        assertFalse(out.contains("p@ss word"))
+        assertFalse(out.contains("abc.def"))
+        assertTrue(out.contains("[REDACTED]"))
+    }
+
+    @Test
+    fun `redacts multiline response bodies without leaking later secrets`() {
+        val out = CrashRedactor.redact(
+            """
+            responseBody={
+              "access_token": "secret-token-value",
+              "nested": {"password": "another-secret"}
+            }
+            Authorization: Bearer abc.def.ghi
+            """.trimIndent(),
+        )
+        assertFalse(out.contains("secret-token-value"))
+        assertFalse(out.contains("another-secret"))
+        assertFalse(out.contains("abc.def.ghi"))
+        assertTrue(out.contains("[REDACTED_BODY]") || out.contains("[REDACTED]"))
+    }
+
+    @Test
     fun `keeps ordinary diagnostics readable`() {
         val text = "java.lang.IllegalStateException: empty wardrobe\n\tat com.example.Foo.bar(Foo.kt:12)"
         val out = CrashRedactor.redact(text)

@@ -4,8 +4,10 @@ import android.util.Log
 import com.yuhinhsiung.clothesmate.BuildConfig
 import com.yuhinhsiung.clothesmate.core.di.ApplicationScope
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import okhttp3.Call
 
 enum class UpdateFailureStage {
     CHECK,
@@ -53,8 +56,11 @@ class UpdateManager @Inject constructor(
     val state: StateFlow<UpdateUiState> = _state.asStateFlow()
 
     private val checkMutex = Mutex()
+    private val silentGate = AtomicBoolean(false)
     private val downloadMutex = Mutex()
     private var downloadJob: Job? = null
+    private var downloadSession: Any? = null
+    @Volatile private var activeCall: Call? = null
 
     init {
         // 进程死亡后不保留旧包，也不凭旧 Ready 状态安装。
@@ -64,8 +70,18 @@ class UpdateManager @Inject constructor(
     fun checkSilently() {
         appScope.launch {
             val now = System.currentTimeMillis()
-            if (!checkStore.shouldCheckSilently(now, BuildConfig.VERSION_NAME)) return@launch
-            checkInternal(manual = false)
+            val shouldCheck = runCatching {
+                checkStore.shouldCheckSilently(now, BuildConfig.VERSION_NAME)
+            }.getOrDefault(false)
+            if (!shouldCheck) return@launch
+            // R06：TTL 读取在锁外，但用 CAS 抢占，旋转/重建不会把同一轮静默检查
+            // 排成第二次网络请求。抢占失败说明已有静默检查在途，直接复用其结果。
+            if (!silentGate.compareAndSet(false, true)) return@launch
+            try {
+                checkInternal(manual = false)
+            } finally {
+                silentGate.set(false)
+            }
         }
     }
 
@@ -82,11 +98,18 @@ class UpdateManager @Inject constructor(
             } catch (failure: Exception) {
                 UpdateCheckResult.Failure(UpdateFailure.NETWORK)
             }
-            checkStore.recordAttempt(
-                now = System.currentTimeMillis(),
-                version = BuildConfig.VERSION_NAME,
-                successful = result !is UpdateCheckResult.Failure,
-            )
+            // R03：节流时间是辅助缓存，DataStore 落盘失败不能把一次可用的检查
+            // 变成应用级未捕获异常；状态仍要发布给 UI。
+            runCatching {
+                checkStore.recordAttempt(
+                    now = System.currentTimeMillis(),
+                    version = BuildConfig.VERSION_NAME,
+                    successful = result !is UpdateCheckResult.Failure,
+                )
+            }.onFailure {
+                if (it is CancellationException) throw it
+                Log.w("UpdateManager", "update check cache write failed", it)
+            }
             _state.value = when (result) {
                 is UpdateCheckResult.UpToDate -> UpdateUiState.UpToDate(result.latest.toString())
                 is UpdateCheckResult.Available -> UpdateUiState.Available(result.info)
@@ -110,13 +133,29 @@ class UpdateManager @Inject constructor(
 
     fun download() {
         if (downloadJob?.isActive == true) return
-        downloadJob = appScope.launch {
+        val session = Any()
+        downloadSession = session
+        activeCall = null
+        val job = appScope.launch {
             downloadMutex.withLock {
                 val info = (_state.value as? UpdateUiState.Available)?.info ?: return@withLock
+                if (downloadSession !== session) return@withLock
                 _state.value = UpdateUiState.Downloading(info, 0L, info.assetSizeBytes)
-                val job = downloader.download(info) { downloaded, total ->
-                    _state.value = UpdateUiState.Downloading(info, downloaded, total)
-                }
+                val job = downloader.download(
+                    info = info,
+                    // R04：旧读线程即使晚到，也不能把已取消/新会话的状态改回 Downloading。
+                    onProgress = { downloaded, total ->
+                        if (downloadSession === session && _state.value is UpdateUiState.Downloading) {
+                            _state.value = UpdateUiState.Downloading(info, downloaded, total)
+                        }
+                    },
+                    onCall = { call ->
+                        if (downloadSession === session) activeCall = call else call.cancel()
+                    },
+                )
+                if (downloadSession !== session) return@withLock
+                downloadSession = null
+                activeCall = null
                 downloadJob = null
                 when (job) {
                     is DownloadResult.Success -> {
@@ -154,10 +193,17 @@ class UpdateManager @Inject constructor(
                 }
             }
         }
+        downloadJob = job
     }
 
     fun cancelDownload() {
-        downloadJob?.cancel()
+        val job = downloadJob ?: return
+        // 先失效会话并取消真实 OkHttp Call，再取消协程；阻塞 read 会立即退出，
+        // 且晚到的进度回调会被会话检查丢弃。
+        downloadSession = null
+        activeCall?.cancel()
+        activeCall = null
+        job.cancel()
         downloadJob = null
         val current = _state.value
         if (current is UpdateUiState.Downloading) {

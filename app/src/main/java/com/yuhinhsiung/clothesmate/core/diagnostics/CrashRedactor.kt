@@ -22,7 +22,7 @@ object CrashRedactor {
 
     /** key=value / "apiKey":"..." / Authorization: ... 等字段。 */
     private val secretField = Regex(
-        """(?i)\b(api[_-]?key|apikey|access[_-]?token|refresh[_-]?token|token|secret|password|passwd|authorization|private[_-]?key)\b(\s*[:=]\s*)(["']?)[^"'\s,;&}]+""",
+        """(?i)\b(api[_-]?key|apikey|access[_-]?token|refresh[_-]?token|token|secret|password|passwd|authorization|private[_-]?key)\b(["']?\s*[:=]\s*)(["']?)[^"'\s,;&}]+""",
     )
 
     private val urlQuery = Regex("""([?&](?:key|api[_-]?key|token|access_token|sig|signature|secret)=)[^&#\s]+""", RegexOption.IGNORE_CASE)
@@ -35,7 +35,7 @@ object CrashRedactor {
     )
 
     private val httpBody = Regex(
-        """(?i)\b(body|responseBody|response_body)\s*[=:]\s*[^\n]{4,}""",
+        """(?is)\b(body|responseBody|response_body)\s*[=:]\s*(\{.*?\}|\[.*?\]|[^\n]{4,})""",
     )
 
     fun redact(input: String): String {

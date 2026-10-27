@@ -27,6 +27,9 @@ class UpdateCheckStore @Inject constructor(
     suspend fun shouldCheckSilently(now: Long, currentVersion: String): Boolean {
         val lastAttempt = lastAttemptAt()
         if (lastAttempt <= 0L) return true
+        // R08：未来时间戳视为异常（用户手动改过系统时间/时区回拨），
+        // 不能让它把静默检查压到“未来时间 + 24h”。让它立即失效并重新记录。
+        if (lastAttempt > now) return true
         // 版本变化（覆盖安装）立即检查一次；同一版本 24h 内不重复自动请求。
         if (lastCheckedVersion() != currentVersion) return true
         return now - lastAttempt >= TWENTY_FOUR_HOURS_MS

@@ -42,9 +42,9 @@ class DefaultUpdateRepository @Inject constructor(
         if (candidates.isEmpty()) return UpdateCheckResult.NoApk(NoApkReason.NO_APK)
         if (candidates.size > 1) return UpdateCheckResult.NoApk(NoApkReason.AMBIGUOUS_APK)
         val asset = candidates.single()
-        // 资产名必须携带 tag 的版本号，避免把别的版本挂到 latest 上。
-        val versionToken = tagVersion.toString()
-        if (!asset.name.contains(versionToken)) {
+        // R07：资产名必须按版本 token 的完整边界匹配，不能用 contains。
+        // 否则 v1.0.1 + clothesmate-1.0.10.apk 会被误当成同一版本。
+        if (!assetNameMatchesVersion(asset.name, tagVersion.toString())) {
             return UpdateCheckResult.NoApk(NoApkReason.TAG_ASSET_MISMATCH)
         }
         if (release.html_url.isBlank() || asset.browser_download_url.isBlank()) {
@@ -62,5 +62,13 @@ class DefaultUpdateRepository @Inject constructor(
                 releasePageUrl = release.html_url,
             ),
         )
+    }
+
+    private fun assetNameMatchesVersion(name: String, version: String): Boolean {
+        val token = Regex.escape(version)
+        return Regex(
+            "^clothesmate-$token(?:-(?:arm64|arm64-v8a|armeabi-v7a|x86_64|x86))?\\.apk$",
+            RegexOption.IGNORE_CASE,
+        ).matches(name)
     }
 }

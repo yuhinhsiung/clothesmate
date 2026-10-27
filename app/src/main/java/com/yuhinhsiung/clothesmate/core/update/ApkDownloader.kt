@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -50,6 +51,7 @@ class ApkDownloader @Inject constructor(
     suspend fun download(
         info: UpdateInfo,
         onProgress: (downloaded: Long, total: Long) -> Unit = { _, _ -> },
+        onCall: (Call) -> Unit = {},
     ): DownloadResult = withContext(Dispatchers.IO) {
         if (!info.hasTrustedDigest) return@withContext DownloadResult.NoTrustedDigest
         val expected = info.assetDigest!!.removePrefix("sha256:").lowercase()
@@ -59,7 +61,9 @@ class ApkDownloader @Inject constructor(
             while (true) {
                 if (!isAllowed(url)) return@withContext DownloadResult.RejectedUrl
                 val request = Request.Builder().url(url).header("Accept", "application/octet-stream").build()
-                client.newCall(request).execute().use { response ->
+                val call = client.newCall(request)
+                onCall(call)
+                call.execute().use { response ->
                     if (response.isRedirect) {
                         if (redirects++ >= MAX_REDIRECTS) return@withContext DownloadResult.RejectedUrl
                         val location = response.header("Location")
@@ -86,6 +90,9 @@ class ApkDownloader @Inject constructor(
                             while (true) {
                                 currentCoroutineContext().ensureActive()
                                 val read = input.read(buffer)
+                                // R04：取消可能发生在阻塞 read 期间；读完必须再查一次活跃性，
+                                // 不能在已取消的协程里继续发布进度或落盘。
+                                currentCoroutineContext().ensureActive()
                                 if (read < 0) break
                                 output.write(buffer, 0, read)
                                 digest.update(buffer, 0, read)

@@ -73,6 +73,18 @@ class UpdateRepositoryTest {
     }
 
     @Test
+    fun assetVersionMustMatchAtTokenBoundary() = runBlocking {
+        server.enqueue(jsonResponse(releaseJson(tag = "v1.0.1", assetName = "clothesmate-1.0.10.apk", digest = DIGEST)))
+        assertEquals(NoApkReason.TAG_ASSET_MISMATCH, (repository.check("1.0.0") as UpdateCheckResult.NoApk).reason)
+    }
+
+    @Test
+    fun assetWithArchitectureSuffixStillMatchesVersion() = runBlocking {
+        server.enqueue(jsonResponse(releaseJson(tag = "v1.0.1", assetName = "clothesmate-1.0.1-arm64.apk", digest = DIGEST)))
+        assertTrue(repository.check("1.0.0") is UpdateCheckResult.Available)
+    }
+
+    @Test
     fun httpErrorIsFailure() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(403))
         assertEquals(UpdateFailure.HTTP, (repository.check("1.0.0") as UpdateCheckResult.Failure).reason)

@@ -170,13 +170,17 @@ class DefaultBackupRepository @Inject constructor(
                 // 先写设置、再写实体：设置写失败时不会留下已提交的业务数据。
                 // 实体事务失败时用 NonCancellable 补偿恢复旧设置，避免“配置改了、数据没进来”。
                 val previous = userSettingsStore.settings.first()
+                val importedFiles = ImportFileJournal()
                 try {
                     applySettings(manifest.settings, credentials)
                     ImportSyncGate.pause(context, "AFTER_SETTINGS")
-                    val result = db.withTransaction { importManifest(zip, manifest) }
+                    val result = db.withTransaction { importManifest(zip, manifest, importedFiles) }
                     ImportSyncGate.pause(context, "AFTER_COMMIT")
                     result
                 } catch (failure: Throwable) {
+                    // R05：文件复制不属于 Room 事务。事务回滚/取消后，本批次已落到
+                    // 正式路径的图片必须一并删除，否则会留下无 DB 引用的孤儿。
+                    withContext(NonCancellable) { importedFiles.cleanup() }
                     // R04：补偿必须逐项进行。凭据写入失败时仍要恢复城市/风格/授权等
                     // 已写入的字段，不能因为第一个恢复动作再次失败而跳过其余字段。
                     val unrestored = withContext(NonCancellable) { restoreSettings(previous) }
@@ -290,14 +294,18 @@ class DefaultBackupRepository @Inject constructor(
         }
     }
 
-    private suspend fun importManifest(zip: ZipFile, manifest: BackupManifest): ImportResult {
+    private suspend fun importManifest(
+        zip: ZipFile,
+        manifest: BackupManifest,
+        journal: ImportFileJournal,
+    ): ImportResult {
         var images = 0
         var skipped = 0
         val wardrobeMap = mutableMapOf<Long, Long>()
         manifest.wardrobes.forEach { old ->
             val newId = wardrobeDao.insert(old.copy(id = 0, coverImagePath = null))
             wardrobeMap[old.id] = newId
-            val cover = copyImage(zip, old.coverImagePath, imageStorage.wardrobeCoverFile(newId))
+            val cover = journal.copy(zip, old.coverImagePath, imageStorage.wardrobeCoverFile(newId))
             if (cover != null) {
                 images++
                 wardrobeDao.update(old.copy(id = newId, coverImagePath = cover))
@@ -349,8 +357,8 @@ class DefaultBackupRepository @Inject constructor(
             clothingMap[old.id] = newId
             assignedCodes[old.id] = code
             reservedCodes += code
-            val original = copyImage(zip, old.originalImagePath, imageStorage.clothingOriginalFile(newId))
-            val cutout = copyImage(zip, old.cutoutImagePath, imageStorage.clothingCutoutFile(newId))
+            val original = journal.copy(zip, old.originalImagePath, imageStorage.clothingOriginalFile(newId))
+            val cutout = journal.copy(zip, old.cutoutImagePath, imageStorage.clothingCutoutFile(newId))
             images += listOfNotNull(original, cutout).size
             if (images >= 10) ImportSyncGate.pause(context, "DURING_IMAGES")
             clothingDao.update(
@@ -369,7 +377,7 @@ class DefaultBackupRepository @Inject constructor(
             val newId = outfitDao.insert(old.copy(id = 0, photoPaths = emptyList()))
             outfitMap[old.id] = newId
             val photos = old.photoPaths.mapIndexedNotNull { index, path ->
-                copyImage(zip, path, imageStorage.outfitPhotoFile(newId, index))?.also { images++ }
+                journal.copy(zip, path, imageStorage.outfitPhotoFile(newId, index))?.also { images++ }
             }
             outfitDao.update(old.copy(id = newId, photoPaths = photos))
         }
@@ -457,17 +465,52 @@ class DefaultBackupRepository @Inject constructor(
      * 于是“本机冲突 → 顺延”会重新发出备份历史里的退役号。这里用导入批次
      * 内共享的 [assignedCodes] 做闭包分配，保证一次导入内也不重复。
      */
-    private suspend fun copyImage(zip: ZipFile, source: String?, target: File): String? {
-        if (source.isNullOrBlank()) return null
-        val entry = zip.getEntry(source) ?: return null
-        val parent = target.parentFile
-        if (parent != null && !parent.isDirectory && !parent.mkdirs()) return null
-        return runCatching {
-            zip.getInputStream(entry).use { input ->
-                target.outputStream().buffered().use { output -> input.copyTo(output) }
+    /**
+     * R01/R05：本次导入的图片产物日志。
+     *
+     * 源 entry 缺失仍按既有契约跳过（null）；目标目录/文件写入失败则抛错中止，
+     * 由 import 统一回滚 Room + 删除本批次已创建的文件。
+     */
+    private inner class ImportFileJournal {
+        private val created = mutableListOf<File>()
+
+        fun copy(zip: ZipFile, source: String?, target: File): String? {
+            if (source.isNullOrBlank()) return null
+            val entry = zip.getEntry(source) ?: return null
+            val parent = target.parentFile
+                ?: throw BackupException("图片目标没有父目录：${target.name}")
+            if (!parent.isDirectory && !parent.mkdirs()) {
+                throw BackupException("无法创建图片目录：${parent.name}")
             }
-            imageStorage.toRelative(target)
-        }.getOrNull()
+            if (target.exists() && !target.isFile) {
+                throw BackupException("图片目标被占用：${target.name}")
+            }
+            val temp = File(parent, ".${target.name}.import-${System.nanoTime()}")
+            try {
+                zip.getInputStream(entry).use { input ->
+                    temp.outputStream().buffered().use { output -> input.copyTo(output) }
+                }
+                if (!temp.renameTo(target)) {
+                    // 不同文件系统/目标已存在时 rename 可能失败；copyTo 仍失败则向上抛。
+                    temp.copyTo(target, overwrite = true)
+                    temp.delete()
+                }
+                created += target
+                return imageStorage.toRelative(target)
+            } catch (cancelled: CancellationException) {
+                temp.delete()
+                throw cancelled
+            } catch (failure: Exception) {
+                temp.delete()
+                runCatching { if (target.isFile) target.delete() }
+                throw BackupException("写入图片失败：${target.name}", failure)
+            }
+        }
+
+        fun cleanup() {
+            created.asReversed().forEach { file -> runCatching { file.delete() } }
+            created.clear()
+        }
     }
 
     private fun copyToTemp(uri: Uri): File {

@@ -49,6 +49,13 @@ class UpdateCheckStoreTest {
     }
 
     @Test
+    fun futureTimestampDoesNotSuppressChecksForMonths() = runTest {
+        val now = 1_000_000_000L
+        store.recordAttempt(now + 90L * 24 * 60 * 60 * 1000, "1.0.0", successful = true)
+        assertTrue(store.shouldCheckSilently(now, "1.0.0"))
+    }
+
+    @Test
     fun versionChangeBypassesCacheAndFailureStillThrottles() = runTest {
         val now = 1_000_000_000L
         store.recordAttempt(now, "1.0.0", successful = false)
