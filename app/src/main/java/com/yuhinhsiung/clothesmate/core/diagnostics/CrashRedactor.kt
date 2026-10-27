@@ -82,7 +82,7 @@ object CrashRedactor {
             } else {
                 while (value < input.length) {
                     val ch = input[value]
-                    if (ch.isWhitespace() || ch in ",;&}\"'") break
+                    if (ch.isWhitespace() || ch in ",;&}") break
                     value++
                 }
             }

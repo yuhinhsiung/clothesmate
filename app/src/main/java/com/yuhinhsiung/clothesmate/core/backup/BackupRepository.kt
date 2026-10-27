@@ -173,17 +173,21 @@ class DefaultBackupRepository @Inject constructor(
                 // 实体事务失败时用 NonCancellable 补偿恢复旧设置，避免“配置改了、数据没进来”。
                 val previous = userSettingsStore.settings.first()
                 val importedFiles = ImportFileJournal()
-                val commitMarker = ImportCommitMarker()
+                // R05：事务内写一条批次 token；catch 只认 token 是否真的可见。
+                // 这覆盖只含标签/分类、甚至只含设置的合法备份——不再依赖某个业务实体 id。
+                ensureImportMarkerTable()
+                val commitToken = java.util.UUID.randomUUID().toString()
                 try {
                     applySettings(manifest.settings, credentials)
                     ImportSyncGate.pause(context, "AFTER_SETTINGS")
                     val result = db.withTransaction {
-                        importManifest(zip, manifest, importedFiles, commitMarker)
+                        importManifest(zip, manifest, importedFiles, commitToken)
                     }
                     ImportSyncGate.pause(context, "AFTER_COMMIT")
                     // 提交后、结果返回前也是一个可取消窗口；ensureActive 让取消在此
                     // 立即抛出，交给 catch 的“已提交”判定保留数据与图片。
                     currentCoroutineContext().ensureActive()
+                    deleteImportMarker(commitToken)
                     result
                 } catch (failure: Throwable) {
                     // R05：取消可能发生在 SQLite 已提交、withTransaction 尚未把结果
@@ -191,9 +195,12 @@ class DefaultBackupRepository @Inject constructor(
                     // 先查本批次写入的 id 是否真实可见：可见 = 已提交，保留图片/设置；
                     // 不可见 = 已回滚，才清理文件并恢复设置。
                     val committed = withContext(NonCancellable) {
-                        commitMarker.isCommitted(wardrobeDao, clothingDao, outfitDao)
+                        isImportCommitted(commitToken)
                     }
-                    if (committed) throw failure
+                    if (committed) {
+                        withContext(NonCancellable) { deleteImportMarker(commitToken) }
+                        throw failure
+                    }
                     // 文件复制不属于 Room 事务。事务回滚/取消后，本批次已落到
                     // 正式路径的图片必须一并删除，否则会留下无 DB 引用的孤儿。
                     withContext(NonCancellable) { importedFiles.cleanup() }
@@ -314,14 +321,17 @@ class DefaultBackupRepository @Inject constructor(
         zip: ZipFile,
         manifest: BackupManifest,
         journal: ImportFileJournal,
-        commitMarker: ImportCommitMarker,
+        commitToken: String,
     ): ImportResult {
+        db.openHelper.writableDatabase.execSQL(
+            "INSERT OR REPLACE INTO import_commit_marker (token) VALUES (?)",
+            arrayOf(commitToken),
+        )
         var images = 0
         var skipped = 0
         val wardrobeMap = mutableMapOf<Long, Long>()
         manifest.wardrobes.forEach { old ->
             val newId = wardrobeDao.insert(old.copy(id = 0, coverImagePath = null))
-            commitMarker.wardrobes += newId
             wardrobeMap[old.id] = newId
             val cover = journal.copy(zip, old.coverImagePath, imageStorage.wardrobeCoverFile(newId))
             if (cover != null) {
@@ -372,7 +382,6 @@ class DefaultBackupRepository @Inject constructor(
                     cutoutImagePath = null,
                 ),
             )
-            commitMarker.clothing += newId
             clothingMap[old.id] = newId
             assignedCodes[old.id] = code
             reservedCodes += code
@@ -394,7 +403,6 @@ class DefaultBackupRepository @Inject constructor(
         val outfitMap = mutableMapOf<Long, Long>()
         manifest.outfits.forEach { old ->
             val newId = outfitDao.insert(old.copy(id = 0, photoPaths = emptyList()))
-            commitMarker.outfits += newId
             outfitMap[old.id] = newId
             val photos = old.photoPaths.mapIndexedNotNull { index, path ->
                 journal.copy(zip, path, imageStorage.outfitPhotoFile(newId, index))?.also { images++ }
@@ -473,45 +481,29 @@ class DefaultBackupRepository @Inject constructor(
     }
 
     /**
-     * R02：导入专用的编号分配。
+     * R05：导入事务的批次标记。
      *
-     * 可用性必须同时覆盖四处，缺一不可：
-     * 1. 本机现存/软删除衣物占用的编号；
-     * 2. 本机编号历史（含已退役、持有人已物理删除的号）；
-     * 3. 备份内其他衣物当前的编号；
-     * 4. 备份内全部历史编号（持有人不是当前旧衣物时不可复用）。
-     *
-     * 旧实现只检查前三者的一部分，并直接调用只认本机库的 CodeAllocator，
-     * 于是“本机冲突 → 顺延”会重新发出备份历史里的退役号。这里用导入批次
-     * 内共享的 [assignedCodes] 做闭包分配，保证一次导入内也不重复。
+     * 事务内插入唯一 token，提交后 token 可见，回滚则不可见。它不依赖任何业务实体，
+     * 因此只含标签/分类、甚至只含设置的合法备份也能正确判定“已提交”。
+     * 表是导入内部簿记，不属于 Room schema，不需要迁移。
      */
-    /**
-     * R05：记录本次导入实际插入的行 id，用于取消后判断事务是否真的提交。
-     * 事务提交后这些 id 在 Room 中可见；回滚后不可见。
-     */
-    private class ImportCommitMarker {
-        val wardrobes = java.util.concurrent.CopyOnWriteArrayList<Long>()
-        val clothing = java.util.concurrent.CopyOnWriteArrayList<Long>()
-        val outfits = java.util.concurrent.CopyOnWriteArrayList<Long>()
+    private fun ensureImportMarkerTable() {
+        db.openHelper.writableDatabase.execSQL(
+            "CREATE TABLE IF NOT EXISTS import_commit_marker (token TEXT PRIMARY KEY NOT NULL)",
+        )
+        // 不清理其他批次：导入并发时误删别人的 token 会把“已提交”判成“回滚”。
+    }
 
-        suspend fun isCommitted(
-            wardrobeDao: WardrobeDao,
-            clothingDao: ClothingItemDao,
-            outfitDao: OutfitDao,
-        ): Boolean {
-            if (wardrobes.isNotEmpty() && wardrobes.all { wardrobeDao.findById(it) != null }) {
-                return true
-            }
-            if (clothing.isNotEmpty() && clothing.all { clothingDao.findById(it) != null }) {
-                return true
-            }
-            // R05：备份可以只含带照片的穿搭（wardrobe/clothing 为空）；穿搭照片同样
-            // 走 journal 复制，必须纳入提交判定，否则提交后取消会误删正式图片。
-            if (outfits.isNotEmpty() && outfits.all { outfitDao.findById(it) != null }) {
-                return true
-            }
-            return false
-        }
+    private fun isImportCommitted(token: String): Boolean =
+        db.openHelper.readableDatabase
+            .query("SELECT 1 FROM import_commit_marker WHERE token = ?", arrayOf(token))
+            .use { it.moveToFirst() }
+
+    private fun deleteImportMarker(token: String) {
+        db.openHelper.writableDatabase.execSQL(
+            "DELETE FROM import_commit_marker WHERE token = ?",
+            arrayOf(token),
+        )
     }
 
     /**
