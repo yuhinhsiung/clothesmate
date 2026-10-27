@@ -35,17 +35,19 @@ object CrashRedactor {
     )
 
     private val httpBodyHeader = Regex(
-        """(?i)\b(body|responseBody|response_body)\b\s*[=:]\s*""",
+        """(?i)(["']?)\b(responseBody|response_body|body)\b\1\s*[:=]\s*""",
     )
 
     fun redact(input: String): String {
         var output = input
         output = pemBlock.replace(output, "[REDACTED_PRIVATE_KEY]")
+        // R02：必须先隔离完整 response body，再做字段/Token 替换。否则字段规则会把
+        // body 内部的引号/逗号/花括号当成秘密值边界，破坏后续括号扫描的语法。
+        output = redactHttpBodies(output)
         output = bearer.replace(output, "Bearer [REDACTED]")
         output = skKey.replace(output, "sk-[REDACTED]")
         output = redactSecretFields(output)
         output = urlQuery.replace(output) { match -> "${match.groupValues[1]}[REDACTED]" }
-        output = redactHttpBodies(output)
         output = filePath.replace(output, "[REDACTED_PATH]")
         output = sqlText.replace(output, "[REDACTED_SQL]")
         return output
@@ -80,7 +82,7 @@ object CrashRedactor {
             } else {
                 while (value < input.length) {
                     val ch = input[value]
-                    if (ch.isWhitespace() || ch in ",;&}") break
+                    if (ch.isWhitespace() || ch in ",;&}\"'") break
                     value++
                 }
             }
@@ -100,7 +102,7 @@ object CrashRedactor {
         while (true) {
             val match = httpBodyHeader.find(input, cursor) ?: break
             output.append(input, cursor, match.range.first)
-            output.append(match.groupValues[1]).append("=[REDACTED_BODY]")
+            output.append(match.groupValues[2]).append("=[REDACTED_BODY]")
             cursor = consumeBody(input, match.range.last + 1)
         }
         output.append(input, cursor, input.length)
@@ -124,7 +126,8 @@ object CrashRedactor {
     }
 
     private fun consumeBalanced(input: String, start: Int): Int {
-        var depth = 0
+        // R02：用类型栈校验 {} / [] 配对；错配或未闭合一律消费到末尾（保守）。
+        val closing = java.util.ArrayDeque<Char>()
         var index = start
         var quote: Char? = null
         while (index < input.length) {
@@ -137,10 +140,11 @@ object CrashRedactor {
                 if (ch == quote) quote = null
             } else {
                 when (ch) {
-                    '{', '[' -> depth++
+                    '{' -> closing.addLast('}')
+                    '[' -> closing.addLast(']')
                     '}', ']' -> {
-                        depth--
-                        if (depth == 0) return index + 1
+                        if (closing.isEmpty() || closing.removeLast() != ch) return input.length
+                        if (closing.isEmpty()) return index + 1
                     }
                     '"', '\'' -> quote = ch
                 }

@@ -111,6 +111,29 @@ class CrashRedactorTest {
     }
 
     @Test
+    fun `body isolation survives secret-like text and a second redaction`() {
+        val input = """responseBody={"a":"password=x","b":"password=y } review-synthetic-private-tail"}"""
+        val once = CrashRedactor.redact(input)
+        val twice = CrashRedactor.redact(once)
+        assertFalse(once.contains("review-synthetic-private-tail"))
+        assertFalse(twice.contains("review-synthetic-private-tail"))
+    }
+
+    @Test
+    fun `quoted response body field is isolated`() {
+        val out = CrashRedactor.redact("""{"responseBody":{"nested":{},"message":"review-synthetic-private-tail"}}""")
+        assertFalse(out.contains("review-synthetic-private-tail"))
+        assertTrue(out.contains("[REDACTED_BODY]"))
+    }
+
+    @Test
+    fun `mismatched bracket consumes to end`() {
+        val out = CrashRedactor.redact("responseBody={] review-synthetic-private-tail")
+        assertFalse(out.contains("review-synthetic-private-tail"))
+        assertTrue(out.contains("[REDACTED_BODY]"))
+    }
+
+    @Test
     fun `keeps ordinary diagnostics readable`() {
         val text = "java.lang.IllegalStateException: empty wardrobe\n\tat com.example.Foo.bar(Foo.kt:12)"
         val out = CrashRedactor.redact(text)

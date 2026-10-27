@@ -9,6 +9,7 @@ import com.yuhinhsiung.clothesmate.core.backup.BackupManifest
 import com.yuhinhsiung.clothesmate.core.backup.DefaultBackupRepository
 import com.yuhinhsiung.clothesmate.core.database.ClothesMateDatabase
 import com.yuhinhsiung.clothesmate.core.database.entity.ClothingItemEntity
+import com.yuhinhsiung.clothesmate.core.database.entity.OutfitEntity
 import com.yuhinhsiung.clothesmate.core.database.entity.TagDictionaryEntity
 import com.yuhinhsiung.clothesmate.core.database.entity.WardrobeEntity
 import com.yuhinhsiung.clothesmate.core.datastore.CodeCounterStore
@@ -120,6 +121,56 @@ class M5BackupFailureTest {
             val leftovers = images.walkTopDown().filter { it.isFile }.map { it.relativeTo(root).path }.toList()
             assertTrue("rolled-back import leaked final image files: $leftovers", leftovers.isEmpty())
         } finally { db.close() }
+    }
+
+    private fun outfitOnlyZip(): Uri {
+        val manifest = BackupManifest(
+            exportedAt = 1,
+            outfits = listOf(
+                OutfitEntity(
+                    id = 30, name = "only-outfit", photoPaths = listOf("outfit/30/0.jpg"),
+                    styleTags = emptyList(), sceneTags = emptyList(), seasonTags = emptyList(),
+                    createdAt = 1, updatedAt = 1,
+                ),
+            ),
+        )
+        val file = File(root, "outfit-only.zip")
+        ZipOutputStream(file.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("manifest.json"))
+            zip.write(Json { encodeDefaults = true }.encodeToString(BackupManifest.serializer(), manifest).toByteArray())
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("outfit/30/0.jpg"))
+            zip.write(byteArrayOf(9, 8, 7, 6))
+            zip.closeEntry()
+        }
+        return Uri.fromFile(file)
+    }
+
+    @Test fun cancelAfterCommitMustKeepOutfitPhoto() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, ClothesMateDatabase::class.java).build()
+        val gate = File(context.filesDir, "import-sync-gate")
+        try {
+            val images = File(root, "images")
+            gate.writeText("AFTER_COMMIT")
+            val job = async(Dispatchers.IO) {
+                runCatching { repo(db, DefaultImageStorage(images, Dispatchers.IO)).import(outfitOnlyZip(), "review-password") }
+            }
+            val committed = withTimeoutOrNull(10_000) {
+                while (db.backupDao().outfits().isEmpty()) delay(50)
+                true
+            }
+            assertTrue("outfit-only import did not reach commit", committed == true)
+            job.cancel()
+            gate.delete()
+            job.join()
+            val outfit = db.backupDao().outfits().singleOrNull()
+            assertTrue("committed outfit was rolled back", outfit != null)
+            val photo = File(images, outfit!!.photoPaths.single())
+            assertTrue("committed outfit photo was deleted: $photo", photo.exists())
+        } finally {
+            gate.delete()
+            db.close()
+        }
     }
 
     @Test fun cancelAfterCommitMustKeepRowsAndImages() = runBlocking {

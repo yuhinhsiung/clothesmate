@@ -191,7 +191,7 @@ class DefaultBackupRepository @Inject constructor(
                     // 先查本批次写入的 id 是否真实可见：可见 = 已提交，保留图片/设置；
                     // 不可见 = 已回滚，才清理文件并恢复设置。
                     val committed = withContext(NonCancellable) {
-                        commitMarker.isCommitted(wardrobeDao, clothingDao)
+                        commitMarker.isCommitted(wardrobeDao, clothingDao, outfitDao)
                     }
                     if (committed) throw failure
                     // 文件复制不属于 Room 事务。事务回滚/取消后，本批次已落到
@@ -394,6 +394,7 @@ class DefaultBackupRepository @Inject constructor(
         val outfitMap = mutableMapOf<Long, Long>()
         manifest.outfits.forEach { old ->
             val newId = outfitDao.insert(old.copy(id = 0, photoPaths = emptyList()))
+            commitMarker.outfits += newId
             outfitMap[old.id] = newId
             val photos = old.photoPaths.mapIndexedNotNull { index, path ->
                 journal.copy(zip, path, imageStorage.outfitPhotoFile(newId, index))?.also { images++ }
@@ -491,15 +492,22 @@ class DefaultBackupRepository @Inject constructor(
     private class ImportCommitMarker {
         val wardrobes = java.util.concurrent.CopyOnWriteArrayList<Long>()
         val clothing = java.util.concurrent.CopyOnWriteArrayList<Long>()
+        val outfits = java.util.concurrent.CopyOnWriteArrayList<Long>()
 
         suspend fun isCommitted(
             wardrobeDao: WardrobeDao,
             clothingDao: ClothingItemDao,
+            outfitDao: OutfitDao,
         ): Boolean {
             if (wardrobes.isNotEmpty() && wardrobes.all { wardrobeDao.findById(it) != null }) {
                 return true
             }
             if (clothing.isNotEmpty() && clothing.all { clothingDao.findById(it) != null }) {
+                return true
+            }
+            // R05：备份可以只含带照片的穿搭（wardrobe/clothing 为空）；穿搭照片同样
+            // 走 journal 复制，必须纳入提交判定，否则提交后取消会误删正式图片。
+            if (outfits.isNotEmpty() && outfits.all { outfitDao.findById(it) != null }) {
                 return true
             }
             return false
