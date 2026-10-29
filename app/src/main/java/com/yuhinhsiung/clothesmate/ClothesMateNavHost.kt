@@ -87,6 +87,8 @@ import com.yuhinhsiung.clothesmate.feature.settings.ui.SettingsAboutRoute
 import com.yuhinhsiung.clothesmate.feature.settings.ui.diagnostics.DiagnosticsRoute
 import com.yuhinhsiung.clothesmate.feature.settings.ui.BackupRoute
 import com.yuhinhsiung.clothesmate.feature.settings.ui.CleanupOriginalsRoute
+import com.yuhinhsiung.clothesmate.ui.navigation.NavLayout
+import com.yuhinhsiung.clothesmate.ui.navigation.navLayoutFor
 import com.yuhinhsiung.clothesmate.ui.navigation.CleanupOriginals
 import com.yuhinhsiung.clothesmate.ui.navigation.Diagnostics
 import com.yuhinhsiung.clothesmate.ui.navigation.Backup
@@ -278,7 +280,7 @@ fun ClothesMateNavHost(
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-    val wideWindow = maxWidth >= 600.dp
+    val wideWindow = navLayoutFor(maxWidth) == NavLayout.RAIL
     Row(modifier = Modifier.fillMaxSize()) {
         if (wideWindow && showBottomBar) {
             NavigationRail(

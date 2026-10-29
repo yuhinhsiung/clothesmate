@@ -21,4 +21,14 @@ class AdaptiveContentTest {
     fun `expanded width is capped at 840`() {
         assertEquals(840.dp, adaptiveContentWidth(1000.dp))
     }
+
+    @Test
+    fun `breakpoint 839 stays medium`() {
+        assertEquals(600.dp, adaptiveContentWidth(839.dp))
+    }
+
+    @Test
+    fun `breakpoint 840 becomes expanded`() {
+        assertEquals(840.dp, adaptiveContentWidth(840.dp))
+    }
 }

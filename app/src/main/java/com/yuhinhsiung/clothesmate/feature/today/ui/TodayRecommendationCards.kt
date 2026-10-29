@@ -38,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.core.model.ClothingItem
@@ -320,6 +321,12 @@ private fun recommendationReminder(recommended: RecommendedOutfit): String? {
  * 顺序：标签/件数 → 完整照片 → 换一套/记穿 → 推荐理由。照片槽上限 300dp，
  * contain 不裁人；0 照片才用衣物组合兜底。
  */
+internal fun todayPhotoHeight(fontScale: Float): Dp = when {
+    fontScale >= 1.9f -> 160.dp
+    fontScale >= 1.4f -> 220.dp
+    else -> 200.dp
+}
+
 @Composable
 internal fun TodayHeroCard(
     recommended: RecommendedOutfit,
@@ -334,12 +341,7 @@ internal fun TodayHeroCard(
     modifier: Modifier = Modifier,
 ) {
     val outfit = recommended.outfit.outfit
-    val fontScale = LocalDensity.current.fontScale
-    val photoHeight = when {
-        fontScale >= 1.9f -> 160.dp
-        fontScale >= 1.4f -> 220.dp
-        else -> 200.dp
-    }
+    val photoHeight = todayPhotoHeight(LocalDensity.current.fontScale)
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
