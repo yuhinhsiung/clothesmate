@@ -84,7 +84,7 @@ class ClothingPickerViewModel @Inject constructor(
                         item.displayName.contains(token) ||
                         item.styleTags.any { it.contains(token) }
                 }
-            }.sortedBy { it.code.toLongOrNull() ?: Long.MAX_VALUE },
+            }.let(::sortForPicker),
             wardrobes = wardrobes.map { it.toDomain() },
             query = q,
             wardrobeFilter = w,
@@ -133,3 +133,7 @@ data class ClothingPickerUiState(
     /** 已选 id，按选择顺序（序号圆点） */
     val selectedIds: List<Long> = emptyList(),
 )
+
+/** M6-10：按编号数值升序；非数字编号排最后，同号按 id 稳定排序。 */
+internal fun sortForPicker(items: List<ClothingItem>): List<ClothingItem> =
+    items.sortedWith(compareBy({ it.code.toLongOrNull() ?: Long.MAX_VALUE }, { it.id }))
