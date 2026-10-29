@@ -2,16 +2,21 @@ package com.yuhinhsiung.clothesmate.ui.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -20,6 +25,7 @@ import coil3.compose.SubcomposeAsyncImage
 import coil3.compose.SubcomposeAsyncImageContent
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.core.image.ImageStorage
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.LocalAtelierColors
@@ -47,7 +53,9 @@ fun CmAsyncImage(
     val storage = LocalImageStorage.current
     val reducedMotion = LocalReducedMotion.current
     val colors = LocalAtelierColors.current
-    val request = remember(model, reducedMotion) {
+    val errorDescription = stringResource(R.string.photo_unreadable_retry)
+    var retryCount by remember(model) { mutableIntStateOf(0) }
+    val request = remember(model, reducedMotion, retryCount) {
         ImageRequest.Builder(context)
             .data(resolveModel(storage, model))
             .crossfade(enable = !reducedMotion)
@@ -69,15 +77,19 @@ fun CmAsyncImage(
                 Box(Modifier.fillMaxSize().background(colors.imageCanvas))
             },
             error = {
+                // M6-04：坏图是独立错误态，点按只重试这一张，不冒充“从未有照片”。
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(colors.imageCanvas)
-                        .semantics { this.contentDescription = "图片无法读取" },
+                        .clickable { retryCount++ }
+                        .semantics {
+                            this.contentDescription = errorDescription
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = AppIcons.BrokenImage,
+                        imageVector = AppIcons.Refresh,
                         contentDescription = null,
                         tint = colors.textSecondary,
                         modifier = Modifier.size(24.dp),
