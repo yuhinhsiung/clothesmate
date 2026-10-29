@@ -3,6 +3,7 @@ package com.yuhinhsiung.clothesmate.feature.outfit.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -193,7 +194,14 @@ fun ClothingPickerRoute(
                 }
             }
 
-            if (uiState.items.isEmpty()) {
+            if (!uiState.isLoaded) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (uiState.items.isEmpty()) {
                 com.yuhinhsiung.clothesmate.ui.component.EmptyState(
                     spec = EmptyStateSpec(
                         icon = AppIcons.Wardrobe,

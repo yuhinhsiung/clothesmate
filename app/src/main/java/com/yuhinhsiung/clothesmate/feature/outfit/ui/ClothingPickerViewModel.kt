@@ -92,6 +92,7 @@ class ClothingPickerViewModel @Inject constructor(
             includeStored = stored,
             storedCount = domain.count { it.isStored },
             selectedIds = ids,
+            isLoaded = true,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClothingPickerUiState())
 
@@ -132,6 +133,8 @@ data class ClothingPickerUiState(
     val storedCount: Int = 0,
     /** 已选 id，按选择顺序（序号圆点） */
     val selectedIds: List<Long> = emptyList(),
+    /** 首帧 DAO/DB 尚未返回时为 false，避免把“加载中”误显示成“没有可选的衣物”。 */
+    val isLoaded: Boolean = false,
 )
 
 /** M6-10：按编号数值升序；非数字编号排最后，同号按 id 稳定排序。 */
