@@ -151,6 +151,10 @@
     <string name="clothing_form_title_add">录入衣物</string>
     <string name="clothing_form_title_edit">编辑衣物</string>
     <string name="form_section_category">类别</string>
+    <string name="form_color_summary_none">选择颜色</string>
+    <string name="form_color_summary_count">已选 %1$d 色</string>
+    <string name="form_color_sheet_title">主颜色（可多选）</string>
+    <string name="form_color_done">完成</string>
     <string name="form_section_color">主颜色</string>
     <string name="form_section_style">风格</string>
     <string name="form_section_season">适合季节</string>

@@ -1,6 +1,11 @@
 package com.yuhinhsiung.clothesmate.feature.wardrobe.ui.form
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.ModalBottomSheet
+import com.yuhinhsiung.clothesmate.ui.component.ColorDot
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -90,6 +95,7 @@ fun ClothingFormRoute(
     var showWardrobePicker by rememberSaveable { mutableStateOf(false) }
     var showDiscard by remember { mutableStateOf(false) }
     var showCustomTag by remember { mutableStateOf(false) }
+    var showColorSheet by rememberSaveable { mutableStateOf(false) }
 
     // 编辑目标不存在（已删除等）：直接退回
     LaunchedEffect(uiState.notFound) {
@@ -151,6 +157,7 @@ fun ClothingFormRoute(
             onTopCategorySelect = viewModel::onTopCategoryChange,
             onSubCategorySelect = viewModel::onSubCategoryChange,
             onColorToggle = viewModel::onColorToggle,
+            onOpenColorSheet = { showColorSheet = true },
             onStyleToggle = viewModel::onStyleToggle,
             onSeasonToggle = viewModel::onSeasonToggle,
             onNameChange = viewModel::onNameChange,
@@ -206,6 +213,37 @@ fun ClothingFormRoute(
         )
     }
 
+    if (showColorSheet) {
+        ModalBottomSheet(onDismissRequest = { showColorSheet = false }) {
+            Column(modifier = Modifier.padding(horizontal = Dimens.pagePadding)) {
+                Text(
+                    text = stringResource(R.string.form_color_sheet_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(Modifier.height(Dimens.Space.s3))
+                ChipGroup(
+                    options = ClothingColor.entries.map { color ->
+                        ChipOption(
+                            key = color.key,
+                            label = color.displayName,
+                            color = com.yuhinhsiung.clothesmate.ui.theme.ClothingColors.dotColor(color),
+                        )
+                    },
+                    selectedKeys = uiState.colorKeys.toSet(),
+                    onToggle = viewModel::onColorToggle,
+                    accentSelectedKeys = emptySet(),
+                )
+                TextButton(
+                    onClick = { showColorSheet = false },
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text(stringResource(R.string.form_color_done))
+                }
+                Spacer(Modifier.height(Dimens.Space.s4))
+            }
+        }
+    }
+
     if (showDiscard) {
         DiscardChangesDialog(
             onDismiss = { showDiscard = false },
@@ -227,6 +265,7 @@ private fun ClothingFormContent(
     onTopCategorySelect: (String) -> Unit,
     onSubCategorySelect: (String) -> Unit,
     onColorToggle: (String) -> Unit,
+    onOpenColorSheet: () -> Unit,
     onStyleToggle: (String) -> Unit,
     onSeasonToggle: (String) -> Unit,
     onNameChange: (String) -> Unit,
@@ -353,18 +392,9 @@ private fun ClothingFormContent(
                     null
                 },
             )
-            ChipGroup(
-                options = ClothingColor.entries.map { color ->
-                    ChipOption(
-                        key = color.key,
-                        label = color.displayName,
-                        color = com.yuhinhsiung.clothesmate.ui.theme.ClothingColors.dotColor(color),
-                    )
-                },
-                selectedKeys = state.colorKeys.toSet(),
-                onToggle = onColorToggle,
-                // 本地取色的选中态用普通 primaryContainer，不加 AI 金色描边
-                accentSelectedKeys = emptySet(),
+            ColorSummaryRow(
+                selectedKeys = state.colorKeys,
+                onClick = onOpenColorSheet,
             )
 
             // ── 风格：联想 chips + 自定义 ──────────────────────
@@ -517,6 +547,47 @@ private fun ClothingFormContent(
 }
 
 /** 表单分组标签（§6.7「标签常驻上方」）；可带 ✨ AI 角标或中性「本地提取」文字。 */
+@Composable
+internal fun ColorSummaryRow(selectedKeys: List<String>, onClick: () -> Unit) {
+    val selected = ClothingColor.entries.filter { it.key in selectedKeys }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = Dimens.buttonHeight)
+            .clip(RoundedCornerShape(Dimens.Radius.m))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(Dimens.Radius.m))
+            .clickable(onClick = onClick)
+            .padding(horizontal = Dimens.Space.s3, vertical = Dimens.Space.s2),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (selected.isEmpty()) {
+            Text(
+                text = stringResource(R.string.form_color_summary_none),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onMuted,
+            )
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s1)) {
+                selected.forEach { color ->
+                    ColorDot(color = com.yuhinhsiung.clothesmate.ui.theme.ClothingColors.dotColor(color))
+                }
+            }
+            Spacer(Modifier.width(Dimens.Space.s2))
+            Text(
+                text = stringResource(R.string.form_color_summary_count, selected.size),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        Icon(
+            imageVector = AppIcons.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onMuted,
+        )
+    }
+}
+
 @Composable
 private fun FormSectionLabel(
     text: String,
