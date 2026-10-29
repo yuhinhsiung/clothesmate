@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -132,6 +134,40 @@ fun ClothingDetailRoute(
                     if (item != null) {
                         TextButton(onClick = { onEdit(item.id) }) {
                             Text(stringResource(R.string.clothing_action_edit))
+                        }
+                        // M6-08：危险操作收进更多菜单，顶栏只留“编辑”主行动。
+                        Box {
+                            var showMore by remember { mutableStateOf(false) }
+                            IconButton(onClick = { showMore = true }) {
+                                Icon(
+                                    AppIcons.More,
+                                    contentDescription = stringResource(R.string.clothing_action_more),
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showMore,
+                                onDismissRequest = { showMore = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = stringResource(R.string.clothing_action_delete),
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            AppIcons.Delete,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.error,
+                                        )
+                                    },
+                                    onClick = {
+                                        showMore = false
+                                        showDelete = true
+                                    },
+                                )
+                            }
                         }
                     }
                 },
@@ -298,10 +334,7 @@ fun ClothingDetailRoute(
                     }
                 }
 
-                // 底部操作：删除 / 收起 / 编辑
-                // review UI-03：三个 TextButton 原先直接塞在固定 Row 里，360dp + 200% 字号下
-                // 被挤到「编 / 辑」上下两行、图标与基线错位。改 FlowRow：放得下就一行，
-                // 放不下**整组换行**，每个按钮始终保持自己的完整宽度，字号不缩。
+                // M6-08：底部只保留“收起/恢复”低风险操作；删除已移至顶栏更多菜单。
                 androidx.compose.foundation.layout.FlowRow(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -309,19 +342,6 @@ fun ClothingDetailRoute(
                     horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s3),
                     verticalArrangement = Arrangement.spacedBy(Dimens.Space.s1),
                 ) {
-                    TextButton(onClick = { showDelete = true }) {
-                        Icon(
-                            AppIcons.Delete,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                        Text(
-                            text = stringResource(R.string.clothing_action_delete),
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.padding(start = Dimens.Space.s1),
-                        )
-                    }
                     TextButton(onClick = viewModel::toggleStored) {
                         Icon(
                             AppIcons.Store,

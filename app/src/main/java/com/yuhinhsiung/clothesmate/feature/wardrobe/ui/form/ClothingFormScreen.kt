@@ -105,6 +105,12 @@ fun ClothingFormRoute(
     // M1-15：有已填写内容时返回先确认
     BackHandler(enabled = uiState.userModified && !uiState.saving) { showDiscard = true }
 
+    val saveForm: () -> Unit = {
+        viewModel.save { savedWardrobeId, isEdit ->
+            if (isEdit) onSavedEdit() else onSavedCreate(savedWardrobeId)
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -129,6 +135,18 @@ fun ClothingFormRoute(
                     )
                 },
                 actions = {
+                    // M6-08：编辑态在页头提供保存入口，不依赖滚动到底部。
+                    if (uiState.isEdit) {
+                        TextButton(
+                            onClick = saveForm,
+                            enabled = uiState.canSave && !uiState.saving,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.form_save),
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
+                    }
                     // M2-04「全部采纳」：AI 结果返回后出现在顶栏（mockup-06）
                     if (uiState.aiSuggestions != null) {
                         TextButton(onClick = viewModel::acceptAll) {
@@ -170,11 +188,8 @@ fun ClothingFormRoute(
             onCancelAi = viewModel::cancelRecognition,
             onOpenSettings = onOpenSettings,
             onRetryImage = viewModel::retryImageStash,
-            onSave = {
-                viewModel.save { wardrobeId, isEdit ->
-                    if (isEdit) onSavedEdit() else onSavedCreate(wardrobeId)
-                }
-            },
+            onSave = saveForm,
+            showBottomSave = !uiState.isEdit,
             modifier = Modifier
                 .padding(innerPadding)
                 .imePadding(),
@@ -280,6 +295,7 @@ private fun ClothingFormContent(
     onRetryImage: () -> Unit,
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
+    showBottomSave: Boolean = true,
 ) {
     Column(
         modifier = modifier
@@ -520,6 +536,8 @@ private fun ClothingFormContent(
             }
 
             // ── 主按钮 ────────────────────────────────────────
+            // M6-08：编辑态保存固定在页头，底部不再重复。
+            if (showBottomSave) {
             Button(
                 onClick = onSave,
                 enabled = state.canSave,
@@ -541,6 +559,7 @@ private fun ClothingFormContent(
                     ),
                     style = MaterialTheme.typography.labelLarge,
                 )
+            }
             }
         }
     }

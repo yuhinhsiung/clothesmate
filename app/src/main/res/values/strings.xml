@@ -89,6 +89,7 @@
     <string name="clothing_action_store">收起</string>
     <string name="clothing_action_restore">恢复正常</string>
     <string name="clothing_action_edit">编辑</string>
+    <string name="clothing_action_more">更多操作</string>
     <string name="clothing_delete_title">删除 No.%1$s？</string>
     <string name="clothing_delete_subtitle">删除后可在提示里撤回，图片不会从手机丢失</string>
     <!-- review R-10：被穿搭引用时的后果说明（引用数 > 0 才显示） -->
