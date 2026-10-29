@@ -45,6 +45,7 @@ class SearchViewModel @Inject constructor(
     private val categoryFilter = MutableStateFlow(route.categoryKey)
     private val colorFilter = MutableStateFlow<String?>(null)
     private val styleFilter = MutableStateFlow<String?>(null)
+    private val scope = MutableStateFlow(SearchScope.ALL)
 
     /**
      * 分词 + 枚举别名翻译在 [ClothingRepository.search] 内完成（W-07「红 上衣」这类
@@ -57,12 +58,16 @@ class SearchViewModel @Inject constructor(
         categoryFilter,
         colorFilter,
         styleFilter,
-    ) { q, c, col, s -> SearchFilters(q, c, col, s) }
-        .flatMapLatest { filters -> clothingRepository.search(filters.query) }
+        scope,
+    ) { q, c, col, s, sc -> SearchFilters(q, c, col, s, sc) }
+        .flatMapLatest { filters ->
+            if (filters.scope == SearchScope.OUTFIT) kotlinx.coroutines.flow.flowOf(emptyList())
+            else clothingRepository.search(filters.query)
+        }
 
     val uiState: StateFlow<SearchUiState> = combine(
-        combine(query, categoryFilter, colorFilter, styleFilter) { q, c, col, s ->
-            SearchFilters(q, c, col, s)
+        combine(query, categoryFilter, colorFilter, styleFilter, scope) { q, c, col, s, sc ->
+            SearchFilters(q, c, col, s, sc)
         },
         searchedItems,
         outfitDao.observeAll(),
@@ -102,9 +107,10 @@ class SearchViewModel @Inject constructor(
 
         SearchUiState(
             query = filters.query,
+            scope = filters.scope,
             tokens = tokens,
-            items = items,
-            outfits = filteredOutfits,
+            items = if (filters.scope == SearchScope.OUTFIT) emptyList() else items,
+            outfits = if (filters.scope == SearchScope.CLOTHING) emptyList() else filteredOutfits,
             wardrobeNames = wardrobeNames,
             categoryFilter = filters.category,
             colorFilter = filters.color,
@@ -125,6 +131,10 @@ class SearchViewModel @Inject constructor(
             outfit.seasonTags.any { key ->
                 key.containsFold(token) || Season.fromKey(key)?.displayName?.containsFold(token) == true
             }
+
+    fun onScopeChange(value: SearchScope) {
+        scope.value = value
+    }
 
     fun onQueryChange(value: String) {
         query.value = value
@@ -148,11 +158,19 @@ private data class SearchFilters(
     val category: String?,
     val color: String?,
     val style: String?,
+    val scope: SearchScope,
 )
 
 /** 搜索结果页 UI 状态 */
+enum class SearchScope(val key: String) {
+    ALL("all"),
+    CLOTHING("clothing"),
+    OUTFIT("outfit"),
+}
+
 data class SearchUiState(
     val query: String = "",
+    val scope: SearchScope = SearchScope.ALL,
     /** 分词结果（高亮用） */
     val tokens: List<String> = emptyList(),
     val items: List<ClothingItem> = emptyList(),

@@ -248,6 +248,9 @@
 
     <!-- 全局搜索（M1-16，UI 文档 §7.2 / mockup-19） -->
     <string name="wardrobe_search_hint">搜编号 / 颜色 / 类别</string>
+    <string name="search_scope_all">全部</string>
+    <string name="search_scope_clothing">衣物</string>
+    <string name="search_scope_outfit">穿搭</string>
     <string name="search_cancel">取消</string>
     <string name="search_section_clothing">衣物 · %1$d</string>
     <string name="search_section_outfit">穿搭 · %1$d</string>

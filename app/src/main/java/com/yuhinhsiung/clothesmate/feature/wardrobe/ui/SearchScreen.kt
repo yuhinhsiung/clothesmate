@@ -113,6 +113,19 @@ fun SearchRoute(
                 }
             }
 
+            // M6-09：搜索作用域（全部 / 衣物 / 穿搭），再叠结构化筛选
+            FilterChipRow(
+                options = listOf(
+                    ChipOption(SearchScope.ALL.key, stringResource(R.string.search_scope_all)),
+                    ChipOption(SearchScope.CLOTHING.key, stringResource(R.string.search_scope_clothing)),
+                    ChipOption(SearchScope.OUTFIT.key, stringResource(R.string.search_scope_outfit)),
+                ),
+                selectedKey = uiState.scope.key,
+                onSelect = { key ->
+                    SearchScope.entries.firstOrNull { it.key == key }?.let(viewModel::onScopeChange)
+                },
+            )
+
             // 筛选 chips（类别 / 颜色 / 风格）。review B-07：类别行此前被
             // styleOptions.isNotEmpty() 误门控（复制粘贴错位）——无风格标签的常见
             // 场景下整行消失；三行各自独立渲染
