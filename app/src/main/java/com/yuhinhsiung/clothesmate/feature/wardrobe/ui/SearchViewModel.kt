@@ -151,6 +151,15 @@ class SearchViewModel @Inject constructor(
     fun onStyleFilter(tag: String?) {
         styleFilter.value = tag
     }
+
+    /** M6-09：文字、作用域与三类属性一次清空，给用户明确的“重置”出口。 */
+    fun reset() {
+        query.value = ""
+        scope.value = SearchScope.ALL
+        categoryFilter.value = null
+        colorFilter.value = null
+        styleFilter.value = null
+    }
 }
 
 private data class SearchFilters(
@@ -190,4 +199,8 @@ data class SearchUiState(
 
     val hasAnyFilter: Boolean
         get() = categoryFilter != null || colorFilter != null || styleFilter != null
+
+    /** 任一条件可清空时才显示“重置”，避免空态出现无意义按钮。 */
+    val canReset: Boolean
+        get() = query.isNotBlank() || scope != SearchScope.ALL || hasAnyFilter
 }

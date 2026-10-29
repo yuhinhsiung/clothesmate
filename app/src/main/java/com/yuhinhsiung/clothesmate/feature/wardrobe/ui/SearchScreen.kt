@@ -105,6 +105,14 @@ fun SearchRoute(
                     focusRequester = focusRequester,
                     modifier = Modifier.weight(1f),
                 )
+                if (uiState.canReset) {
+                    TextButton(onClick = viewModel::reset) {
+                        Text(
+                            text = stringResource(R.string.search_reset),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
                 TextButton(onClick = onBack) {
                     Text(
                         text = stringResource(R.string.search_cancel),
