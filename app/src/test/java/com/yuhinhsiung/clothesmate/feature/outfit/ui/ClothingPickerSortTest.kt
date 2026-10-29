@@ -2,6 +2,8 @@ package com.yuhinhsiung.clothesmate.feature.outfit.ui
 
 import com.yuhinhsiung.clothesmate.core.model.ClothingItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ClothingPickerSortTest {
@@ -16,6 +18,12 @@ class ClothingPickerSortTest {
     fun `non numeric codes go last and ties use id`() {
         val items = listOf(item(9, "abc"), item(3, "5"), item(2, "5"), item(1, ""))
         assertEquals(listOf(2L, 3L, 1L, 9L), sortForPicker(items).map { it.id })
+    }
+
+    @Test
+    fun `initial picker state is loading not empty`() {
+        assertFalse(ClothingPickerUiState().isLoaded)
+        assertTrue(ClothingPickerUiState(isLoaded = true).isLoaded)
     }
 
     @Test
