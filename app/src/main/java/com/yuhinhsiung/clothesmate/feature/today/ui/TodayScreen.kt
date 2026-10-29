@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -46,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -76,6 +78,7 @@ import com.yuhinhsiung.clothesmate.core.model.WearFailure
 import com.yuhinhsiung.clothesmate.core.model.WearRecord
 import com.yuhinhsiung.clothesmate.core.weather.WeatherSnapshot
 import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
+import com.yuhinhsiung.clothesmate.ui.component.RootHeader
 import com.yuhinhsiung.clothesmate.ui.component.WearConfirmDialog
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
@@ -105,6 +108,10 @@ fun TodayRoute(
     var noteRecord by remember { mutableStateOf<WearRecord?>(null) }
     var celebrate by remember { mutableStateOf(false) }
     var celebrateRepeated by remember { mutableStateOf(false) }
+    var candidateIndex by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(state.visibleRecommendations.map { it.outfit.outfit.id }) {
+        if (candidateIndex > state.visibleRecommendations.lastIndex) candidateIndex = 0
+    }
 
     // review R02：从后台恢复时重新核对日期，跨午夜后立即换到新的一天。
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -160,20 +167,17 @@ fun TodayRoute(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.today_title)) },
-                actions = {
-                    IconButton(onClick = onOpenCalendar) {
-                        Icon(
-                            imageVector = AppIcons.Calendar,
-                            contentDescription = stringResource(R.string.today_calendar),
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
+            RootHeader(
+                title = stringResource(R.string.today_title),
+                slogan = stringResource(R.string.today_slogan),
+            ) {
+                IconButton(onClick = onOpenCalendar) {
+                    Icon(
+                        imageVector = AppIcons.Calendar,
+                        contentDescription = stringResource(R.string.today_calendar),
+                    )
+                }
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
@@ -186,17 +190,6 @@ fun TodayRoute(
             contentPadding = PaddingValues(bottom = Dimens.Space.s8),
         ) {
             item {
-                TodayGreeting(
-                    today = state.today,
-                    modifier = Modifier.padding(
-                        start = Dimens.pagePadding,
-                        end = Dimens.pagePadding,
-                        top = Dimens.Space.s3,
-                        bottom = Dimens.Space.s4,
-                    ),
-                )
-            }
-            item {
                 WeatherCard(
                     state = state.weather,
                     city = state.cityLabel,
@@ -204,7 +197,11 @@ fun TodayRoute(
                     onOpenSettings = onOpenSettings,
                     onRetry = viewModel::retryWeather,
                     onAskLocation = ::askForLocation,
-                    modifier = Modifier.padding(horizontal = Dimens.pagePadding),
+                    modifier = Modifier.padding(
+                        start = Dimens.pagePadding,
+                        end = Dimens.pagePadding,
+                        top = Dimens.Space.s2,
+                    ),
                 )
             }
             item {
@@ -218,34 +215,32 @@ fun TodayRoute(
             }
             if (state.candidates.isNotEmpty()) {
                 item {
-                    RecommendationsHeader(
-                        count = state.candidates.size,
-                        onShuffle = viewModel::shuffleRecommendations,
-                        modifier = Modifier.padding(
-                            start = Dimens.pagePadding,
-                            end = Dimens.pagePadding,
-                            top = Dimens.Space.s5,
-                            bottom = Dimens.Space.s3,
-                        ),
-                    )
-                }
-                item {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = Dimens.pagePadding),
-                        horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s3),
-                    ) {
-                        items(state.visibleRecommendations, key = { it.outfit.outfit.id }) { item ->
-                            RecommendationCard(
-                                recommended = item,
-                                weather = state.todayWeatherSnapshot,
-                                confirming = state.confirmingOutfitId == item.outfit.outfit.id,
-                                onOpen = { onOpenOutfit(item.outfit.outfit.id) },
-                                onWear = { viewModel.requestWear(item) },
-                            )
-                        }
+                    val list = state.visibleRecommendations
+                    val current = list.getOrNull(candidateIndex) ?: list.firstOrNull()
+                    if (current != null) {
+                        TodayHeroCard(
+                            recommended = current,
+                            weather = state.todayWeatherSnapshot,
+                            position = candidateIndex.coerceIn(0, list.lastIndex) + 1,
+                            total = list.size,
+                            confirming = state.confirmingOutfitId == current.outfit.outfit.id,
+                            onPrev = {
+                                candidateIndex = if (candidateIndex <= 0) list.lastIndex else candidateIndex - 1
+                            },
+                            onNext = {
+                                candidateIndex = (candidateIndex + 1) % list.size
+                            },
+                            onOpen = { onOpenOutfit(current.outfit.outfit.id) },
+                            onWear = { viewModel.requestWear(current) },
+                            modifier = Modifier.padding(
+                                start = Dimens.pagePadding,
+                                end = Dimens.pagePadding,
+                                top = Dimens.Space.s5,
+                            ),
+                        )
                     }
                 }
-            } else {
+                        } else {
                 state.fallback?.let { fallback ->
                     item {
                         FallbackCard(

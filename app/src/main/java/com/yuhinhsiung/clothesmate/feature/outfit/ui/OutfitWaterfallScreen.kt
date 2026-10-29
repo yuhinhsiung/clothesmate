@@ -9,6 +9,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.text.style.TextOverflow
+import com.yuhinhsiung.clothesmate.ui.component.rememberPhotoAspectRatio
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -19,6 +23,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -26,6 +31,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.core.model.Outfit
 import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
+import com.yuhinhsiung.clothesmate.ui.component.RootHeader
 import com.yuhinhsiung.clothesmate.ui.component.EmptyStateSpec
 import com.yuhinhsiung.clothesmate.ui.component.SelectableChip
 import com.yuhinhsiung.clothesmate.ui.component.ChipOption
@@ -73,27 +80,19 @@ fun OutfitWaterfallRoute(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = categoryName
-                            ?: stringResource(R.string.outfit_all_title),
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                },
-                navigationIcon = {
-                    Icon(
-                        imageVector = AppIcons.Back,
-                        contentDescription = stringResource(R.string.action_back),
-                        modifier = Modifier
-                            .clickable(onClick = onBack)
-                            .padding(Dimens.Space.s3),
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
-            )
+            RootHeader(
+                title = stringResource(R.string.outfit_home_title),
+                slogan = stringResource(R.string.outfit_slogan),
+            ) {
+                if (categoryName != null) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = AppIcons.Back,
+                            contentDescription = stringResource(R.string.action_back),
+                        )
+                    }
+                }
+            }
         },
     ) { innerPadding ->
         Column(
@@ -240,80 +239,76 @@ private fun OutfitWaterfallCard(
     outfit: Outfit,
     onClick: () -> Unit,
 ) {
-    Box(
+    val cover = outfit.coverPath
+    // M6：已知 EXIF 校正比例；未知本次用 3:4 槽。不再用 id 伪造错落。
+    val ratio = rememberPhotoAspectRatio(cover) ?: 0.75f
+    val label = outfit.sceneTags.firstOrNull()?.let { tag ->
+        stringResource(R.string.outfit_ident_scene, tag, outfit.itemCount)
+    } ?: stringResource(R.string.outfit_items_only, outfit.itemCount)
+    val createdAt = remember(outfit.createdAt) {
+        java.text.SimpleDateFormat("yyyy年M月", java.util.Locale.getDefault())
+            .format(java.util.Date(outfit.createdAt))
+    }
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(cardAspectRatio(outfit.id))
-            .clip(RoundedCornerShape(Dimens.Radius.l))
-            .background(MaterialTheme.colorScheme.muted)
-            .clickable(onClick = onClick),
+            .clip(RoundedCornerShape(Dimens.Radius.m))
+            .clickable(onClick = onClick)
+            .padding(bottom = Dimens.Space.s1),
     ) {
-        val cover = outfit.coverPath
-        if (cover != null) {
-            CmAsyncImage(
-                model = cover,
-                contentDescription = outfit.displayName,
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-            // 底部 20% 黑色渐变蒙层（§6.5）：名称可读性
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .aspectRatio(SCRIM_ASPECT)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, PhotoScrimLight),
-                        ),
-                    ),
-            )
-        } else {
-            // 无照片穿搭：muted 占位，不给破图（M1-19 验收）
-            Icon(
-                imageVector = AppIcons.Outfit,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onMuted,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(Dimens.Icon.l + Dimens.Space.s4),
-            )
-        }
-
-        // 右上角件数 chip（黑 40% 底白字，§6.5）
         Box(
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(Dimens.Space.s2)
-                .clip(RoundedCornerShape(50))
-                .background(PhotoScrimLight)
-                .padding(horizontal = Dimens.Space.s2, vertical = Dimens.Space.s1),
+                .fillMaxWidth()
+                .aspectRatio(ratio)
+                .clip(RoundedCornerShape(Dimens.Radius.m))
+                .background(MaterialTheme.colorScheme.muted),
         ) {
-            Text(
-                text = stringResource(R.string.outfit_card_count, outfit.itemCount),
-                style = MaterialTheme.typography.labelMedium,
-                color = OnPhoto,
-            )
+            if (cover != null) {
+                CmAsyncImage(
+                    model = cover,
+                    contentDescription = label,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Icon(
+                    imageVector = AppIcons.Outfit,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onMuted,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(Dimens.Icon.l + Dimens.Space.s4),
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(Dimens.Space.s2)
+                    .clip(RoundedCornerShape(50))
+                    .background(PhotoScrimLight)
+                    .padding(horizontal = Dimens.Space.s2, vertical = Dimens.Space.s1),
+            ) {
+                Text(
+                    text = stringResource(R.string.outfit_card_count, outfit.itemCount),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = OnPhoto,
+                )
+            }
         }
-
-        // 左下名称（白字 + 蒙层，§6.5）
+        Spacer(Modifier.height(Dimens.Space.s2))
         Text(
-            text = outfit.displayName,
-            style = MaterialTheme.typography.labelLarge,
-            color = OnPhoto,
+            text = label,
+            style = MaterialTheme.typography.titleSmall,
             maxLines = 2,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(Dimens.Space.s3),
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = stringResource(R.string.outfit_created_at, createdAt),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onMuted,
         )
     }
-}
-
-/** 卡片纵横比按 id 确定性错落（4:5 / 3:4 / 1:1 循环），避免加载后高度跳变 */
-private fun cardAspectRatio(id: Long): Float = when ((id % 3).toInt()) {
-    0 -> 4f / 5f
-    1 -> 3f / 4f
-    else -> 1f
 }
 
 /** 底部渐变蒙层的形状因子：与卡片同宽、高为宽的 1/3（约等于「底部 20%+」视觉） */

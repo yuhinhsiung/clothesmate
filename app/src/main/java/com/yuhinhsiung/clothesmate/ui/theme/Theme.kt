@@ -39,9 +39,13 @@ private val LightColors = lightColorScheme(
     surfaceVariant = LightMuted,
     onSurfaceVariant = LightOnMuted,
     outline = LightOutline,
-    outlineVariant = LightOutline,
+    outlineVariant = LightBorderDecorative,
     error = LightError,
     onError = LightOnError,
+    errorContainer = LightErrorContainer,
+    onErrorContainer = LightError,
+    tertiaryContainer = LightAiContainer,
+    onTertiaryContainer = LightAiText,
 )
 
 private val DarkColors = darkColorScheme(
@@ -62,9 +66,13 @@ private val DarkColors = darkColorScheme(
     surfaceVariant = DarkMuted,
     onSurfaceVariant = DarkOnMuted,
     outline = DarkOutline,
-    outlineVariant = DarkOutline,
+    outlineVariant = DarkBorderDecorative,
     error = DarkError,
     onError = DarkOnError,
+    errorContainer = DarkErrorContainer,
+    onErrorContainer = DarkError,
+    tertiaryContainer = DarkAiContainer,
+    onTertiaryContainer = DarkAiText,
 )
 
 /**
@@ -113,6 +121,7 @@ fun ClothesMateTheme(
     CompositionLocalProvider(
         LocalReducedMotion provides reducedMotion,
         LocalIsDarkTheme provides darkTheme,
+        LocalAtelierColors provides if (darkTheme) DarkAtelierColors else LightAtelierColors,
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
@@ -184,6 +193,10 @@ fun ClothesMatePreviewTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
         typography = ClothesMateTypography,
         shapes = ClothesMateShapes,
-        content = content,
-    )
+    ) {
+        CompositionLocalProvider(
+            LocalAtelierColors provides if (darkTheme) DarkAtelierColors else LightAtelierColors,
+            content = content,
+        )
+    }
 }

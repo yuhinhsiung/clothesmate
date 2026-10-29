@@ -72,6 +72,12 @@ data class CutoutPreview(
 @Serializable
 data object Settings
 
+@Serializable
+data object SettingsAi
+
+@Serializable
+data object SettingsAbout
+
 /** 和风天气 JWT 认证配置（M3 修订） */
 @Serializable
 data object WeatherAuth

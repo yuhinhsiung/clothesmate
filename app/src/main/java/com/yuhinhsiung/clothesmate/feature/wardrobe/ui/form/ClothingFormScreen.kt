@@ -252,7 +252,7 @@ private fun ClothingFormContent(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(4f / 3f)
+                .aspectRatio(4f / 5f)
                 .background(MaterialTheme.colorScheme.muted),
             contentAlignment = Alignment.Center,
         ) {

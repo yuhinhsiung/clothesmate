@@ -1,33 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 衣架图形：品牌符号，白色实心，玫瑰底（#BE185D）上保证对比度。
-     adaptive icon 安全区为 108dp 画布中心 72dp（外圈 18dp 会被异形遮罩裁掉），
-     故图形控制在 32~76 区间，留足边距避免被裁。 -->
+<!-- M6-17 双门衣柜：108dp adaptive 前景，核心位于中心 66dp 安全圆内。
+     暖白线 #FFFDF7，1.2×2.5=3dp 视觉线宽；不烘焙启动器圆角。 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-
-    <!-- 衣钩：竖线 + 左弯钩尖 -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M51,34 L51,45 L46,45 L46,34 Q46,28 52,28 Q58,28 58,33 L58,38 L53,38 L53,33 Q53,32 52,32 Q51,32 51,34 Z" />
-
-    <!-- 衣架主体：左端球 - 左斜肩 - 顶 - 右斜肩 - 右端球，闭合为实心多边形 -->
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFDF7"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M38,29.5 H70 A4,4 0 0 1 74,33.5 V70.5 A4,4 0 0 1 70,74.5 H38 A4,4 0 0 1 34,70.5 V33.5 A4,4 0 0 1 38,29.5 Z" />
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M35,72 L54,46 L54,46 L73,72 Q73,75 69,75 L39,75 Q35,75 35,72 Z" />
-
-    <!-- 两端挂衣小竖杆 -->
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFDF7"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M54,29.5 V74.5" />
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M35,72 Q31,72 31,68 L31,62 Q31,58 35,58 L39,58 L39,62 L35,62 L35,72 Z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M73,72 Q77,72 77,68 L77,62 Q77,58 73,58 L69,58 L69,62 L73,62 L73,72 Z" />
-
-    <!-- 底边横杆 -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M39,79 L69,79 L69,83 L39,83 Z" />
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFDF7"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M46.5,47 V57 M61.5,47 V57 M41.5,74.5 V79.5 M66.5,74.5 V79.5" />
 </vector>

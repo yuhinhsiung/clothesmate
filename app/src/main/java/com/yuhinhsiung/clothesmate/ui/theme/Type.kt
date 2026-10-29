@@ -10,11 +10,10 @@ import androidx.compose.ui.unit.sp
 import com.yuhinhsiung.clothesmate.R
 
 /**
- * 字体排印 —— UI 设计文档 §3.2 字级表。
+ * Atelier 排印 —— 开发文档 §6.4 / tokens.json。
  *
- * 中文用系统默认无衬线（靠字重 + 字号 + 颜色建立层级），不打包中文字体；
- * 英文 Display 级装饰用打包的 Playfair Display（仅 400/600，SIL OFL 1.1）。
- * 功能信息（编号、数量）不用衬线，保证识别效率。
+ * 中文与功能数字一律系统无衬线；Playfair 仅品牌词 `ClothesMate`。
+ * 所有应用说明文字 ≥14sp，禁用态不缩小字号。
  */
 
 val PlayfairDisplay = FontFamily(
@@ -22,126 +21,60 @@ val PlayfairDisplay = FontFamily(
     Font(R.font.playfair_display_semibold, FontWeight.SemiBold),
 )
 
-/**
- * 中文段落排版：行内留白令长文本更透气（UI 文档 §3.2「中文行高加大到 1.6 倍」）。
- * 关闭 trim 以保证中英文混排时不被裁切。
- */
 private val ComfortableLineHeight = LineHeightStyle(
     alignment = LineHeightStyle.Alignment.Center,
     trim = LineHeightStyle.Trim.None,
 )
 
-/**
- * Playfair 仅用于英文装饰词与概览大数字；中文场景由系统字体承担，
- * 故用 [PlayfairDisplay] 打底的样式仅在无中文文本处使用。
- */
-private fun displayStyle(size: Int, lineHeight: Int) = TextStyle(
-    fontFamily = PlayfairDisplay,
-    fontWeight = FontWeight.SemiBold,
+private fun systemStyle(
+    size: Int,
+    lineHeight: Int,
+    weight: FontWeight,
+) = TextStyle(
+    fontFamily = FontFamily.Default,
+    fontWeight = weight,
     fontSize = size.sp,
     lineHeight = lineHeight.sp,
     lineHeightStyle = ComfortableLineHeight,
 )
 
+/** 仅品牌词使用；不是通用标题字体。 */
+val BrandTextStyle = TextStyle(
+    fontFamily = PlayfairDisplay,
+    fontWeight = FontWeight.Normal,
+    fontSize = 26.sp,
+    lineHeight = 32.sp,
+    lineHeightStyle = ComfortableLineHeight,
+)
+
 val ClothesMateTypography = Typography(
-    // 34 / 42sp —— 今日页问候语、概览大数字（Playfair 600 + 中文 Bold）
-    displayLarge = displayStyle(34, 42),
-    displayMedium = displayStyle(28, 36),
-    displaySmall = displayStyle(24, 32),
+    // 概览大数字：metric 32/40，系统字体，等宽数字由组件设置
+    displayLarge = systemStyle(32, 40, FontWeight.SemiBold),
+    displayMedium = systemStyle(28, 36, FontWeight.SemiBold),
+    displaySmall = systemStyle(26, 32, FontWeight.Normal),
 
-    // 24 / 32sp Bold —— 页面主标题
-    headlineLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Bold,
-        fontSize = 24.sp,
-        lineHeight = 32.sp,
-        lineHeightStyle = ComfortableLineHeight,
-    ),
-    headlineMedium = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Bold,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        lineHeightStyle = ComfortableLineHeight,
-    ),
-    headlineSmall = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Bold,
-        fontSize = 20.sp,
-        lineHeight = 28.sp,
-        lineHeightStyle = ComfortableLineHeight,
-    ),
+    // 根页主标题 title.hero 28/36
+    headlineLarge = systemStyle(28, 36, FontWeight.SemiBold),
+    // 详情标题 title.page 22/30
+    headlineMedium = systemStyle(22, 30, FontWeight.SemiBold),
+    // 紧凑/吸顶标题 title.compact 20/26
+    headlineSmall = systemStyle(20, 26, FontWeight.SemiBold),
 
-    // 20 / 28sp Bold —— 卡片组标题、详情页标题
-    titleLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Bold,
-        fontSize = 20.sp,
-        lineHeight = 28.sp,
-        lineHeightStyle = ComfortableLineHeight,
-    ),
-    // 17 / 24sp Medium —— 列表项主标题、分类名
-    titleMedium = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 17.sp,
-        lineHeight = 24.sp,
-        lineHeightStyle = ComfortableLineHeight,
-    ),
-    titleSmall = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 15.sp,
-        lineHeight = 20.sp,
-        lineHeightStyle = ComfortableLineHeight,
-    ),
+    // 分区标题 title.section 18/26
+    titleLarge = systemStyle(18, 26, FontWeight.SemiBold),
+    // 正文强调 16/24
+    titleMedium = systemStyle(16, 24, FontWeight.SemiBold),
+    // 字段与 chips 14/20
+    titleSmall = systemStyle(14, 20, FontWeight.Medium),
 
-    // 16 / 26sp Regular —— 正文
-    bodyLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 26.sp,
-        lineHeightStyle = ComfortableLineHeight,
-    ),
-    // 14 / 22sp Regular —— 次要说明文字（正文下限）
-    bodyMedium = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 14.sp,
-        lineHeight = 22.sp,
-        lineHeightStyle = ComfortableLineHeight,
-    ),
-    bodySmall = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 13.sp,
-        lineHeight = 20.sp,
-        lineHeightStyle = ComfortableLineHeight,
-    ),
+    bodyLarge = systemStyle(16, 24, FontWeight.Normal),
+    bodyMedium = systemStyle(14, 20, FontWeight.Normal),
+    bodySmall = systemStyle(14, 20, FontWeight.Normal),
 
-    // 14 / 20sp Medium —— 按钮文字
-    labelLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        lineHeightStyle = ComfortableLineHeight,
-    ),
-    // 12 / 16sp Medium —— 标签 chip、角标、编号
-    labelMedium = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        lineHeightStyle = ComfortableLineHeight,
-    ),
-    // 11 / 14sp Medium —— 最小辅助信息（下限，不再小）
-    labelSmall = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 11.sp,
-        lineHeight = 14.sp,
-        lineHeightStyle = ComfortableLineHeight,
-    ),
+    // 主按钮 16/24 600
+    labelLarge = systemStyle(16, 24, FontWeight.SemiBold),
+    // 导航、标签 14/20 500
+    labelMedium = systemStyle(14, 20, FontWeight.Medium),
+    // 辅助说明 14/20 400，不再使用 11/12sp
+    labelSmall = systemStyle(14, 20, FontWeight.Normal),
 )

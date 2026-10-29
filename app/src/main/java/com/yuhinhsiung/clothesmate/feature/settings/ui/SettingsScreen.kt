@@ -79,6 +79,7 @@ import com.yuhinhsiung.clothesmate.ui.component.CmTextField
 import com.yuhinhsiung.clothesmate.ui.component.privacyEndpointHost
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
+import com.yuhinhsiung.clothesmate.ui.theme.LocalAtelierColors
 import com.yuhinhsiung.clothesmate.ui.theme.statusOkText
 import com.yuhinhsiung.clothesmate.ui.theme.muted
 import com.yuhinhsiung.clothesmate.ui.theme.onMuted
@@ -99,12 +100,26 @@ fun SettingsRoute(
     onOpenBackup: () -> Unit,
     onOpenCleanup: () -> Unit,
     onOpenDiagnostics: () -> Unit,
+    onOpenAi: () -> Unit,
+    onOpenAbout: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showCityDialog by rememberSaveable { mutableStateOf(false) }
     var showStyleDialog by rememberSaveable { mutableStateOf(false) }
-    var showConsentDialog by rememberSaveable { mutableStateOf(false) }
+    var showThemeDialog by rememberSaveable { mutableStateOf(false) }
+
+    val themeValue = when (state.themeMode) {
+        ThemeMode.System -> stringResource(R.string.settings_theme_system)
+        ThemeMode.Light -> stringResource(R.string.settings_theme_light)
+        ThemeMode.Dark -> stringResource(R.string.settings_theme_dark)
+    }
+    val aiValue = when (state.aiStatus) {
+        AiStatus.NotConfigured -> stringResource(R.string.settings_ai_status_not_configured)
+        AiStatus.Unverified -> stringResource(R.string.settings_ai_status_unverified)
+        AiStatus.Verified -> stringResource(R.string.settings_ai_status_verified)
+        AiStatus.Failed -> stringResource(R.string.settings_ai_status_failed)
+    }
 
     Scaffold(
         topBar = {
@@ -139,27 +154,22 @@ fun SettingsRoute(
         ) {
             SettingsGroup(title = stringResource(R.string.settings_group_appearance)) {
                 SettingsCard {
-                    ThemeModeRow(
-                        current = state.themeMode,
-                        onChange = viewModel::onThemeModeChange,
-                        modifier = Modifier.padding(Dimens.Space.s4),
+                    SettingsRow(
+                        title = stringResource(R.string.settings_theme),
+                        value = themeValue,
+                        onClick = { showThemeDialog = true },
                     )
                 }
             }
-
             SettingsGroup(title = stringResource(R.string.settings_group_ai)) {
-                AiConfigCard(
-                    state = state,
-                    onProviderChange = viewModel::onAiProviderChange,
-                    onBaseUrlChange = viewModel::onBaseUrlChange,
-                    onApiKeyChange = viewModel::onApiKeyChange,
-                    onModelChange = viewModel::onModelChange,
-                    onTest = viewModel::testConnection,
-                    onConsentChange = viewModel::onConsentChange,
-                    onRequestConsent = { showConsentDialog = true },
-                )
+                SettingsCard {
+                    SettingsRow(
+                        title = stringResource(R.string.settings_ai_title),
+                        value = aiValue,
+                        onClick = onOpenAi,
+                    )
+                }
             }
-
             SettingsGroup(title = stringResource(R.string.settings_group_weather)) {
                 SettingsCard {
                     SettingsRow(
@@ -182,17 +192,10 @@ fun SettingsRoute(
                         },
                         onClick = onOpenWeatherAuth,
                     )
-                }
-                Text(
-                    text = stringResource(R.string.settings_weather_note),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onMuted,
-                    modifier = Modifier.padding(start = Dimens.Space.s2, top = Dimens.Space.s2),
-                )
-            }
-
-            SettingsGroup(title = stringResource(R.string.settings_group_recommendation)) {
-                SettingsCard {
+                    HorizontalDivider(
+                        thickness = Dimens.dividerThickness,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
                     SettingsRow(
                         title = stringResource(R.string.settings_style_preference),
                         value = state.stylePreference.ifBlank {
@@ -201,15 +204,8 @@ fun SettingsRoute(
                         onClick = { showStyleDialog = true },
                     )
                 }
-                Text(
-                    text = stringResource(R.string.settings_style_note),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onMuted,
-                    modifier = Modifier.padding(start = Dimens.Space.s2, top = Dimens.Space.s2),
-                )
             }
-
-            SettingsGroup(title = stringResource(R.string.settings_group_backup)) {
+            SettingsGroup(title = stringResource(R.string.settings_group_data)) {
                 SettingsCard {
                     SettingsRow(
                         title = stringResource(R.string.settings_backup_export),
@@ -221,38 +217,10 @@ fun SettingsRoute(
                         color = MaterialTheme.colorScheme.outline,
                     )
                     SettingsRow(
-                        title = stringResource(R.string.settings_backup_import),
-                        value = stringResource(R.string.settings_backup_import_desc),
-                        onClick = onOpenBackup,
-                    )
-                    HorizontalDivider(
-                        thickness = Dimens.dividerThickness,
-                        color = MaterialTheme.colorScheme.outline,
-                    )
-                    SettingsRow(
                         title = stringResource(R.string.settings_backup_clean),
                         value = stringResource(R.string.settings_backup_clean_desc),
                         onClick = onOpenCleanup,
                     )
-                }
-            }
-
-            SettingsGroup(title = stringResource(R.string.settings_group_about)) {
-                SettingsCard {
-                    SettingsRow(
-                        title = stringResource(
-                            R.string.settings_about_version,
-                            BuildConfig.VERSION_NAME,
-                        ),
-                        value = null,
-                        enabled = false,
-                        onClick = {},
-                    )
-                    HorizontalDivider(
-                        thickness = Dimens.dividerThickness,
-                        color = MaterialTheme.colorScheme.outline,
-                    )
-                    UpdateSection()
                     HorizontalDivider(
                         thickness = Dimens.dividerThickness,
                         color = MaterialTheme.colorScheme.outline,
@@ -262,15 +230,43 @@ fun SettingsRoute(
                         value = stringResource(R.string.settings_diagnostics_desc),
                         onClick = onOpenDiagnostics,
                     )
-                    HorizontalDivider(
-                        thickness = Dimens.dividerThickness,
-                        color = MaterialTheme.colorScheme.outline,
+                }
+            }
+            SettingsGroup(title = stringResource(R.string.settings_group_about)) {
+                SettingsCard {
+                    SettingsRow(
+                        title = stringResource(R.string.settings_about_title),
+                        value = stringResource(
+                            R.string.settings_about_version,
+                            BuildConfig.VERSION_NAME,
+                        ),
+                        onClick = onOpenAbout,
                     )
-                    InfoRow(text = stringResource(R.string.settings_about_local))
-                    InfoRow(text = stringResource(R.string.settings_about_license))
                 }
             }
         }
+    }
+
+    if (showThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            title = { Text(stringResource(R.string.settings_theme)) },
+            text = {
+                ThemeModeRow(
+                    current = state.themeMode,
+                    onChange = {
+                        viewModel.onThemeModeChange(it)
+                        showThemeDialog = false
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemeDialog = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface,
+        )
     }
 
     if (showCityDialog) {
@@ -283,19 +279,6 @@ fun SettingsRoute(
             onConfirm = { value ->
                 showCityDialog = false
                 viewModel.onWeatherCityChange(value)
-            },
-        )
-    }
-    if (showConsentDialog) {
-        AiPrivacyDialog(
-            endpointHost = privacyEndpointHost(state.baseUrl),
-            onAccept = {
-                showConsentDialog = false
-                viewModel.onConsentChange(true)
-            },
-            onDecline = {
-                showConsentDialog = false
-                viewModel.onConsentChange(false)
             },
         )
     }
@@ -344,6 +327,131 @@ fun SettingsRoute(
             },
             containerColor = MaterialTheme.colorScheme.surface,
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsAiRoute(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var showConsentDialog by rememberSaveable { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.settings_ai_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = AppIcons.Back,
+                            contentDescription = stringResource(R.string.action_back),
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+            )
+        },
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .imePadding()
+                .padding(bottom = Dimens.Space.s6),
+        ) {
+            AiConfigCard(
+                state = state,
+                onProviderChange = viewModel::onAiProviderChange,
+                onBaseUrlChange = viewModel::onBaseUrlChange,
+                onApiKeyChange = viewModel::onApiKeyChange,
+                onModelChange = viewModel::onModelChange,
+                onTest = viewModel::testConnection,
+                onConsentChange = viewModel::onConsentChange,
+                onRequestConsent = { showConsentDialog = true },
+            )
+        }
+    }
+
+    if (showConsentDialog) {
+        AiPrivacyDialog(
+            endpointHost = privacyEndpointHost(state.baseUrl),
+            onAccept = {
+                showConsentDialog = false
+                viewModel.onConsentChange(true)
+            },
+            onDecline = {
+                showConsentDialog = false
+                viewModel.onConsentChange(false)
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsAboutRoute(
+    onBack: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.settings_about_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = AppIcons.Back,
+                            contentDescription = stringResource(R.string.action_back),
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+            )
+        },
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Dimens.pagePadding),
+        ) {
+            SettingsCard {
+                SettingsRow(
+                    title = stringResource(
+                        R.string.settings_about_version,
+                        BuildConfig.VERSION_NAME,
+                    ),
+                    value = null,
+                    enabled = false,
+                    onClick = {},
+                )
+                HorizontalDivider(
+                    thickness = Dimens.dividerThickness,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+                UpdateSection()
+                HorizontalDivider(
+                    thickness = Dimens.dividerThickness,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+                SettingsRow(
+                    title = stringResource(R.string.settings_diagnostics),
+                    value = null,
+                    onClick = onOpenDiagnostics,
+                )
+            }
+            InfoRow(text = stringResource(R.string.settings_about_local))
+            InfoRow(text = stringResource(R.string.settings_about_license))
+        }
     }
 }
 
@@ -649,12 +757,10 @@ private fun AiConfigCard(
                     state.model.isNotBlank(),
                 shape = RoundedCornerShape(Dimens.Radius.m),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    disabledContainerColor = MaterialTheme.colorScheme.primaryContainer
-                        .copy(alpha = Dimens.DisabledAlpha),
-                    disabledContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        .copy(alpha = Dimens.DisabledAlpha),
+                    containerColor = MaterialTheme.colorScheme.muted,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    disabledContainerColor = MaterialTheme.colorScheme.muted,
+                    disabledContentColor = LocalAtelierColors.current.textDisabled,
                 ),
                 modifier = Modifier
                     .fillMaxWidth()

@@ -39,6 +39,7 @@ import com.yuhinhsiung.clothesmate.core.model.Season
 import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
 import com.yuhinhsiung.clothesmate.ui.theme.ClothingColors
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
+import com.yuhinhsiung.clothesmate.ui.theme.LocalAtelierColors
 import com.yuhinhsiung.clothesmate.ui.theme.LightAccent
 import com.yuhinhsiung.clothesmate.ui.theme.LightOnMuted
 import com.yuhinhsiung.clothesmate.ui.theme.accentText
@@ -119,6 +120,7 @@ fun RankingCard(
 /** 近 30 天穿着热力图：7 列周网格，四档色阶 + 今日描边。 */
 @Composable
 fun WearHeatmapCard(days: List<HeatmapDay>, legacyWearCount: Int = 0) {
+    val heatColors = LocalAtelierColors.current.heatmap
     val weekdayLabels = listOf(
         R.string.weekday_mon,
         R.string.weekday_tue,
@@ -177,16 +179,11 @@ fun WearHeatmapCard(days: List<HeatmapDay>, legacyWearCount: Int = 0) {
                                 contentAlignment = Alignment.Center,
                             ) {
                                 if (day != null) {
-                                    val color = when {
-                                        day.count >= 3 -> MaterialTheme.colorScheme.primary
-                                        day.count == 2 -> MaterialTheme.colorScheme.secondary
-                                        day.count == 1 -> MaterialTheme.colorScheme.primaryContainer
-                                        else -> MaterialTheme.colorScheme.surface
-                                    }
+                                    val color = heatColors[day.count.coerceIn(0, 4)]
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .clip(RoundedCornerShape(Dimens.Radius.s))
+                                            .clip(RoundedCornerShape(2.dp))
                                             .background(color)
                                             .semantics {
                                                 contentDescription = "${day.date} 穿着 ${day.count} 次"
@@ -200,7 +197,7 @@ fun WearHeatmapCard(days: List<HeatmapDay>, legacyWearCount: Int = 0) {
                                                         } else {
                                                             MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
                                                         },
-                                                        shape = RoundedCornerShape(Dimens.Radius.s),
+                                                        shape = RoundedCornerShape(2.dp),
                                                     )
                                                 } else {
                                                     Modifier
@@ -213,6 +210,34 @@ fun WearHeatmapCard(days: List<HeatmapDay>, legacyWearCount: Int = 0) {
                         repeat(7 - week.size) {
                             Spacer(modifier = Modifier.weight(1f))
                         }
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = Dimens.Space.s2),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s1),
+            ) {
+                Text(
+                    text = stringResource(R.string.overview_heatmap_legend_none),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onMuted,
+                )
+                heatColors.forEachIndexed { index, color ->
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(color),
+                    )
+                    if (index == 4) {
+                        Text(
+                            text = stringResource(R.string.overview_heatmap_legend_more),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onMuted,
+                        )
                     }
                 }
             }

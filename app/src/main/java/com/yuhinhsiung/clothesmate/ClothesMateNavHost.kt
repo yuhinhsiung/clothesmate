@@ -19,10 +19,15 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -33,6 +38,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
@@ -75,6 +82,8 @@ import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitHomeRoute
 import com.yuhinhsiung.clothesmate.feature.outfit.ui.OutfitWaterfallRoute
 import com.yuhinhsiung.clothesmate.feature.overview.ui.OverviewRoute
 import com.yuhinhsiung.clothesmate.feature.settings.ui.SettingsRoute
+import com.yuhinhsiung.clothesmate.feature.settings.ui.SettingsAiRoute
+import com.yuhinhsiung.clothesmate.feature.settings.ui.SettingsAboutRoute
 import com.yuhinhsiung.clothesmate.feature.settings.ui.diagnostics.DiagnosticsRoute
 import com.yuhinhsiung.clothesmate.feature.settings.ui.BackupRoute
 import com.yuhinhsiung.clothesmate.feature.settings.ui.CleanupOriginalsRoute
@@ -114,6 +123,8 @@ import com.yuhinhsiung.clothesmate.ui.navigation.QuickCapture
 import com.yuhinhsiung.clothesmate.ui.navigation.OverviewTab
 import com.yuhinhsiung.clothesmate.ui.navigation.Search
 import com.yuhinhsiung.clothesmate.ui.navigation.Settings
+import com.yuhinhsiung.clothesmate.ui.navigation.SettingsAi
+import com.yuhinhsiung.clothesmate.ui.navigation.SettingsAbout
 import com.yuhinhsiung.clothesmate.ui.navigation.WeatherAuth
 import com.yuhinhsiung.clothesmate.ui.navigation.TodayTab
 import com.yuhinhsiung.clothesmate.ui.navigation.WardrobeDetail
@@ -266,7 +277,59 @@ fun ClothesMateNavHost(
         }
     }
 
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    val wideWindow = maxWidth >= 600.dp
+    Row(modifier = Modifier.fillMaxSize()) {
+        if (wideWindow && showBottomBar) {
+            NavigationRail(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(72.dp)
+                    .statusBarsPadding(),
+                containerColor = MaterialTheme.colorScheme.surface,
+            ) {
+                TopLevelDestination.entries.forEach { destination ->
+                    val selected = currentDestination?.hasRouteAny(destination.routeClass) == true
+                    NavigationRailItem(
+                        selected = selected,
+                        onClick = {
+                            if (!selected) {
+                                when (destination) {
+                                    TopLevelDestination.Today -> navController.navigate(TodayTab) {
+                                        topLevelNavOptions(navController.graph)
+                                    }
+                                    TopLevelDestination.Wardrobe -> navController.navigate(WardrobeTab) {
+                                        topLevelNavOptions(navController.graph)
+                                    }
+                                    TopLevelDestination.Outfit -> navController.navigate(OutfitTab) {
+                                        topLevelNavOptions(navController.graph)
+                                    }
+                                    TopLevelDestination.Overview -> navController.navigate(OverviewTab) {
+                                        topLevelNavOptions(navController.graph)
+                                    }
+                                }
+                            }
+                        },
+                        icon = {
+                            Icon(
+                                imageVector = destination.icon,
+                                contentDescription = stringResource(destination.labelRes),
+                            )
+                        },
+                        label = { Text(stringResource(destination.labelRes)) },
+                        colors = androidx.compose.material3.NavigationRailItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onMuted,
+                            unselectedTextColor = MaterialTheme.colorScheme.onMuted,
+                        ),
+                    )
+                }
+            }
+        }
     Scaffold(
+        modifier = Modifier.weight(1f).fillMaxHeight(),
         // review UI-04：根 Scaffold **不消费系统栏 insets**，只负责报告底部导航的高度。
         // 原先它按 M3 默认（systemBars）处理，innerPadding 又被直接当作 NavHost 的外边距，
         // 而每个二级页的 TopAppBar 会再按自己的 WindowInsets 处理一次状态栏 —— 顶栏因此
@@ -275,7 +338,7 @@ fun ClothesMateNavHost(
         // 相机页作全屏页单独自理（见 CaptureScreen 的 statusBars / navigationBars）。
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            if (showBottomBar) {
+            if (showBottomBar && !wideWindow) {
                 Column {
                     // NavigationBar 无内建顶部分割线，按 UI 文档 §6.1 自补一条 outline 细线
                     HorizontalDivider(
@@ -584,6 +647,17 @@ fun ClothesMateNavHost(
                     onOpenBackup = { navController.navigate(Backup) },
                     onOpenCleanup = { navController.navigate(CleanupOriginals) },
                     onOpenDiagnostics = { navController.navigate(Diagnostics) },
+                    onOpenAi = { navController.navigate(SettingsAi) },
+                    onOpenAbout = { navController.navigate(SettingsAbout) },
+                )
+            }
+            composable<SettingsAi> {
+                SettingsAiRoute(onBack = { navController.popBackStack() })
+            }
+            composable<SettingsAbout> {
+                SettingsAboutRoute(
+                    onBack = { navController.popBackStack() },
+                    onOpenDiagnostics = { navController.navigate(Diagnostics) },
                 )
             }
 
@@ -644,6 +718,8 @@ fun ClothesMateNavHost(
         }
         }
         }
+    }
+    }
 
         // ── 衣柜相关弹层（M1-06/07/08） ──────────────────────────
         if (showAddWardrobe) {

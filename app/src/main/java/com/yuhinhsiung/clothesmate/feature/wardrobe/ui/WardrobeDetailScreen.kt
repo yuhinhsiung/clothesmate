@@ -480,7 +480,7 @@ private fun ClothingGridCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(1f)
+            .aspectRatio(4f / 5f)
             .clip(RoundedCornerShape(Dimens.Radius.m))
             .background(MaterialTheme.colorScheme.muted)
             .semantics(mergeDescendants = true) { contentDescription = itemLabel }

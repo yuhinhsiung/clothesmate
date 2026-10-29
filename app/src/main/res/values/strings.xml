@@ -10,6 +10,10 @@
 
     <!-- 衣柜列表（M1-05） -->
     <string name="wardrobe_title">我的衣柜</string>
+    <string name="wardrobe_slogan">给喜欢的衣服，一个位置。</string>
+    <string name="outfit_home_title">我的穿搭</string>
+    <string name="outfit_slogan">把穿得舒服的日子，留下来。</string>
+    <string name="overview_slogan">把已有的衣服，穿得更好。</string>
     <string name="wardrobe_add">新建衣柜</string>
     <string name="wardrobe_item_count">%1$d 件</string>
     <string name="wardrobe_more">更多</string>
@@ -20,7 +24,7 @@
     <string name="wardrobe_new_title">新建衣柜</string>
     <string name="wardrobe_edit_title">编辑衣柜</string>
     <string name="wardrobe_field_name">名称</string>
-    <string name="wardrobe_field_note">备注</string>
+    <string name="wardrobe_field_note">位置备注</string>
     <string name="wardrobe_error_name_required">给衣柜起个名字吧</string>
     <string name="wardrobe_save">保存衣柜</string>
     <string name="wardrobe_cover_hint">添加封面 · 拍照或从相册选择</string>
@@ -269,6 +273,8 @@
     <string name="overview_never_worn">还没穿过</string>
     <string name="overview_heatmap_title">近 30 天穿着</string>
     <string name="overview_heatmap_legacy_hint">另有 %1$d 次早期穿着没有日期记录，未计入热力图</string>
+    <string name="overview_heatmap_legend_none">无记录</string>
+    <string name="overview_heatmap_legend_more">4+</string>
     <string name="overview_heatmap_hint">颜色越深，当天穿得越多</string>
     <string name="overview_season_title">季节衣物占比</string>
     <string name="overview_season_legend">%1$s %2$d</string>
@@ -286,10 +292,11 @@
     <string name="settings_group_appearance">外观</string>
     <string name="settings_group_ai">AI 配置</string>
     <string name="settings_group_weather">天气</string>
-    <string name="settings_group_recommendation">推荐偏好</string>
-    <string name="settings_group_backup">备份与存储</string>
     <string name="settings_group_about">关于</string>
     <string name="settings_dark_mode">深色模式</string>
+    <string name="settings_theme">外观</string>
+    <string name="settings_group_data">数据与隐私</string>
+    <string name="settings_about_title">关于与更新</string>
     <string name="settings_theme_system">跟随系统</string>
     <string name="settings_theme_light">浅色</string>
     <string name="settings_theme_dark">深色</string>
@@ -326,16 +333,12 @@
     <string name="settings_style_unset">未设置</string>
     <string name="settings_style_hint">可选。设置后，含有该风格的穿搭在推荐里加 1 分；不影响硬性排除条件。</string>
     <string name="settings_style_clear">清除偏好</string>
-    <string name="settings_style_note">只影响推荐排序，不改变衣柜里已有的风格标签。</string>
     <string name="settings_weather_city_unset">未设置</string>
     <string name="settings_weather_key">和风天气认证</string>
     <string name="settings_weather_configured">已配置</string>
     <string name="settings_weather_unconfigured">未配置</string>
-    <string name="settings_weather_note">JWT 私钥加密存储在本机；未配置时今日页会显示配置引导。</string>
     <string name="settings_backup_export">导出备份</string>
     <string name="settings_backup_export_desc">图片 + JSON zip，可存档</string>
-    <string name="settings_backup_import">导入恢复</string>
-    <string name="settings_backup_import_desc">从 zip 新增恢复</string>
     <string name="settings_backup_clean">清理原图只留抠图</string>
     <string name="settings_backup_clean_desc">只清理有抠图的衣物原图</string>
     <string name="settings_about_version">版本 %1$s</string>
@@ -419,6 +422,7 @@
 
     <!-- 今日 / 天气 / 行程 / 推荐（M3-01～M3-06，UI 文档 §7.1） -->
     <string name="today_title">今日</string>
+    <string name="today_slogan">今天穿什么，先看看衣橱。</string>
     <string name="today_calendar">穿着日历</string>
     <string name="today_greeting_morning">早上好</string>
     <string name="today_greeting_noon">中午好</string>
@@ -464,6 +468,14 @@
     <string name="recommend_shuffle">换一批</string>
     <string name="recommend_all_seen">已看完全部合适穿搭</string>
     <string name="recommend_wear">今天穿这套</string>
+    <string name="recommend_switch">换一套</string>
+    <string name="recommend_detail">查看详情</string>
+    <string name="recommend_scene_items">%1$s · %2$d 件</string>
+    <string name="recommend_reason_title">推荐理由</string>
+    <string name="recommend_page_position">第 %1$d 套 · 共 %2$d 套</string>
+    <string name="outfit_items_only">%1$d 件单品</string>
+    <string name="outfit_ident_scene">%1$s · %2$d 件</string>
+    <string name="outfit_created_at">创建于 %1$s</string>
     <string name="wear_celebrated">已记录，出门吧</string>
     <string name="recommend_items">%1$d 件</string>
     <string name="reason_temperature">适合 %1$d~%2$d°C %3$s 的%4$s日</string>
@@ -500,6 +512,8 @@
 
     <!-- 穿着日历（M3-07，UI 文档 §7.7） -->
     <string name="calendar_title">穿着日历</string>
+    <string name="calendar_agenda_empty">无记录</string>
+    <string name="calendar_today">今天</string>
     <string name="calendar_prev">上个月</string>
     <string name="calendar_next">下个月</string>
     <string name="calendar_empty_title">还没有穿着记录</string>
@@ -607,8 +621,6 @@
     <string name="update_verify_failed">更新校验失败</string>
     <string name="update_retry">重试</string>
     <string name="update_browser">浏览器下载</string>
-    <string name="update_browser_hint">无法应用内安装时，请到 GitHub Releases 手动下载。</string>
-    <string name="update_digest_missing">发布资产缺少可信校验值，已切换为浏览器下载。</string>
 
     <!-- 诊断日志（M5-11） -->
     <string name="settings_diagnostics">诊断日志</string>

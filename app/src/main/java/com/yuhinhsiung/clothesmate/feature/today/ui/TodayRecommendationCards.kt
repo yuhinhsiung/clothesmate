@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -24,12 +25,14 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -310,3 +313,183 @@ private fun recommendationReminder(recommended: RecommendedOutfit): String? {
     }
     return if (reminder != null) stringResource(R.string.reason_rain) else null
 }
+
+/**
+ * M6 今日主推荐：单套完整照片 + 流式动作，不再用 320dp 横向卡。
+ *
+ * 顺序：标签/件数 → 完整照片 → 换一套/记穿 → 推荐理由。照片槽上限 300dp，
+ * contain 不裁人；0 照片才用衣物组合兜底。
+ */
+@Composable
+internal fun TodayHeroCard(
+    recommended: RecommendedOutfit,
+    weather: WeatherSnapshot?,
+    position: Int,
+    total: Int,
+    confirming: Boolean,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onOpen: () -> Unit,
+    onWear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val outfit = recommended.outfit.outfit
+    val fontScale = LocalDensity.current.fontScale
+    val photoHeight = when {
+        fontScale >= 1.9f -> 160.dp
+        fontScale >= 1.4f -> 220.dp
+        else -> 200.dp
+    }
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = outfit.identificationLabel(),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = stringResource(R.string.recommend_page_position, position, total),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onMuted,
+                )
+            }
+            TextButton(onClick = onOpen) {
+                Text(stringResource(R.string.recommend_detail))
+            }
+        }
+        Spacer(Modifier.height(Dimens.Space.s3))
+
+        val cover = outfit.coverPath
+        if (cover != null) {
+            CmAsyncImage(
+                model = cover,
+                contentDescription = outfit.identificationLabel(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(photoHeight)
+                    .clip(RoundedCornerShape(Dimens.Radius.m))
+                    .clickable(onClick = onOpen),
+            )
+        } else {
+            OutfitCollage(
+                items = recommended.outfit.items,
+                onClick = onOpen,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(photoHeight)
+                    .clip(RoundedCornerShape(Dimens.Radius.m)),
+            )
+        }
+        Spacer(Modifier.height(Dimens.Space.s3))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s3)) {
+            OutlinedButton(
+                onClick = if (position <= 1) onPrev else onPrev,
+                enabled = total > 1 && !confirming,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = Dimens.buttonHeight),
+            ) { Text(stringResource(R.string.recommend_switch)) }
+            Button(
+                onClick = onWear,
+                enabled = !confirming,
+                modifier = Modifier
+                    .weight(1.4f)
+                    .heightIn(min = Dimens.buttonHeight),
+            ) {
+                if (confirming) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(Dimens.Icon.s),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Text(stringResource(R.string.recommend_wear))
+                }
+            }
+        }
+
+        Spacer(Modifier.height(Dimens.Space.s3))
+        Text(
+            text = stringResource(R.string.recommend_reason_title),
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Spacer(Modifier.height(Dimens.Space.s1))
+        Text(
+            text = recommendationReason(recommended, weather),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onMuted,
+        )
+        recommendationReminder(recommended)?.let { reminder ->
+            Spacer(Modifier.height(Dimens.Space.s1))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = AppIcons.WeatherRainy,
+                    contentDescription = null,
+                    modifier = Modifier.size(Dimens.Icon.s),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(Dimens.Space.s1))
+                Text(
+                    text = reminder,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
+/** 无照片穿搭的 4:5 组合兜底；最多 4 件 + N，不冒充真人照片。 */
+@Composable
+private fun OutfitCollage(
+    items: List<ClothingItem>,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shown = items.take(4)
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        color = MaterialTheme.colorScheme.muted,
+        shape = RoundedCornerShape(Dimens.Radius.m),
+    ) {
+        Row(Modifier.fillMaxSize()) {
+            shown.forEach { item ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                ) {
+                    CmAsyncImage(
+                        model = item.cutoutImagePath ?: item.originalImagePath,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+            if (items.size > 4) {
+                Box(
+                    modifier = Modifier
+                        .width(48.dp)
+                        .fillMaxHeight(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "+${items.size - 4}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onMuted,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** M6 识别口径：已有场景标签 + 件数；无标签只写件数，不生成日期标题。 */
+@Composable
+internal fun com.yuhinhsiung.clothesmate.core.model.Outfit.identificationLabel(): String =
+    sceneTags.firstOrNull()?.let { tag ->
+        stringResource(R.string.recommend_scene_items, tag, itemCount)
+    } ?: stringResource(R.string.outfit_items_only, itemCount)

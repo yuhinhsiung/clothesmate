@@ -14,28 +14,36 @@ object Dimens {
      * 纪律：不出现 13dp / 15dp 这类随机值。
      */
     object Space {
+        val s0 = 2.dp
         val s1 = 4.dp
         val s2 = 8.dp
         val s3 = 12.dp
         val s4 = 16.dp
-        val s5 = 24.dp
-        val s6 = 32.dp
-        val s8 = 48.dp
+        val s5 = 20.dp
+        val s6 = 24.dp
+        val s7 = 32.dp
+        val s8 = 40.dp
+        val s9 = 48.dp
     }
 
-    /** 页面左右边距统一 16dp；瀑布流列间距 8dp */
-    val pagePadding = Space.s4
-    val waterfallColumnSpacing = Space.s2
+    /** 旧页面的大间距语义（24/32/48），与新增 20dp gutter 并存。 */
+    val gapLarge = 32.dp
+    val gapSection = 24.dp
+
+    /** compact 页边距 20dp；<360dp 用 16dp。瀑布流列间距 2dp。 */
+    val pagePadding = Space.s5
+    val narrowPagePadding = Space.s4
+    val waterfallColumnSpacing = Space.s0
 
     object Radius {
-        /** radius-s 8dp —— chip、输入框 */
-        val s = 8.dp
-        /** radius-m 16dp —— 按钮、小卡片 */
+        /** control 12dp —— 输入框、按钮 */
+        val s = 12.dp
+        /** card 16dp */
         val m = 16.dp
-        /** radius-l 20dp —— 大卡片、弹层 */
+        /** chip 20dp */
         val l = 20.dp
-        /** radius-xl 28dp —— 底部弹窗、大容器 */
-        val xl = 28.dp
+        /** sheet 24dp */
+        val xl = 24.dp
     }
 
     /**

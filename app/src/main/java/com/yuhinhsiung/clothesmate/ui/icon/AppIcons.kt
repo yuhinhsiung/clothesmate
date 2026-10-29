@@ -52,8 +52,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 object AppIcons {
 
     // 底部导航（§5.1）
-    val Today: ImageVector = Icons.Rounded.WbCloudy
-    val Wardrobe: ImageVector = Icons.Rounded.Checkroom
+    val Today: ImageVector = Icons.Rounded.CalendarMonth
+    val Wardrobe: ImageVector = Icons.Rounded.Inventory2
     /** 穿搭：库内无 styler 字形，沿用衣架图形，靠文字标签区分 */
     val Outfit: ImageVector = Icons.Rounded.Checkroom
     val Overview: ImageVector = Icons.Rounded.Monitor
@@ -85,6 +85,7 @@ object AppIcons {
     val Close: ImageVector = Icons.Rounded.Close
     val Flash: ImageVector = Icons.Rounded.FlashOn
     val CameraSwitch: ImageVector = Icons.Rounded.Cameraswitch
+    val BrokenImage: ImageVector = Icons.Rounded.Image
 
     // 设置页密码框显示/隐藏（M2-05）；UI 文档 §5.1 未列，按 Material Symbols Rounded 同风格补齐
     val Visibility: ImageVector = Icons.Rounded.Visibility

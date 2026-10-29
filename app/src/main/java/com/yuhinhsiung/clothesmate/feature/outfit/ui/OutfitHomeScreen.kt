@@ -46,6 +46,7 @@ import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.core.model.OutfitCategory
 import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
 import com.yuhinhsiung.clothesmate.ui.component.CmTextField
+import com.yuhinhsiung.clothesmate.ui.component.RootHeader
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
 import com.yuhinhsiung.clothesmate.ui.theme.muted
@@ -73,24 +74,14 @@ fun OutfitHomeRoute(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.tab_outfit),
-                        style = MaterialTheme.typography.headlineMedium,
-                    )
-                },
+            RootHeader(
+                title = stringResource(R.string.outfit_home_title),
+                slogan = stringResource(R.string.outfit_slogan),
                 actions = {
-                    IconButton(onClick = onCreateOutfit) {
-                        Icon(
-                            imageVector = AppIcons.Add,
-                            contentDescription = stringResource(R.string.outfit_create),
-                        )
+                    TextButton(onClick = onCreateOutfit) {
+                        Text(stringResource(R.string.outfit_create))
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
             )
         },
     ) { innerPadding ->

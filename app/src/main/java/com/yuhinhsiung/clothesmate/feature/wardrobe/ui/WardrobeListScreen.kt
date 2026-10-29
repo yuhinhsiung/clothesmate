@@ -35,6 +35,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -59,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.core.model.Wardrobe
 import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
+import com.yuhinhsiung.clothesmate.ui.component.RootHeader
 import com.yuhinhsiung.clothesmate.ui.component.ShimmerCard
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
@@ -177,26 +179,9 @@ fun WardrobeListScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.wardrobe_title),
-                        style = MaterialTheme.typography.headlineMedium,
-                    )
-                },
-                // review C-11：右上「+」= 新建衣柜（§6.2 动作图标位）；
-                // FAB 按 §6.4 语义交还给「+ 录衣服」
-                actions = {
-                    IconButton(onClick = onAddWardrobe) {
-                        Icon(
-                            imageVector = AppIcons.Add,
-                            contentDescription = stringResource(R.string.wardrobe_add),
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
+            RootHeader(
+                title = stringResource(R.string.wardrobe_title),
+                slogan = stringResource(R.string.wardrobe_slogan),
             )
         },
         floatingActionButton = {
@@ -204,6 +189,8 @@ fun WardrobeListScreen(
             // 不留死按钮（review C-02）
             FloatingActionButton(
                 onClick = onAddClothing,
+                modifier = Modifier.size(52.dp),
+                shape = androidx.compose.foundation.shape.CircleShape,
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
             ) {
@@ -365,8 +352,7 @@ private fun WardrobeCard(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(16f / 9f)
-                        .clip(MaterialTheme.shapes.medium),
+                        .aspectRatio(16f / 10f),
                     contentAlignment = Alignment.Center,
                 ) {
                     val imageFile = wardrobe.coverImagePath

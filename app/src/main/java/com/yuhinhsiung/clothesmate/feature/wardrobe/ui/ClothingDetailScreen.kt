@@ -122,6 +122,13 @@ fun ClothingDetailRoute(
                         )
                     }
                 },
+                actions = {
+                    if (item != null) {
+                        TextButton(onClick = { onEdit(item.id) }) {
+                            Text(stringResource(R.string.clothing_action_edit))
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
@@ -308,14 +315,6 @@ fun ClothingDetailRoute(
                                 if (uiState.isStored) R.string.clothing_action_restore
                                 else R.string.clothing_action_store
                             ),
-                            style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.padding(start = Dimens.Space.s1),
-                        )
-                    }
-                    TextButton(onClick = { onEdit(item.id) }) {
-                        Icon(AppIcons.Edit, contentDescription = null)
-                        Text(
-                            text = stringResource(R.string.clothing_action_edit),
                             style = MaterialTheme.typography.labelLarge,
                             modifier = Modifier.padding(start = Dimens.Space.s1),
                         )

@@ -57,6 +57,7 @@ import com.yuhinhsiung.clothesmate.core.model.ClothingColor
 import com.yuhinhsiung.clothesmate.core.model.Season
 import com.yuhinhsiung.clothesmate.ui.component.AdaptiveContent
 import com.yuhinhsiung.clothesmate.ui.component.CmAsyncImage
+import com.yuhinhsiung.clothesmate.ui.component.RootHeader
 import com.yuhinhsiung.clothesmate.ui.component.EmptyStateSpec
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
 import com.yuhinhsiung.clothesmate.ui.theme.ChartCategoryColors
@@ -64,7 +65,6 @@ import com.yuhinhsiung.clothesmate.ui.theme.ClothingColors
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
 import com.yuhinhsiung.clothesmate.ui.theme.muted
 import com.yuhinhsiung.clothesmate.ui.theme.onMuted
-import com.yuhinhsiung.clothesmate.ui.theme.PlayfairDisplay
 import androidx.compose.ui.text.font.FontWeight
 
 /**
@@ -93,14 +93,9 @@ fun OverviewRoute(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.tab_overview),
-                        style = MaterialTheme.typography.headlineMedium,
-                    )
-                },
-                // 设置页唯一入口（§6.2 / §7.5）；页面本体随 M2-05 交付
+            RootHeader(
+                title = stringResource(R.string.tab_overview),
+                slogan = stringResource(R.string.overview_slogan),
                 actions = {
                     IconButton(onClick = onOpenSettings) {
                         Icon(
@@ -109,9 +104,6 @@ fun OverviewRoute(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
             )
         },
     ) { innerPadding ->
@@ -209,32 +201,32 @@ fun OverviewRoute(
                         }
                     }
                     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                        if (maxWidth >= 560.dp) {
+                        if (maxWidth >= 520.dp) {
                             Row(horizontalArrangement = Arrangement.spacedBy(Dimens.Space.s4)) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(Dimens.Space.s4),
+                                ) {
+                                    heatmapCard()
+                                    topWornCard()
+                                    leastWornCard()
+                                }
                                 Column(
                                     modifier = Modifier.weight(1f),
                                     verticalArrangement = Arrangement.spacedBy(Dimens.Space.s4),
                                 ) {
                                     categoryCard()
                                     colorCard()
-                                    heatmapCard()
-                                }
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(Dimens.Space.s4),
-                                ) {
-                                    topWornCard()
-                                    leastWornCard()
                                     seasonCard()
                                 }
                             }
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(Dimens.Space.s4)) {
-                                categoryCard()
-                                colorCard()
+                                heatmapCard()
                                 topWornCard()
                                 leastWornCard()
-                                heatmapCard()
+                                categoryCard()
+                                colorCard()
                                 seasonCard()
                             }
                         }
@@ -266,8 +258,6 @@ private fun NumberCard(
         ) {
             Text(
                 text = count.toString(),
-                fontFamily = PlayfairDisplay,
-                fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.displayLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -315,8 +305,6 @@ private fun CategoryDonutCard(uiState: OverviewUiState, onCategoryClick: (String
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
                                 text = uiState.clothingCount.toString(),
-                                fontFamily = PlayfairDisplay,
-                                fontWeight = FontWeight.SemiBold,
                                 style = MaterialTheme.typography.displaySmall,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )

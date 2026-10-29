@@ -6,6 +6,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -132,6 +136,7 @@ fun WearCalendarRoute(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = Dimens.pagePadding),
         ) {
             MonthHeader(
@@ -139,7 +144,6 @@ fun WearCalendarRoute(
                 onPrevious = viewModel::previousMonth,
                 onNext = viewModel::nextMonth,
             )
-            WeekdayHeader()
             MonthGrid(
                 month = state.month,
                 today = state.today,
@@ -249,32 +253,99 @@ internal fun MonthGrid(
     recordsByDate: Map<LocalDate, List<WearRecord>>,
     onSelect: (LocalDate) -> Unit,
 ) {
-    val firstOffset = month.atDay(1).dayOfWeek.value - 1
-    val dayCount = month.lengthOfMonth()
-    val cellCount = firstOffset + dayCount
-    val rows = (cellCount + 6) / 7
-    Column(modifier = Modifier.padding(top = Dimens.Space.s1)) {
-        repeat(rows) { row ->
-            Row(modifier = Modifier.fillMaxWidth()) {
-                repeat(7) { column ->
-                    val index = row * 7 + column
-                    val day = index - firstOffset + 1
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(2.dp),
-                        contentAlignment = Alignment.Center,
+    val fontScale = LocalDensity.current.fontScale
+    BoxWithConstraints {
+        if (maxWidth < 348.dp || fontScale >= 1.5f) {
+            AgendaMonth(
+                month = month,
+                today = today,
+                recordsByDate = recordsByDate,
+                onSelect = onSelect,
+            )
+        } else {
+            val firstOffset = month.atDay(1).dayOfWeek.value - 1
+            val dayCount = month.lengthOfMonth()
+            val cellCount = firstOffset + dayCount
+            val rows = (cellCount + 6) / 7
+            Column(modifier = Modifier.padding(top = Dimens.Space.s1)) {
+                WeekdayHeader()
+                repeat(rows) { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        if (day in 1..dayCount) {
-                            DayCell(
-                                date = month.atDay(day),
-                                today = today,
-                                record = recordsByDate[month.atDay(day)]?.firstOrNull(),
-                                onClick = { onSelect(month.atDay(day)) },
-                            )
+                        repeat(7) { column ->
+                            val index = row * 7 + column
+                            val day = index - firstOffset + 1
+                            Box(modifier = Modifier.width(48.dp)) {
+                                if (day in 1..dayCount) {
+                                    DayCell(
+                                        date = month.atDay(day),
+                                        today = today,
+                                        record = recordsByDate[month.atDay(day)]?.firstOrNull(),
+                                        onClick = { onSelect(month.atDay(day)) },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AgendaMonth(
+    month: YearMonth,
+    today: LocalDate,
+    recordsByDate: Map<LocalDate, List<WearRecord>>,
+    onSelect: (LocalDate) -> Unit,
+) {
+    val formatter = remember {
+        java.time.format.DateTimeFormatter.ofPattern("M月d日 EEEE", java.util.Locale.CHINA)
+    }
+    Column(modifier = Modifier.padding(top = Dimens.Space.s2)) {
+        repeat(month.lengthOfMonth()) { index ->
+            val date = month.atDay(index + 1)
+            val record = recordsByDate[date]?.firstOrNull()
+            val label = formatter.format(date)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = Dimens.minTouchTarget)
+                    .clickable { onSelect(date) }
+                    .padding(horizontal = Dimens.Space.s2, vertical = Dimens.Space.s2),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (date == today) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.width(160.dp),
+                )
+                Text(
+                    text = record?.outfit?.displayName ?: stringResource(R.string.calendar_agenda_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onMuted,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (date == today) {
+                    Text(
+                        text = stringResource(R.string.calendar_today),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            if (index < month.lengthOfMonth() - 1) {
+                HorizontalDivider(
+                    thickness = Dimens.dividerThickness,
+                    color = MaterialTheme.colorScheme.outline,
+                )
             }
         }
     }

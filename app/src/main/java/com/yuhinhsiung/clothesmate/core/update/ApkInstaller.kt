@@ -37,8 +37,7 @@ class ApkInstaller @Inject constructor(
     }
 
     fun canRequestPackageInstalls(): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
-            context.packageManager.canRequestPackageInstalls()
+        context.packageManager.canRequestPackageInstalls()
 
     fun launch(file: File): InstallLaunchResult {
         if (!file.isFile) return InstallLaunchResult.FileMissing
