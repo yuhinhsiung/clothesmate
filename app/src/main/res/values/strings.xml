@@ -519,6 +519,8 @@
 
     <!-- 穿着日历（M3-07，UI 文档 §7.7） -->
     <string name="photo_unreadable_retry">图片无法读取，点按重试</string>
+    <string name="photo_view_full">查看大图</string>
+    <string name="photo_view_close">关闭大图</string>
     <string name="calendar_title">穿着日历</string>
     <string name="calendar_agenda_empty">无记录</string>
     <string name="calendar_today">今天</string>

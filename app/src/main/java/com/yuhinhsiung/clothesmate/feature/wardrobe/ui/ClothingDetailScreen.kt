@@ -51,7 +51,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -88,10 +92,12 @@ fun ClothingDetailRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showDelete by remember { mutableStateOf(false) }
+    var showViewer by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
     val item = uiState.item
+    val viewFullDescription = stringResource(R.string.photo_view_full)
     val deletedTemplate = stringResource(R.string.clothing_deleted)
     val undoLabel = stringResource(R.string.action_undo)
     val savedText = stringResource(R.string.clothing_saved)
@@ -158,8 +164,20 @@ fun ClothingDetailRoute(
                             path = image,
                             contentDescription = item.displayName,
                             clothingId = item.id,
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clickable { showViewer = true }
+                                .semantics {
+                                    contentDescription = viewFullDescription
+                                },
                         )
+                        if (showViewer) {
+                            ImageViewerDialog(
+                                path = image,
+                                description = item.displayName,
+                                onDismiss = { showViewer = false },
+                            )
+                        }
                     } else {
                         Icon(
                             imageVector = AppIcons.Wardrobe,
@@ -518,6 +536,7 @@ private fun ZoomableImage(
     contentDescription: String?,
     clothingId: Long,
     modifier: Modifier = Modifier,
+    shared: Boolean = true,
 ) {
     var zoom by remember(path) { mutableStateOf(ZoomState()) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
@@ -549,7 +568,7 @@ private fun ZoomableImage(
             contentScale = ContentScale.Fit,
             modifier = Modifier
                 .fillMaxSize()
-                .sharedClothingImage(clothingId)
+                .then(if (shared) Modifier.sharedClothingImage(clothingId) else Modifier)
                 .graphicsLayer {
                     scaleX = zoom.scale
                     scaleY = zoom.scale
@@ -557,6 +576,45 @@ private fun ZoomableImage(
                     translationY = zoom.offset.y
                 },
         )
+    }
+}
+
+@Composable
+private fun ImageViewerDialog(
+    path: String,
+    description: String?,
+    onDismiss: () -> Unit,
+) {
+    val closeViewerDescription = stringResource(R.string.photo_view_close)
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(androidx.compose.ui.graphics.Color.Black),
+        ) {
+            ZoomableImage(
+                path = path,
+                contentDescription = description,
+                clothingId = 0L,
+                modifier = Modifier.fillMaxSize(),
+                shared = false,
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(Dimens.pagePadding),
+            ) {
+                Icon(
+                    imageVector = AppIcons.Close,
+                    contentDescription = closeViewerDescription,
+                    tint = androidx.compose.ui.graphics.Color.White,
+                )
+            }
+        }
     }
 }
 
