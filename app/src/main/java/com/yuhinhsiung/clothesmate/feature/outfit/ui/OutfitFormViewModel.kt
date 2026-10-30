@@ -234,9 +234,9 @@ class OutfitFormViewModel @Inject constructor(
 
     /** 相册追加（多选，上限 9；超出容量的部分静默截断） */
     fun onPhotosPicked(uris: List<Uri>) {
-        val remaining = OutfitFormUiState.MAX_OUTFIT_PHOTOS -
-            (_uiState.value.existingPaths.size + stagedPhotos.size)
-        val accepted = uris.take(remaining.coerceAtLeast(0))
+        val accepted = uris.take(
+            remainingPhotoSlots(_uiState.value.existingPaths.size, stagedPhotos.size),
+        )
         if (accepted.isEmpty()) return
         _uiState.update { it.copy(addingPhoto = true, error = null) }
         viewModelScope.launch {
@@ -619,6 +619,10 @@ data class OutfitFormUiState(
         const val MAX_OUTFIT_PHOTOS = 9
     }
 }
+
+/** 当前还能追加的照片数（0–9 张硬上限；已存在与已暂存都占位）。 */
+internal fun remainingPhotoSlots(existingCount: Int, stagedCount: Int): Int =
+    (OutfitFormUiState.MAX_OUTFIT_PHOTOS - existingCount - stagedCount).coerceAtLeast(0)
 
 /** 表单初始快照（review R-05 的脏判定基准）。字段与 [OutfitFormUiState] 中「用户可改」的部分一一对应。 */
 @Serializable
