@@ -64,7 +64,11 @@ class QuickCaptureWorker(
     override suspend fun doWork(): Result {
         val id = inputData.getLong(KEY_ITEM_ID, -1L)
         if (id <= 0L) return Result.success()
-        process(id)
+        if (inputData.getBoolean(KEY_AI_ONLY, false)) {
+            runCatching { applyAiSuggestion(id) }
+        } else {
+            process(id)
+        }
         return Result.success()
     }
 
@@ -126,6 +130,7 @@ class QuickCaptureWorker(
 
     companion object {
         private const val KEY_ITEM_ID = "item_id"
+        private const val KEY_AI_ONLY = "ai_only"
 
         /**
          * 连拍处理队列名。
@@ -135,6 +140,14 @@ class QuickCaptureWorker(
          * 串行只影响后台完成时间，不影响拍摄与建档。
          */
         const val QUEUE_NAME = "quick-capture-queue"
+
+        fun enqueueAiRetry(context: Context, itemId: Long) {
+            val request = OneTimeWorkRequestBuilder<QuickCaptureWorker>()
+                .setInputData(workDataOf(KEY_ITEM_ID to itemId, KEY_AI_ONLY to true))
+                .addTag("quick-capture")
+                .build()
+            WorkManager.getInstance(context).enqueue(request)
+        }
 
         fun enqueue(context: Context, itemId: Long) {
             val request = OneTimeWorkRequestBuilder<QuickCaptureWorker>()

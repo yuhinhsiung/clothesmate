@@ -55,6 +55,7 @@ fun QuickCaptureReview(
     onDone: () -> Unit,
     onDelete: (Long) -> Unit,
     onAcceptAiSuggestion: (Long) -> Unit,
+    onRetryAi: (Long) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -196,6 +197,22 @@ fun QuickCaptureReview(
                                     )
                                 }
                             }
+                            }
+                            if (shot.aiFailed && shot.aiSuggestion == null) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.quick_capture_ai_failed),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    TextButton(onClick = { onRetryAi(shot.id) }) {
+                                        Text(stringResource(R.string.quick_capture_ai_retry))
+                                    }
+                                }
                             }
                             shot.aiSuggestion?.let { ai ->
                                 val summary = listOfNotNull(

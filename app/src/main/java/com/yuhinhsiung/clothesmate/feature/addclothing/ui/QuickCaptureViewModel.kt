@@ -46,6 +46,7 @@ data class QuickCaptureShot(
     val processing: Boolean = true,
     val cutoutFailed: Boolean = false,
     val aiSuggestion: QuickCaptureAiSuggestion? = null,
+    val aiFailed: Boolean = false,
 )
 
 data class QuickCaptureUiState(
@@ -241,7 +242,7 @@ class QuickCaptureViewModel @Inject constructor(
                     _uiState.update { state ->
                         state.copy(
                             shots = state.shots.map {
-                                if (it.id == id) it.copy(aiSuggestion = suggestion) else it
+                                if (it.id == id) it.copy(aiSuggestion = suggestion, aiFailed = false) else it
                             },
                         )
                     }
@@ -249,7 +250,26 @@ class QuickCaptureViewModel @Inject constructor(
                 }
                 delay(500)
             }
+            _uiState.update { state ->
+                state.copy(
+                    shots = state.shots.map {
+                        if (it.id == id) it.copy(aiFailed = true) else it
+                    },
+                )
+            }
         }
+    }
+
+    fun retryAi(id: Long) {
+        _uiState.update { state ->
+            state.copy(
+                shots = state.shots.map {
+                    if (it.id == id) it.copy(aiFailed = false, aiSuggestion = null) else it
+                },
+            )
+        }
+        QuickCaptureWorker.enqueueAiRetry(context, id)
+        pollAiSuggestion(id)
     }
 
     fun acceptAiSuggestion(id: Long) {
