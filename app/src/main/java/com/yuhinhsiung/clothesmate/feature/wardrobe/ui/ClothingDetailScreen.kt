@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -560,6 +561,8 @@ private fun ZoomableImage(
 ) {
     var zoom by remember(path) { mutableStateOf(ZoomState()) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
+    var lastTapUp by remember(path) { mutableLongStateOf(0L) }
+    var lastTapPosition by remember(path) { mutableStateOf(Offset.Zero) }
 
     Box(
         modifier = modifier
@@ -567,9 +570,15 @@ private fun ZoomableImage(
             .onSizeChanged { containerSize = it }
             .pointerInput(path) {
                 awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    var moved = false
+                    var pointerCount = 1
+                    var lastPosition = down.position
                     do {
                         val event = awaitPointerEvent()
+                        pointerCount = event.changes.size
+                        if (event.changes.any { it.position != it.previousPosition }) moved = true
+                        event.changes.firstOrNull()?.let { lastPosition = it.position }
                         val zoomChange = event.calculateZoom()
                         val panChange = event.calculatePan()
                         val multiTouch = event.changes.size > 1
@@ -578,6 +587,18 @@ private fun ZoomableImage(
                             event.changes.forEach { it.consume() }
                         }
                     } while (event.changes.any { it.pressed })
+                    if (!moved && pointerCount == 1) {
+                        val now = down.uptimeMillis
+                        val isDoubleTap = now - lastTapUp <= DOUBLE_TAP_TIMEOUT_MS &&
+                            (lastPosition - lastTapPosition).getDistance() <= DOUBLE_TAP_SLOP
+                        if (isDoubleTap) {
+                            zoom = zoom.toggleDoubleTap()
+                            lastTapUp = 0L
+                        } else {
+                            lastTapUp = now
+                            lastTapPosition = lastPosition
+                        }
+                    }
                 }
             },
         contentAlignment = Alignment.Center,
@@ -667,6 +688,10 @@ internal fun ZoomState.applyGesture(
     )
 }
 
+/** 双击在 1× 与 2.5× 之间切换；放大后双击回到 1×。 */
+internal fun ZoomState.toggleDoubleTap(): ZoomState =
+    if (isZoomed) ZoomState() else ZoomState(scale = DOUBLE_TAP_ZOOM)
+
 /** 平移边界：放大 k 倍时最多能拖出容器的一半 */
 internal fun clampOffset(raw: Offset, container: IntSize, scale: Float): Offset {
     if (container.width == 0 || container.height == 0) return Offset.Zero
@@ -680,3 +705,6 @@ internal fun clampOffset(raw: Offset, container: IntSize, scale: Float): Offset 
 
 internal const val MIN_ZOOM = 1f
 internal const val MAX_ZOOM = 4f
+internal const val DOUBLE_TAP_ZOOM = 2.5f
+internal const val DOUBLE_TAP_TIMEOUT_MS = 300L
+internal const val DOUBLE_TAP_SLOP = 48f

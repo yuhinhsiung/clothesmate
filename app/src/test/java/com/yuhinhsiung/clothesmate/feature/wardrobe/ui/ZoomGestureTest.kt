@@ -61,6 +61,22 @@ class ZoomGestureTest {
     }
 
     @Test
+    fun doubleTapAtRestZoomsToDoubleTapScale() {
+        val zoomed = ZoomState().toggleDoubleTap()
+        assertEquals(DOUBLE_TAP_ZOOM, zoomed.scale, 0.001f)
+        assertEquals(Offset.Zero, zoomed.offset)
+        assertTrue(zoomed.isZoomed)
+    }
+
+    @Test
+    fun doubleTapWhileZoomedResetsToFit() {
+        val reset = ZoomState(scale = 2.5f, offset = Offset(120f, -80f)).toggleDoubleTap()
+        assertEquals(MIN_ZOOM, reset.scale, 0.001f)
+        assertEquals(Offset.Zero, reset.offset)
+        assertFalse(reset.isZoomed)
+    }
+
+    @Test
     fun clampIsNoOpBeforeContainerIsMeasured() {
         val offset = clampOffset(Offset(50f, 50f), IntSize.Zero, 2f)
         assertEquals(Offset.Zero, offset)
