@@ -322,6 +322,16 @@ fun OutfitDetailRoute(
                     TagChipsRow(detail.outfit.seasonTags.mapNotNull { Season.fromKey(it)?.displayName })
                 }
 
+                val outfitNote = detail.outfit.note
+                if (!outfitNote.isNullOrBlank()) {
+                    SectionLabel(stringResource(R.string.form_field_note))
+                    Text(
+                        text = outfitNote,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+
                 // 穿着次数（M1 无穿着记录 → 优雅降级，与衣物详情同口径）
                 SectionLabel(stringResource(R.string.outfit_detail_wear))
                 Text(
