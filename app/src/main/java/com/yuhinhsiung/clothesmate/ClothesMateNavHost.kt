@@ -179,6 +179,7 @@ private fun androidx.navigation.NavOptionsBuilder.topLevelNavOptions(graph: andr
 @OptIn(ExperimentalSharedTransitionApi::class)
 fun ClothesMateNavHost(
     navController: NavHostController = rememberNavController(),
+    windowWidthDp: Int? = null,
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
@@ -280,7 +281,8 @@ fun ClothesMateNavHost(
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-    val wideWindow = navLayoutFor(maxWidth) == NavLayout.RAIL
+    val layoutWidth = windowWidthDp?.dp ?: maxWidth
+    val wideWindow = navLayoutFor(layoutWidth) == NavLayout.RAIL
     Row(modifier = Modifier.fillMaxSize()) {
         if (wideWindow && showBottomBar) {
             NavigationRail(

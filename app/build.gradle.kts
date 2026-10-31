@@ -188,6 +188,7 @@ dependencies {
     implementation(libs.okhttp.logging)
     implementation(libs.eddsa)
     implementation(libs.work.runtime)
+    implementation(libs.androidx.window)
 
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
@@ -222,6 +223,7 @@ dependencies {
     testImplementation(libs.datastore.preferences.core)
 
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.window.testing)
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.hilt.android.testing)

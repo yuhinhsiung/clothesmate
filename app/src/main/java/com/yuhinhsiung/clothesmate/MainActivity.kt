@@ -11,9 +11,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.window.layout.WindowMetricsCalculator
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yuhinhsiung.clothesmate.core.datastore.ThemeMode
+import com.yuhinhsiung.clothesmate.core.platform.windowWidthDp
 import com.yuhinhsiung.clothesmate.core.datastore.UserSettingsStore
 import com.yuhinhsiung.clothesmate.core.datastore.isDark
 import com.yuhinhsiung.clothesmate.core.image.ImageStorage
@@ -67,6 +71,13 @@ class MainActivity : ComponentActivity() {
             }
             val themeMode by themeFlow.collectAsStateWithLifecycle(initialValue = ThemeMode.System)
             val darkTheme = themeMode.isDark(isSystemInDarkTheme())
+            val configuration = LocalConfiguration.current
+            val density = LocalDensity.current.density
+            val currentWindowWidthDp = remember(configuration) {
+                val metrics = WindowMetricsCalculator.getOrCreate()
+                    .computeCurrentWindowMetrics(this@MainActivity)
+                windowWidthDp(metrics.bounds.width(), density)
+            }
             ClothesMateTheme(darkTheme = darkTheme) {
                 CompositionLocalProvider(
                     LocalImageStorage provides imageStorage,
@@ -76,7 +87,7 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background,
                     ) {
-                        ClothesMateNavHost()
+                        ClothesMateNavHost(windowWidthDp = currentWindowWidthDp)
                     }
                 }
             }
