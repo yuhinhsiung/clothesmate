@@ -348,8 +348,8 @@
     <string name="settings_weather_key">和风天气认证</string>
     <string name="settings_weather_configured">已配置</string>
     <string name="settings_weather_unconfigured">未配置</string>
-    <string name="settings_backup_export">导出备份</string>
-    <string name="settings_backup_export_desc">图片 + JSON zip，可存档</string>
+    <string name="settings_backup_export">备份与恢复</string>
+    <string name="settings_backup_export_desc">导出 / 导入，图片 + JSON zip</string>
     <string name="settings_backup_clean">清理原图只留抠图</string>
     <string name="settings_backup_clean_desc">只清理有抠图的衣物原图</string>
     <string name="settings_about_version">版本 %1$s</string>
