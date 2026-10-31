@@ -552,12 +552,13 @@ private fun formatLastWorn(millis: Long?): String {
  * 缩放/平移的**数值**全在 [ZoomState] 的纯函数里（JVM 可直测），本函数只管喂事件。
  */
 @Composable
-private fun ZoomableImage(
+internal fun ZoomableImage(
     path: String,
     contentDescription: String?,
     clothingId: Long,
     modifier: Modifier = Modifier,
     shared: Boolean = true,
+    onZoomChanged: ((ZoomState) -> Unit)? = null,
 ) {
     var zoom by remember(path) { mutableStateOf(ZoomState()) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
@@ -584,6 +585,7 @@ private fun ZoomableImage(
                         val multiTouch = event.changes.size > 1
                         if (multiTouch || zoom.isZoomed) {
                             zoom = zoom.applyGesture(zoomChange, panChange, containerSize)
+                            onZoomChanged?.invoke(zoom)
                             event.changes.forEach { it.consume() }
                         }
                     } while (event.changes.any { it.pressed })
@@ -593,6 +595,7 @@ private fun ZoomableImage(
                             (lastPosition - lastTapPosition).getDistance() <= DOUBLE_TAP_SLOP
                         if (isDoubleTap) {
                             zoom = zoom.toggleDoubleTap()
+                            onZoomChanged?.invoke(zoom)
                             lastTapUp = 0L
                         } else {
                             lastTapUp = now
