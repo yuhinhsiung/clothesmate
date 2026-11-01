@@ -102,7 +102,8 @@ class WearRepositoryTest {
     @Test
     fun `补记旧日期只加计数不回拨lastWornAt`() = runTest {
         val (outfitId, itemIds) = seedOutfit()
-        val today = LocalDate.now()
+        // 固定到上个月 15 日：避免每月 1 日运行时「昨天」落到上个月，月计数只有 1。
+        val today = LocalDate.now().minusMonths(1).withDayOfMonth(15)
         val yesterday = today.minusDays(1)
         repository.confirmWear(outfitId, today, emptyList(), null, null)
         repository.confirmWear(outfitId, yesterday, emptyList(), null, null)

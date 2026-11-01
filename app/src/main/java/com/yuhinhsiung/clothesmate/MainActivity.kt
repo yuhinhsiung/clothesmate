@@ -5,7 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
@@ -13,10 +15,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.window.layout.FoldingFeature
+import androidx.window.layout.WindowInfoTracker
 import androidx.window.layout.WindowMetricsCalculator
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yuhinhsiung.clothesmate.core.datastore.ThemeMode
+import com.yuhinhsiung.clothesmate.core.platform.FoldPadding
+import com.yuhinhsiung.clothesmate.core.platform.foldAvoidance
 import com.yuhinhsiung.clothesmate.core.platform.windowWidthDp
 import com.yuhinhsiung.clothesmate.core.datastore.UserSettingsStore
 import com.yuhinhsiung.clothesmate.core.datastore.isDark
@@ -73,10 +80,35 @@ class MainActivity : ComponentActivity() {
             val darkTheme = themeMode.isDark(isSystemInDarkTheme())
             val configuration = LocalConfiguration.current
             val density = LocalDensity.current.density
-            val currentWindowWidthDp = remember(configuration) {
+            val windowLayoutInfo by remember(this@MainActivity) {
+                WindowInfoTracker.getOrCreate(this@MainActivity)
+                    .windowLayoutInfo(this@MainActivity)
+            }.collectAsStateWithLifecycle(initialValue = null)
+            val fold = remember(windowLayoutInfo, configuration) {
                 val metrics = WindowMetricsCalculator.getOrCreate()
                     .computeCurrentWindowMetrics(this@MainActivity)
-                windowWidthDp(metrics.bounds.width(), density)
+                val feature = windowLayoutInfo
+                    ?.displayFeatures
+                    ?.filterIsInstance<FoldingFeature>()
+                    ?.firstOrNull { it.isSeparating }
+                if (feature == null) {
+                    FoldPadding()
+                } else {
+                    foldAvoidance(
+                        separating = true,
+                        vertical = feature.orientation == FoldingFeature.Orientation.VERTICAL,
+                        hingeStartPx = feature.bounds.left,
+                        hingeEndPx = feature.bounds.right,
+                        windowWidthPx = metrics.bounds.width(),
+                        windowHeightPx = metrics.bounds.height(),
+                        density = density,
+                    )
+                }
+            }
+            val currentWindowWidthDp = remember(configuration, fold) {
+                val metrics = WindowMetricsCalculator.getOrCreate()
+                    .computeCurrentWindowMetrics(this@MainActivity)
+                fold.effectiveWidthDp ?: windowWidthDp(metrics.bounds.width(), density)
             }
             ClothesMateTheme(darkTheme = darkTheme) {
                 CompositionLocalProvider(
@@ -87,7 +119,18 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background,
                     ) {
-                        ClothesMateNavHost(windowWidthDp = currentWindowWidthDp)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(
+                                    start = fold.startDp.dp,
+                                    top = fold.topDp.dp,
+                                    end = fold.endDp.dp,
+                                    bottom = fold.bottomDp.dp,
+                                ),
+                        ) {
+                            ClothesMateNavHost(windowWidthDp = currentWindowWidthDp)
+                        }
                     }
                 }
             }
