@@ -1,12 +1,17 @@
+@file:OptIn(androidx.camera.camera2.interop.ExperimentalCamera2Interop::class)
+
 package com.yuhinhsiung.clothesmate.feature.addclothing.ui
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
@@ -71,6 +76,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.yuhinhsiung.clothesmate.R
 import com.yuhinhsiung.clothesmate.ui.icon.AppIcons
+import com.yuhinhsiung.clothesmate.core.platform.mainBackCameraSelector
 import com.yuhinhsiung.clothesmate.ui.theme.Dimens
 import com.yuhinhsiung.clothesmate.ui.theme.LocalReducedMotion
 import com.yuhinhsiung.clothesmate.ui.theme.OnPhoto
@@ -90,6 +96,7 @@ import java.io.File
  * @param onBack 返回（直接放弃）
  * @param onCaptured 拍到照片 / 相册选定，参数为图片 Uri 字符串；去向由导航层按路由参数决定
  */
+@SuppressLint("UnsafeOptInUsageError")
 @Composable
 fun CaptureScreen(
     onBack: () -> Unit,
@@ -153,11 +160,21 @@ fun CaptureScreen(
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(previewView.surfaceProvider)
             }
-            val selector = CameraSelector.Builder()
-                .requireLensFacing(lensFacing)
-                .build()
+            val selector = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
+                mainBackCameraSelector()
+            } else {
+                CameraSelector.Builder()
+                    .requireLensFacing(lensFacing)
+                    .build()
+            }
             provider.unbindAll()
-            provider.bindToLifecycle(lifecycleOwner, selector, preview, imageCapture)
+            val camera = provider.bindToLifecycle(lifecycleOwner, selector, preview, imageCapture)
+            runCatching {
+                Log.i(
+                    "CaptureScreen",
+                    "bound camera=${Camera2CameraInfo.from(camera.cameraInfo).cameraId} lens=$lensFacing",
+                )
+            }
         }.onFailure { cameraError = true }
     }
 
